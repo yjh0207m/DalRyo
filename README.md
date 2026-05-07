@@ -1,97 +1,345 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# 달료 🏃 — 런닝 앱 기획서
 
-# Getting Started
+> AI 코칭 + 캐릭터 성장 + 인플루언서 생태계를 결합한 전 연령 대상 런닝 플랫폼
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+**버전** v0.9 · 2025년 4월 · DB: Firebase (Firestore)
 
-## Step 1: Start Metro
+---
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+## 목차
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+1. [브랜딩](#1-브랜딩)
+2. [시장 분석](#2-시장-분석)
+3. [기술 스택](#3-기술-스택)
+4. [사용자 기능 카테고리](#4-사용자-기능-카테고리)
+5. [상세 기능 명세](#5-상세-기능-명세)
+6. [수익 모델](#6-수익-모델)
+7. [MVP 범위](#7-mvp-범위)
+8. [로드맵](#8-로드맵)
+9. [경쟁 위험 평가](#9-경쟁-위험-평가)
 
-```sh
-# Using npm
-npm start
+---
 
-# OR using Yarn
-yarn start
+## 1. 브랜딩
+
+### 앱 이름
+
+**달료** — "달리다"에서 온 이름. 귀엽고 기억에 남는 발음.
+
+### 버튼 보이스 (표준어 기준)
+
+| 액션 | 텍스트 |
+|------|--------|
+| 시작 | **달료!** |
+| 정지 | **멈쵸!** |
+
+> 사투리 설정 시 지역별 텍스트로 자동 변환
+
+### 타겟
+
+| 구분 | 대상 |
+|------|------|
+| 주 타겟 | 20~35세 여성 / 입문 러너 / 운동 인스타 유저 |
+| 부 타겟 | 마라톤 준비자 / 러닝크루 활동 희망자 |
+
+### 앱 구조 (바텀 탭)
+
+```
+홈  |  커뮤니티  |  [달료 달리기 버튼 — 중앙]  |  기록  |  마이페이지
 ```
 
-## Step 2: Build and run your app
+- 중앙 달료 캐릭터 버튼 → 달리기 목표 설정 플로우 진입
+- 헤더는 페이지마다 동적으로 변경
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
+---
 
-### Android
+## 2. 시장 분석
 
-```sh
-# Using npm
-npm run android
+### 경쟁사 포지셔닝
 
-# OR using Yarn
-yarn android
+| 앱 | 강점 | 약점 |
+|----|------|------|
+| Nike Run Club | 무료, 코칭 콘텐츠, 월 40만 다운로드 | AI 개인화 없음, 캐릭터/감성 없음 |
+| Strava | 소셜 커뮤니티 | 딱딱한 UI, 코칭 기능 부족 |
+| Garmin Connect | 정밀 기기 데이터 | 기기 종속, 노후화된 UX |
+| Zombies, Run! | 스토리 기반 게이미피케이션 | 어두운 세계관, 인플루언서 생태계 없음 |
+
+### 달료의 해자
+
+- GPS 인증 오운완 — 실제 데이터가 붙어 브랜드 광고 단가 차별화
+- 캐릭터 애착 — 돌 변신 페널티 + 성장 애착으로 이탈 방어
+- 카메라 필터 바이럴 — 워터마크 포함 사진이 퍼지는 무료 마케팅
+- 사투리 감성 — 경쟁 앱 전무, 지역 소속감 + 공유 유도
+- 같이 달리기 — 실시간 친구 페이스 비교로 소셜 락인
+
+---
+
+## 3. 기술 스택
+
+| 영역 | 기술 | 선택 이유 |
+|------|------|-----------|
+| 앱 | React Native CLI | iOS·Android 코드 공유 ~90% |
+| 언어 | TypeScript | 타입 안전성 |
+| 상태관리 | Zustand | 경량, 간결한 API |
+| 내비게이션 | React Navigation v6 | RN 표준 |
+| **DB** | **Firestore (NoSQL)** | **실시간 최강, Fan-out 피드 설계** |
+| **인증** | **Firebase Auth** | **폰 인증 기본 내장, 카카오·Google·Apple** |
+| **스토리지** | **Firebase Storage** | **카메라 필터 사진, 프로필 이미지** |
+| **서버 함수** | **Cloud Functions** | **Fan-out, 스케줄러, 알림 자동화** |
+| **실시간** | **Firestore onSnapshot** | **같이 달리기, 피드 실시간** |
+| 푸시 알림 | FCM (Firebase 내장) | 별도 설정 없이 바로 사용 |
+| 지도 | react-native-maps | 실시간 경로·공원 탐색 |
+| GPS | react-native-geolocation-service | 백그라운드 추적 |
+| 카메라 | react-native-vision-camera | AR 필터 오버레이 |
+| 사투리 | i18next + react-i18next | 즉시 전환 |
+| 인앱결제 | react-native-iap | Apple IAP + Google Play |
+| iOS 빌드 | GitHub Actions Mac Runner | 윈도우 개발 환경 대응 |
+
+### Firebase 선택 근거
+
+| 항목 | 이유 |
+|------|------|
+| 폰 인증 | `signInWithPhoneNumber()` 한 줄, 별도 SMS 공급자 불필요 |
+| 실시간 | Firestore `onSnapshot`으로 같이 달리기·피드 실시간 처리 |
+| Fan-out 피드 | Cloud Functions로 팔로워 피드 자동 복사 |
+| 올인원 | Auth·DB·Storage·Functions·FCM 한 콘솔에서 관리 |
+
+### Firestore 피드 설계 — Fan-out 방식
+
+```
+유저 A가 포스트 작성
+        ↓
+Cloud Function (onPostCreate) 실행
+        ↓
+A의 팔로워 목록 조회
+        ↓
+팔로워 전원의 users/{uid}/feed/{postId} 에 복사
+        ↓
+팔로워가 앱 열면 자기 feed 컬렉션만 읽으면 됨 (JOIN 없음, 빠름)
 ```
 
-### iOS
+---
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+## 4. 사용자 기능 카테고리
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
+### 카테고리 1 — 운동 관리
 
-```sh
-bundle install
+| 기능 | 설명 | 단계 |
+|------|------|------|
+| 달리기 목표 설정 | 자유·시간·거리·칼로리 4가지 목표 선택 후 세부값 설정 | MVP |
+| 개인 달리기 | 실시간 GPS 경로·캐릭터 지도 표시, 시간·거리·페이스·칼로리 | MVP |
+| 공원 달리기 | 주변 공원 탐색, 3/5/10km 코스 선택, 공원 랭킹 | MVP |
+| 같이 달리기 | 친구와 실시간 페이스 비교, 순위 표시 | MVP |
+| 운동 완료 | 요약 화면, 달료 완주 리액션, 카메라 필터 진입 | MVP |
+| 운동 기록 | 캘린더 뷰, 날짜별 상세 기록, 기록 없는 날 안내 | MVP |
+| 성장 리포트 | AI 코치 분석, 주·월간 그래프, 훈련 플랜 추천 | 2단계 |
+
+### 카테고리 2 — 커뮤니티
+
+| 기능 | 설명 | 단계 |
+|------|------|------|
+| 오운완 피드 | GPS 인증 데이터 첨부, 정사각형 카드, 응원·같이달릴래 버튼 | MVP |
+| 인플루언서 시스템 | 팔로우/언팔로우, Nano~Mega 등급 자동 부여, 분석 대시보드 | MVP |
+| 글쓰기 | 카테고리 선택, 달리기 기록 첨부, 사진 업로드, 해시태그 | MVP |
+| 좋아요·댓글 | 응원(좋아요), 댓글·대댓글, 저장(북마크) | MVP |
+| 친구 & 랭킹 | 전체/팔로우/내기록 탭, 친구 오늘 기록, 공원 랭킹 | MVP |
+| 챌린지 | 이번 주 챌린지, 달성 시 배지, 홈 배너 노출 | 2단계 |
+| DM | 1:1 메시지, 같이달리기 초대 | 2단계 |
+| 자유게시판 | 코스 추천·용품 리뷰·Q&A·대회 정보 | 2단계 |
+| 브랜드 매칭 | 인플루언서↔브랜드 중개, 수수료 15% | 3단계 |
+
+### 카테고리 3 — 캐릭터 성장 (감성)
+
+| 기능 | 설명 | 단계 |
+|------|------|------|
+| 알 온보딩 | 가입 시 랜덤 알 지급, 첫 런 후 부화 연출 | MVP |
+| km 기반 성장 | 1km=10EXP, 5단계 성장, 단계별 외형 변화 | MVP |
+| 속도 연동 모션 | 느릿느릿·달려달려·질주본능 3단계, 지도 위 캐릭터 표시 | MVP |
+| 돌 변신 페널티 | 3/5/7일 단계별 경고, 달리면 즉시 해동 | MVP |
+| 캐릭터 스탯 | 체력·속도·지구력 스탯 바, 뛸수록 성장 | MVP |
+| 랜덤 뽑기 | 일반~전설 4등급, 포인트·유료, 시즌 한정 | 2단계 |
+
+### 카테고리 4 — 달료 카메라 & 공유
+
+| 기능 | 설명 | 단계 |
+|------|------|------|
+| 달료 카메라 필터 | 캐릭터+운동 데이터 AR 오버레이, 사투리 문구 선택 | MVP |
+| 외부 공유 | 인스타·카카오 공유, 달료 워터마크 고정, 지역 해시태그 자동 | MVP |
+
+### 카테고리 5 — 마이룸 & 아이템
+
+| 기능 | 설명 | 단계 |
+|------|------|------|
+| 달료 룸 | 방 꾸미기, 동물 친구 수집, 캐릭터 스탯 표시, 친구 방 방문 | 2단계 |
+| 성장 가속 아이템 | 터보 부스터·주간 패스·방어막·해동 물약·월간팩 | 2단계 |
+| 포인트 시스템 | 달릴수록 적립, 일부 아이템 무료 구매 가능 | 2단계 |
+
+### 카테고리 6 — 사투리 & 개인화
+
+| 기능 | 설명 | 단계 |
+|------|------|------|
+| 사투리 시스템 | 표준어·경상도·전라도·충청도·제주도, 전체 UI·알림 적용 | MVP |
+| 프로필 설정 | 닉네임·사진·웹사이트, 신체 정보(키·몸무게·성별) | MVP |
+| 알림 | 팔로우·응원·댓글·성장·돌변신 경고·등급 상승, 사투리 발송 | MVP |
+
+---
+
+## 5. 상세 기능 명세
+
+### 5-1. 로그인 방식
+
+| 방식 | 지원 여부 | 비고 |
+|------|----------|------|
+| 휴대폰 OTP | ✅ | Firebase Auth 기본 내장 |
+| 카카오 | ✅ | OAuth |
+| Google | ✅ | OAuth |
+| Apple | ✅ | iOS 앱 심사 필수 |
+| 이메일 | ✅ | 위 방식 모두 없는 유저 대비 |
+
+### 5-2. 온보딩 플로우
+
+```
+STEP 1/4  반가워요! → 닉네임 입력
+STEP 2/4  신체 정보 → 키 / 몸무게 / 성별
+STEP 3/4  내 지역 → 사투리 선택 (9개 지역 버튼)
+STEP 4/4  달이 탄생! → 캐릭터 알 증정 + 달리기 시작 유도
 ```
 
-Then, and every time you update your native dependencies, run:
+### 5-3. 달리기 목표 설정 플로우
 
-```sh
-bundle exec pod install
+```
+홈 중앙 달료 버튼 탭
+  → 목표 선택 (자유 달리기 / 목표 시간 / 목표 거리 / 목표 칼로리)
+  → 캐릭터 선택
+  → 설정 확인
+  → 카운트다운 3초
+  → 달리기 시작
 ```
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+### 5-4. 달리기 화면 구성
 
-```sh
-# Using npm
-npm run ios
-
-# OR using Yarn
-yarn ios
+```
+[헤더] < 자유 달리기    ✕
+[시간] 00:06:23 (대형)
+[데이터] 거리(km) | 페이스(min/km) | 칼로리(kcal)
+[지도] 실시간 GPS 경로 + 달료 캐릭터 아이콘 (현재 위치)
+[하단] 🔒 잠금 | ⏸ 멈쵸! | 📍 위치 고정
 ```
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
+### 5-5. 같이 달리기
 
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
+Firestore `together_rooms/{roomId}/members` 서브컬렉션을 `onSnapshot`으로 구독해서 실시간 페이스·순위 표시.
 
-## Step 3: Modify your app
+### 5-6. 홈 화면 구성
 
-Now that you have successfully run the app, let's make changes!
+```
+상단: 달료 로고 + 검색 + 알림
+슬라이드 배너: 이벤트·챌린지 자동 슬라이드
+탭: 피드 | 친구 | 공원 | 챌린지 | 자유
+피드 카드: 정사각형 이미지, 달리기 데이터 뱃지, 응원 | 같이달릴래? | 저장
+```
 
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
+### 5-7. 기록 화면 상태 처리
 
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
+| 상태 | 표시 |
+|------|------|
+| 날짜 선택·기록 있음 | 달린 거리·페이스·경로 지도·상세 데이터 |
+| 날짜 선택 전 | 월간 캘린더 + 누적 통계 |
+| 날짜 선택·기록 없음 | 달료 캐릭터 + "이 날은 기록이 없어요" 안내 |
 
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
+### 5-8. 사투리 주요 문구
 
-## Congratulations! :tada:
+| 상황 | 표준어 | 경상도 | 전라도 | 충청도 | 제주도 |
+|------|--------|--------|--------|--------|--------|
+| 시작 버튼 | 달료! | 달려뿌라! | 달려부러! | 달려야쥐! | 달려수다! |
+| 정지 버튼 | 멈쵸! | 서뿌라! | 섰어부러! | 섰쥐뭐! | 섰수다! |
+| 운동 완료 | 잘 달렸어요! | 다 달렸다 아이가! | 다 달렸당께! | 다 달렸슈! | 다 달렸수다! |
+| 돌 변신 3일 | 달료가 뻣뻣해졌어요 | 달료가 굳어뿌고 있다 아이가 | 달료가 굳어부렸당께 | 달료가 굳어가고 있슈 | 달료가 굳어가고 있수다 |
+| 돌 변신 7일 | 달료가 돌이 됐어요 | 달료가 돌 됐다 아이가! | 달료가 돌 돼부렸당께! | 달료가 돌이 됐슈! | 달료가 돌 됐수다! |
 
-You've successfully run and modified your React Native App. :partying_face:
+---
 
-### Now what?
+## 6. 수익 모델
 
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
+| 수익원 | 금액 | 내용 |
+|--------|------|------|
+| 월 구독 | ₩9,900 / 월 | 무제한 AI 코칭, 고급 분석 |
+| 연 구독 | ₩79,900 / 년 | 33% 할인, 전설 캐릭터 1개 증정 |
+| 성장 아이템 | ₩500~7,900 | 부스터, 방어막, 월간팩 등 |
+| 가챠 (뽑기) | ₩1,000~5,000 | 캐릭터 랜덤 뽑기, 한정 시즌 |
+| 브랜드 수수료 | 15% | 인플루언서 ↔ 스포츠 브랜드 중개 |
+| 포인트샵 | 인앱결제 | 마이룸 아이템, 동물 친구 |
+| B2B 크루 플랜 | 기업 협의 | 기업 복지 패키지 |
 
-# Troubleshooting
+---
 
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
+## 7. MVP 범위
 
-# Learn More
+### MVP 포함 (1단계 · 0~3개월)
 
-To learn more about React Native, take a look at the following resources:
+| 카테고리 | 기능 |
+|---------|------|
+| 운동 관리 | 달리기 목표 설정, 개인 달리기, 공원 달리기, 같이 달리기, 운동 완료, 운동 기록 |
+| 커뮤니티 | 오운완 피드, 인플루언서 등급, 글쓰기, 좋아요·댓글, 친구 & 랭킹 |
+| 캐릭터 성장 | 알 온보딩, km 기반 성장, 속도 연동 모션, 돌 변신 페널티, 캐릭터 스탯 |
+| 카메라 & 공유 | 달료 카메라 필터, 외부 공유 |
+| 개인화 | 사투리 시스템, 프로필 설정, 알림 |
 
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+### 2단계 (3~6개월)
+
+AI 페이스 코치 · 챌린지 · DM · 자유게시판 · 랜덤 뽑기 · 달료 룸 · 성장 가속 아이템 · 포인트 시스템 · 구독 결제
+
+### 3단계 (6개월~)
+
+브랜드 마켓플레이스 · B2B 크루 플랜 · 웨어러블 연동 · 글로벌 출시
+
+---
+
+## 8. 로드맵
+
+### 1단계 · 0~3개월 — MVP
+
+- [ ] Firebase 프로젝트 세팅 (Auth, Firestore, Storage, Functions, FCM)
+- [ ] GitHub Actions Mac Runner (iOS 빌드 자동화)
+- [ ] 인증 (폰 OTP, 카카오, Google, Apple, 이메일)
+- [ ] 온보딩 (신체 정보·사투리 선택·알 지급)
+- [ ] 달리기 목표 설정 → 실시간 GPS → 운동 완료 플로우
+- [ ] 실시간 지도 + 달료 캐릭터 위치 표시
+- [ ] 공원 탐색 + 코스 선택
+- [ ] 같이 달리기 (Firestore onSnapshot)
+- [ ] 캐릭터 성장 시스템 + 스탯 + 돌 변신 (Cloud Functions 스케줄러)
+- [ ] 오운완 피드 (Fan-out) + 좋아요·댓글 + 친구 랭킹
+- [ ] 달료 카메라 필터 + 외부 공유
+- [ ] 인플루언서 등급 시스템 (Cloud Functions 스케줄러)
+- [ ] 사투리 시스템 (5개 방언, FCM 알림 포함)
+
+### 2단계 · 3~6개월
+
+- [ ] AI 페이스 코치 + 구독 결제
+- [ ] 챌린지 시스템
+- [ ] DM · 자유게시판
+- [ ] 랜덤 뽑기 (법무 검토 완료 후)
+- [ ] 달료 룸 + 성장 가속 아이템 + 포인트샵
+
+### 3단계 · 6~12개월
+
+- [ ] 브랜드 마켓플레이스
+- [ ] B2B 기업 크루 플랜
+- [ ] 웨어러블 연동
+- [ ] 글로벌 출시
+
+---
+
+## 9. 경쟁 위험 평가
+
+| 리스크 | 내용 | 대응 |
+|--------|------|------|
+| 닭-달걀 문제 | 인플루언서 없으면 팔로워 없고, 팔로워 없으면 인플루언서 안 옴 | 런칭 전 베타 인플루언서 20~30명 선모집 |
+| 가챠 규제 | 확률형 아이템 규제 가능성 | 2단계 전 법무 검토, 무료 포인트 병행 |
+| NRC 캐릭터 추가 | Nike 리소스 격차 | 인플루언서 수익화·사투리는 단기 모방 어려움 |
+| Fan-out 비용 | 팔로워 많은 인플루언서 포스트 시 Firestore 쓰기 폭발 | 팔로워 1만 이상은 Fan-out 분산 처리 설계 |
+| Firestore 읽기 비용 | 유저 증가 시 읽기 횟수 폭증 | 피드 캐싱, 페이지네이션 최적화 |
+
+---
+
+*달료 기획서 v0.9 · 2025년 4월 · DB: Firebase (Firestore) + Cloud Functions + FCM*
