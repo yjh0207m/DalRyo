@@ -66,6 +66,13 @@ yarn-error.log
 # testing
 /coverage
 
+# Sensitive / Firebase
+.env
+.env.local
+.env.*
+google-services.json
+GoogleService-Info.plist
+
 # Yarn
 .yarn/*
 !.yarn/patches

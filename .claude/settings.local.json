@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm --version)",
+      "Bash(java --version)",
+      "Bash(npx @react-native-community/cli --version)",
+      "PowerShell(& \"C:\\\\Users\\\\yjh0207m\\\\AppData\\\\Local\\\\Android\\\\Sdk\\\\emulator\\\\emulator.exe\" -list-avds)"
+    ]
+  }
+}
