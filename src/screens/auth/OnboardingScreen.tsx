@@ -2,7 +2,6 @@ import React, {useRef, useState} from 'react';
 import {
   Animated,
   Image,
-  ImageSourcePropType,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -20,9 +19,6 @@ import type {Dialect, Gender, OnboardingProfileInput} from '../../types/user.typ
 const images = {
   egg: require('../../assets/images/egg.png'),
   brokenEgg: require('../../assets/images/broken_egg.png'),
-  penguinS: require('../../assets/images/penguin_S.png'),
-  rabbitS: require('../../assets/images/rabbit_S.png'),
-  duckS: require('../../assets/images/duck_S.png'),
 };
 
 type Props = {
@@ -37,11 +33,6 @@ const GREEN = '#78B85F';
 const TEXT = '#151515';
 const MUTED = '#808080';
 
-const characterImages: Record<CharacterType, ImageSourcePropType> = {
-  penguin: images.penguinS,
-  rabbit: images.rabbitS,
-  duck: images.duckS,
-};
 
 const regions: Array<{label: string; dialect: Dialect}> = [
   {label: '서울', dialect: 'seoul'},
@@ -157,7 +148,6 @@ export function OnboardingScreen({onBack, onDone}: Props) {
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.stepScroll}>
           <Text style={styles.stepTitle}>기본 정보를{'\n'}입력해 주세요!</Text>
           <View style={styles.profileCircle}>
-            <Image source={characterImages.rabbit} resizeMode="contain" style={styles.profileCharacter} />
             <View style={styles.cameraBadge}>
               <Text style={styles.cameraText}>▣</Text>
             </View>
@@ -224,11 +214,6 @@ export function OnboardingScreen({onBack, onDone}: Props) {
               </Animated.View>
             )}
             {hatched && <Image source={images.brokenEgg} resizeMode="contain" style={styles.brokenEgg} />}
-            <Animated.Image
-              source={characterImages[characterType]}
-              resizeMode="contain"
-              style={[styles.bornCharacter, {opacity: characterScale, transform: [{scale: characterScale}]}]}
-            />
           </View>
           {!!errorMessage && <Text style={styles.errorText}>{errorMessage}</Text>}
           <PrimaryButton label={isSaving ? '저장중...' : hatched ? '달리기 시작하기' : '두근두근...'} onPress={saveOnboarding} disabled={!hatched || isSaving} />

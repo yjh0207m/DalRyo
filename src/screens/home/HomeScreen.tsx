@@ -1,18 +1,9 @@
-import React, {useMemo} from 'react';
-import {Image, ImageSourcePropType, ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
-import type {CharacterDocument, CharacterType} from '../../types/character.types';
+import React from 'react';
+import {ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import type {UserDocument} from '../../types/user.types';
-
-const images = {
-  penguin: require('../../assets/images/penguin_M.png'),
-  rabbit: require('../../assets/images/rabbit_M.png'),
-  duck: require('../../assets/images/duck_M.png'),
-  egg: require('../../assets/images/egg.png'),
-};
 
 type Props = {
   user: UserDocument | null;
-  character: CharacterDocument | null;
   onRunPress: () => void;
   onNotificationPress: () => void;
 };
@@ -20,24 +11,11 @@ type Props = {
 const MINT = '#58CFA6';
 const TEXT = '#151515';
 
-const characterImages: Record<CharacterType, ImageSourcePropType> = {
-  penguin: images.penguin,
-  rabbit: images.rabbit,
-  duck: images.duck,
-};
-
-export function HomeScreen({user, character, onRunPress, onNotificationPress}: Props) {
+export function HomeScreen({user, onRunPress, onNotificationPress}: Props) {
   const exp = user?.total_exp ?? 0;
   const totalKm = user?.total_km ?? 0;
   const level = Math.max(1, Math.floor(totalKm / 10) + 1);
   const currentExp = exp % 100;
-  const characterSource = useMemo(() => {
-    if (!character || character.stage === 'egg') {
-      return images.egg;
-    }
-
-    return characterImages[character.character_type] ?? images.penguin;
-  }, [character]);
 
   return (
     <View style={styles.screen}>
@@ -50,9 +28,6 @@ export function HomeScreen({user, character, onRunPress, onNotificationPress}: P
       </View>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
         <View style={styles.levelCard}>
-          <View style={styles.levelAvatar}>
-            <Image source={characterSource} resizeMode="contain" style={styles.levelAvatarImage} />
-          </View>
           <View style={styles.levelInfo}>
             <View style={styles.levelTitleRow}>
               <Text style={styles.levelMeta}>LV. {level}</Text>
@@ -63,14 +38,6 @@ export function HomeScreen({user, character, onRunPress, onNotificationPress}: P
               <View style={[styles.expFill, {width: `${Math.max(6, currentExp)}%`}]} />
             </View>
           </View>
-        </View>
-
-        <View style={styles.characterHero}>
-          <View style={styles.speechBubble}>
-            <Text style={styles.speechText}>같이 달리면{'\n'}더 재밌어요!</Text>
-          </View>
-          <View style={styles.grassPad} />
-          <Image source={characterSource} resizeMode="contain" style={styles.homeCharacter} />
         </View>
 
         <View style={styles.dashboardCard}>
@@ -124,20 +91,13 @@ const styles = StyleSheet.create({
   notificationDot: {position: 'absolute', right: 11, top: 10, width: 9, height: 9, borderRadius: 5, backgroundColor: MINT},
   content: {paddingHorizontal: 28, paddingBottom: 118},
   levelCard: {minHeight: 100, borderRadius: 26, backgroundColor: '#FFFFFF', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, shadowColor: '#A7D7C4', shadowOpacity: 0.18, shadowRadius: 16, shadowOffset: {width: 0, height: 8}, elevation: 6},
-  levelAvatar: {width: 56, height: 56, borderRadius: 28, borderWidth: 2, borderColor: '#C7F0E2', backgroundColor: '#F6FFFB', alignItems: 'center', justifyContent: 'center'},
-  levelAvatarImage: {width: 46, height: 52},
-  levelInfo: {flex: 1, marginLeft: 18},
+  levelInfo: {flex: 1},
   levelTitleRow: {flexDirection: 'row', alignItems: 'center', marginBottom: 12},
   levelMeta: {color: '#696969', fontSize: 18, fontWeight: '900', marginRight: 12},
   levelName: {color: TEXT, fontSize: 18, fontWeight: '900', flex: 1},
   levelExp: {color: '#4D4D4D', fontSize: 18, fontWeight: '900'},
   expTrack: {height: 8, borderRadius: 4, backgroundColor: '#E4E4E4', overflow: 'hidden'},
   expFill: {height: 8, borderRadius: 4, backgroundColor: '#FFD889'},
-  characterHero: {height: 330, alignItems: 'center', justifyContent: 'flex-end'},
-  speechBubble: {position: 'absolute', right: 24, top: 34, borderRadius: 24, backgroundColor: '#FFFFFF', paddingHorizontal: 20, paddingVertical: 16, shadowColor: '#A7D7C4', shadowOpacity: 0.14, shadowRadius: 12, shadowOffset: {width: 0, height: 6}, elevation: 5, zIndex: 4},
-  speechText: {color: '#606060', fontSize: 16, fontWeight: '900', lineHeight: 24, textAlign: 'center'},
-  homeCharacter: {width: 272, height: 292, zIndex: 2},
-  grassPad: {position: 'absolute', bottom: 8, width: 330, height: 54, borderRadius: 165, backgroundColor: '#BFEA96'},
   dashboardCard: {borderRadius: 26, backgroundColor: '#FFFFFF', padding: 24, marginTop: 18, shadowColor: '#A7D7C4', shadowOpacity: 0.15, shadowRadius: 18, shadowOffset: {width: 0, height: 8}, elevation: 5},
   cardTitle: {color: TEXT, fontSize: 20, fontWeight: '900', marginBottom: 18},
   statsRow: {flexDirection: 'row', justifyContent: 'space-between'},

@@ -1,27 +1,15 @@
 import React from 'react';
 import {Image, ScrollView, StyleSheet, Text, View} from 'react-native';
-import type {CharacterDocument, CharacterType} from '../../types/character.types';
 import type {UserDocument} from '../../types/user.types';
 
 const images = {
   avatar: require('../../assets/images/dalryo-avatar.png'),
-  penguin: require('../../assets/images/penguin_M.png'),
-  rabbit: require('../../assets/images/rabbit_M.png'),
-  duck: require('../../assets/images/duck_M.png'),
-};
-
-const characterImages: Record<CharacterType, number> = {
-  penguin: images.penguin,
-  rabbit: images.rabbit,
-  duck: images.duck,
 };
 
 const MINT = '#58CFA6';
 const TEXT = '#151515';
 
-export function MyPageScreen({user, character}: {user: UserDocument | null; character: CharacterDocument | null}) {
-  const characterSource = character ? characterImages[character.character_type] : images.avatar;
-
+export function MyPageScreen({user}: {user: UserDocument | null}) {
   return (
     <View style={styles.screen}>
       <View style={styles.header}>
@@ -33,7 +21,7 @@ export function MyPageScreen({user, character}: {user: UserDocument | null; char
       </View>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
         <View style={styles.profileCard}>
-          <Image source={characterSource} resizeMode="contain" style={styles.profileImage} />
+          <Image source={images.avatar} resizeMode="contain" style={styles.profileImage} />
           <View style={styles.profileText}>
             <Text style={styles.profileName}>{user?.display_name ?? '달리너'}</Text>
             <Text style={styles.profileDetail}>{user?.region ?? '지역 미설정'} · {user?.total_km?.toFixed(1) ?? '0.0'}km</Text>

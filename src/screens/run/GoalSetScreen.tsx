@@ -1,10 +1,6 @@
 import React, {useState} from 'react';
-import {Image, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import type {RunGoalType} from '../../types/run.types';
-
-const images = {
-  penguin: require('../../assets/images/penguin_M.png'),
-};
 
 const MINT = '#58CFA6';
 const TEXT = '#151515';
@@ -34,9 +30,8 @@ export function GoalSetScreen({onClose, onStart}: Props) {
         <View style={styles.backButton} />
       </View>
       <View style={styles.heroCard}>
-        <Image source={images.penguin} resizeMode="contain" style={styles.character} />
         <Text style={styles.heroTitle}>오늘의 달리기를 정해볼까요?</Text>
-        <Text style={styles.heroText}>요구사항 F-RUN-01 흐름대로 목표 선택 뒤 캐릭터 선택, 설정 확인, 카운트다운으로 이어질 화면이에요.</Text>
+        <Text style={styles.heroText}>목표를 선택하고 달리기를 시작해요.</Text>
       </View>
       <View style={styles.options}>
         {goalOptions.map(option => (
@@ -66,9 +61,8 @@ const styles = StyleSheet.create({
   backButton: {width: 44, height: 44, alignItems: 'center', justifyContent: 'center'},
   backText: {color: TEXT, fontSize: 42, lineHeight: 42},
   title: {color: TEXT, fontSize: 28, fontWeight: '900'},
-  heroCard: {borderRadius: 28, backgroundColor: '#EFFFF8', minHeight: 270, alignItems: 'center', padding: 24, borderWidth: 1, borderColor: '#C8F1E0'},
-  character: {width: 140, height: 150},
-  heroTitle: {color: TEXT, fontSize: 23, fontWeight: '900', marginTop: 8},
+  heroCard: {borderRadius: 28, backgroundColor: '#EFFFF8', minHeight: 120, alignItems: 'center', justifyContent: 'center', padding: 24, borderWidth: 1, borderColor: '#C8F1E0'},
+  heroTitle: {color: TEXT, fontSize: 23, fontWeight: '900'},
   heroText: {color: '#6D7472', fontSize: 15, fontWeight: '800', lineHeight: 22, textAlign: 'center', marginTop: 10},
   options: {marginTop: 22},
   goalOption: {height: 72, borderRadius: 20, backgroundColor: '#FFFFFF', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, marginTop: 14, borderWidth: 1, borderColor: '#E4ECE9'},

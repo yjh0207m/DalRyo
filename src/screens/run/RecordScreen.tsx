@@ -5,7 +5,6 @@ import type {RunDocument} from '../../types/run.types';
 import {formatDuration, formatPace} from '../../utils/pace';
 
 const images = {
-  rabbit: require('../../assets/images/rabbit_S.png'),
   bgDay: require('../../assets/images/bg-day.png'),
 };
 
@@ -190,11 +189,6 @@ function EmptyRecordCard({day, month, year}: {day: number; month: number; year: 
   return (
     <View style={[styles.detailCard, styles.emptyRecordCard]}>
       <Text style={styles.recordTitle}>{year}. {String(month + 1).padStart(2, '0')}. {String(day).padStart(2, '0')}</Text>
-      <View style={styles.sleepingCharacterWrap}>
-        <Image source={images.rabbit} resizeMode="contain" style={styles.sleepingCharacter} />
-        <Text style={styles.sleepText}>Z</Text>
-        <Text style={[styles.sleepText, styles.sleepTextSmall]}>z</Text>
-      </View>
       <Text style={styles.emptyRecordTitle}>이 날은 기록이 없어요</Text>
       <Text style={styles.emptyRecordSubtitle}>새로운 러닝에 도전해보세요!</Text>
     </View>
@@ -307,10 +301,6 @@ const styles = StyleSheet.create({
   routeStart: {left: 44, top: 88, backgroundColor: '#47BC8A'},
   routeFinish: {right: 38, top: 104, backgroundColor: '#FF6B4B'},
   emptyRecordCard: {minHeight: 372},
-  sleepingCharacterWrap: {height: 168, alignItems: 'center', justifyContent: 'center', marginTop: 12},
-  sleepingCharacter: {width: 146, height: 146, opacity: 0.92, transform: [{rotate: '90deg'}]},
-  sleepText: {position: 'absolute', right: 120, top: 28, color: MINT, fontSize: 30, fontWeight: '900'},
-  sleepTextSmall: {right: 92, top: 10, fontSize: 22},
   emptyRecordTitle: {color: '#0F0F0F', fontSize: 25, fontWeight: '900', textAlign: 'center', marginTop: 16},
   emptyRecordSubtitle: {color: '#8A8A8A', fontSize: 17, fontWeight: '800', textAlign: 'center', marginTop: 14},
 });

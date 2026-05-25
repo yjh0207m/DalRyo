@@ -104,17 +104,10 @@ function App() {
   }
 
   if (route === 'main') {
-    return <MainAppScreen user={profile?.user ?? null} character={profile?.character ?? null} />;
+    return <MainAppScreen user={profile?.user ?? null} />;
   }
 
-  return (
-    <AuthStartScreen
-      isLoggedIn={!!firebaseUser && !!profile?.user}
-      onStart={goToStartOrMain}
-      onPhoneLogin={() => setRoute('phone')}
-      onSocialLoginReady={() => resolveRouteForUser(auth().currentUser)}
-    />
-  );
+  return <AuthStartScreen onStart={goToStartOrMain} />;
 }
 
 function LoadingScreen() {

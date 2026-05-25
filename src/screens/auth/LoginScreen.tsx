@@ -1,6 +1,5 @@
 import React, {useState} from 'react';
 import {
-  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -15,10 +14,6 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import {usePhoneAuth} from '../../store/useAuthStore';
 import type {AuthResult} from '../../types/auth.types';
 
-const images = {
-  penguinRun: require('../../assets/images/penguin.png'),
-  rabbitRun: require('../../assets/images/rabbit.png'),
-};
 
 type Props = {
   onBack: () => void;
@@ -101,10 +96,6 @@ export function PhoneLoginScreen({onBack, onVerified}: Props) {
             <Text style={styles.nextButtonText}>{state === 'verifying' ? '확인중' : '다음'}</Text>
           </TouchableOpacity>
         </ScrollView>
-        <View pointerEvents="none" style={styles.bottomArt}>
-          <Image source={images.rabbitRun} resizeMode="contain" style={styles.rabbit} />
-          <Image source={images.penguinRun} resizeMode="contain" style={styles.penguin} />
-        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -131,7 +122,4 @@ const styles = StyleSheet.create({
   nextButton: {height: 62, borderRadius: 14, backgroundColor: MINT, alignItems: 'center', justifyContent: 'center', marginTop: 70, shadowColor: MINT, shadowOpacity: 0.24, shadowRadius: 16, shadowOffset: {width: 0, height: 8}, elevation: 6},
   nextButtonDisabled: {opacity: 0.45},
   nextButtonText: {color: '#FFFFFF', fontSize: 22, fontWeight: '900'},
-  bottomArt: {position: 'absolute', left: 0, right: 0, bottom: -26, height: 300, backgroundColor: 'rgba(196,235,223,0.24)'},
-  rabbit: {position: 'absolute', left: 74, bottom: -4, width: 210, height: 240},
-  penguin: {position: 'absolute', right: 58, bottom: -2, width: 192, height: 220},
 });

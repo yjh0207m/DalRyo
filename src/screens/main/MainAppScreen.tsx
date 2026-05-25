@@ -5,7 +5,6 @@ import {HomeScreen} from '../home/HomeScreen';
 import {MyPageScreen} from '../profile/MyPageScreen';
 import {GoalSetScreen} from '../run/GoalSetScreen';
 import {RecordScreen} from '../run/RecordScreen';
-import type {CharacterDocument} from '../../types/character.types';
 import type {RunGoalType} from '../../types/run.types';
 import type {UserDocument} from '../../types/user.types';
 
@@ -17,12 +16,11 @@ type MainTab = 'home' | 'community' | 'run' | 'records' | 'my';
 
 type Props = {
   user: UserDocument | null;
-  character: CharacterDocument | null;
 };
 
 const MINT = '#58CFA6';
 
-export function MainAppScreen({user, character}: Props) {
+export function MainAppScreen({user}: Props) {
   const [activeTab, setActiveTab] = useState<MainTab>('home');
   const [goalDraft, setGoalDraft] = useState<{goalType: RunGoalType; goalValue: number | null} | null>(null);
 
@@ -31,7 +29,7 @@ export function MainAppScreen({user, character}: Props) {
   return (
     <View style={styles.screen}>
       <View style={styles.body}>
-        {activeTab === 'home' && <HomeScreen user={user} character={character} onRunPress={openRunGoal} onNotificationPress={() => undefined} />}
+        {activeTab === 'home' && <HomeScreen user={user} onRunPress={openRunGoal} onNotificationPress={() => undefined} />}
         {activeTab === 'community' && <CommunityScreen />}
         {activeTab === 'run' && (
           <GoalSetScreen
@@ -43,7 +41,7 @@ export function MainAppScreen({user, character}: Props) {
           />
         )}
         {activeTab === 'records' && <RecordScreen />}
-        {activeTab === 'my' && <MyPageScreen user={user} character={character} />}
+        {activeTab === 'my' && <MyPageScreen user={user} />}
       </View>
       {!!goalDraft && (
         <View pointerEvents="none" style={styles.goalToast}>
