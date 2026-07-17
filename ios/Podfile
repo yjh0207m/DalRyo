@@ -17,6 +17,9 @@ end
 target 'DalRyoTemp' do
   config = use_native_modules!
 
+  # @react-native-firebase requires static frameworks for New Architecture
+  $RNFirebaseAsStaticFramework = true
+
   use_react_native!(
     :path => config[:reactNativePath],
     # An absolute path to your application root.

@@ -1,4 +1,4 @@
-package com.dalryotemp
+package com.dalryo.app
 
 import android.app.Application
 import com.facebook.react.PackageList

@@ -1,4 +1,4 @@
-package com.dalryotemp
+package com.dalryo.app
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate

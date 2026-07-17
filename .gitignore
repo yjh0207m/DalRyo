@@ -73,6 +73,11 @@ yarn-error.log
 google-services.json
 GoogleService-Info.plist
 
+# Local assistant / verification artifacts
+.claude/
+current-screen.png
+dalryo-current.png
+
 # Yarn
 .yarn/*
 !.yarn/patches
