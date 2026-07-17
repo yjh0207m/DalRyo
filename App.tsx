@@ -16,6 +16,7 @@ LogBox.ignoreLogs([
   'Method called was `onAuthStateChanged`',
 ]);
 
+
 function App() {
   const [route, setRoute] = useState<Route>('loading');
   const [firebaseUser, setFirebaseUser] = useState<FirebaseAuthTypes.User | null>(null);
