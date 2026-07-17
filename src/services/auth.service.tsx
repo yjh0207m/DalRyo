@@ -15,9 +15,17 @@ function normalizeKoreanPhoneNumber(phoneNumber: string) {
   return `+82${digits}`;
 }
 
+const PHONE_VERIFY_TIMEOUT_MS = 15000;
+
 export async function requestPhoneVerification(phoneNumber: string): Promise<PhoneConfirmation> {
   const normalizedPhoneNumber = normalizeKoreanPhoneNumber(phoneNumber);
-  return auth().signInWithPhoneNumber(normalizedPhoneNumber);
+
+  return Promise.race([
+    auth().signInWithPhoneNumber(normalizedPhoneNumber),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('인증 요청 시간이 초과됐어요. 잠시 후 다시 시도해 주세요.')), PHONE_VERIFY_TIMEOUT_MS),
+    ),
+  ]);
 }
 
 export async function verifyPhoneCode(confirmation: PhoneConfirmation, code: string): Promise<AuthResult> {

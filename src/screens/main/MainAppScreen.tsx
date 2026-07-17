@@ -30,7 +30,7 @@ export function MainAppScreen({user}: Props) {
     <View style={styles.screen}>
       <View style={styles.body}>
         {activeTab === 'home' && <HomeScreen user={user} onRunPress={openRunGoal} onNotificationPress={() => undefined} />}
-        {activeTab === 'community' && <CommunityScreen />}
+        {activeTab === 'community' && <CommunityScreen user={user} />}
         {activeTab === 'run' && (
           <GoalSetScreen
             onClose={() => setActiveTab('home')}
