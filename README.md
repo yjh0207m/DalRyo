@@ -89,7 +89,7 @@
 | **실시간** | **Firestore onSnapshot** | **같이 달리기, 피드 실시간** |
 | 푸시 알림 | FCM (Firebase 내장) | 별도 설정 없이 바로 사용 |
 | 지도 | react-native-maps | 실시간 경로·공원 탐색 |
-| GPS | react-native-geolocation-service | 백그라운드 추적 |
+| GPS | @react-native-community/geolocation | New Architecture 지원 (백그라운드 추적은 추후) |
 | 카메라 | react-native-vision-camera | AR 필터 오버레이 |
 | 사투리 | i18next + react-i18next | 즉시 전환 |
 | 인앱결제 | react-native-iap | Apple IAP + Google Play |
@@ -172,6 +172,7 @@ A의 팔로워 목록 조회
 | 기능 | 설명 | 단계 |
 |------|------|------|
 | 달료 룸 | 방 꾸미기, 동물 친구 수집, 캐릭터 스탯 표시, 친구 방 방문 | 2단계 |
+| 캐릭터 꾸미기 | 모자·상의·하의·신발·액세서리·등 슬롯에 옷 입히기, 실제로 움직이는 캐릭터(Rive) | 2단계 |
 | 성장 가속 아이템 | 터보 부스터·주간 패스·방어막·해동 물약·월간팩 | 2단계 |
 | 포인트 시스템 | 달릴수록 적립, 일부 아이템 무료 구매 가능 | 2단계 |
 

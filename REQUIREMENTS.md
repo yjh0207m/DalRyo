@@ -21,7 +21,7 @@
 | 실시간 | Firestore onSnapshot |
 | 푸시 알림 | FCM (Firebase Cloud Messaging) |
 | 지도 | react-native-maps |
-| GPS | react-native-geolocation-service |
+| GPS | @react-native-community/geolocation (New Architecture 지원) |
 | 카메라 | react-native-vision-camera |
 | 사투리 | i18next + react-i18next |
 | 인앱결제 | react-native-iap |
@@ -231,20 +231,18 @@ await setDoc(runRef, {
   avg_speed_kmh,
   avg_heart_rate: null,
   calories,
-  route: gpsPoints,   // GeoPoint 배열
+  route: gpsPoints,   // {lat, lng, timestamp} 배열, 5m 이상 이동 시에만 추가
   park_id: null,
-  exp_earned,
+  exp_earned: 0,      // 클라이언트는 항상 0 (Security Rules 강제)
   created_at: serverTimestamp(),
 })
-
-// users 업데이트
-await updateDoc(doc(db, 'users', uid), {
-  total_km: increment(distance_km),
-  total_exp: increment(exp_earned),
-  last_run_at: serverTimestamp(),
-  is_frozen: false,
-})
 ```
+
+- 클라이언트는 `runs`만 생성한다. `users.total_km/total_exp/last_run_at/is_frozen`과
+  캐릭터 EXP·스탯·단계는 **Cloud Function `onRunCreate`가 서버에서 반영** (F-CHAR-04)
+- 거리 측정: 정확도 25m 초과 위치는 버리고, 45km/h 넘게 튄 위치는 GPS 오차로 무시.
+  일시정지 중 이동 거리는 합산하지 않음 (`src/hooks/useRunSession.tsx`)
+- 칼로리 근사: 체중(kg, 없으면 60) × 거리(km) × 1.036
 
 ### F-RUN-04 · 운동 완료 화면
 
@@ -438,16 +436,44 @@ function getStage(totalKm: number): CharacterStage {
   return 'egg'
 }
 
-// 스탯 업데이트
-await updateDoc(doc(db, 'users', uid, 'character', uid), {
-  stage: newStage,
-  exp: increment(expEarned),
-  stat_stamina:   increment(Math.floor(distanceKm * 0.5)),
-  stat_speed:     increment(Math.floor(avgSpeedKmh * 0.3)),
-  stat_endurance: increment(Math.floor(durationSec / 60 * 0.2)),
-  last_active_at: serverTimestamp(),
-})
+// 스탯 증가량 (각 스탯 최대 100)
+stat_stamina   += Math.floor(distanceKm * 0.5)
+stat_speed     += Math.floor(avgSpeedKmh * 0.3)
+stat_endurance += Math.floor(durationSec / 60 * 0.2)
 ```
+
+**서버 반영 — `functions/src/onRunCreate.ts`** (runs 생성 트리거, 리전 asia-northeast3)
+
+- 트랜잭션으로 run·user·character를 함께 갱신, `runs.growth_applied`로 중복 반영 방지
+- 단계는 되돌아가지 않음, 단계가 오르면 `notifications`에 `level_up` 생성
+- 평균 속도 25km/h 초과 기록은 `flagged: true`, 거리·EXP·스탯 미반영 (차량 이동 방지)
+- 성장 규칙은 `functions/src/growth.ts`와 `src/utils/exp.tsx`가 같아야 함
+  (앱은 완료 화면 미리보기용, 최종 값은 서버)
+
+### F-CHAR-06 · 캐릭터 렌더링 & 꾸미기 구조
+
+캐릭터는 반드시 `src/components/character/CharacterView.tsx` 하나로만 그린다.
+
+```tsx
+<CharacterView
+  type="duck" stage="baby"
+  motion="run"                 // idle | rest | slow | run | sprint | stone
+  outfitLayers={{hat, top}}    // 슬롯별 이미지 (옵션)
+  size={220}
+/>
+```
+
+- **현재**: Storage PNG 한 장 + Animated(위아래 흔들림·기울기)로 모션 표현
+- **애니메이션 교체 계획**: 실제로 움직이는 캐릭터는 Rive(`rive-react-native`) 권장
+  — 상태 머신으로 idle/run/sprint 전환, 옷은 뼈대에 붙는 교체 가능한 파츠로 구성.
+  교체 시 `CharacterView` 내부만 바꾸고 화면 코드는 그대로 둔다
+- **꾸미기 슬롯**: `back`(몸 뒤) → 몸 → `bottom` → `top` → `shoes` → `hat` → `accessory`
+- **PNG 레이어 규칙**: 옷 이미지는 각 동물·단계의 몸 이미지와 같은 캔버스 크기·기준점으로 제작
+  (동물 37종 × 3단계마다 체형이 달라 공용 옷 1장으로는 맞지 않음 → Rive 전환 시 해결)
+- **데이터**: `character.equipped = {hat: itemId, ...}`,
+  보유 아이템은 `users/{uid}/inventory/{itemId}` (서버만 쓰기) — firestore_schema 참고
+- **디자인 토큰**: 색·간격·모서리·글자 크기는 `src/theme/index.ts`에서만 정의.
+  새 화면은 토큰을 쓰고, 리디자인은 토큰부터 바꾼다
 
 ### F-CHAR-05 · 돌 변신 스케줄러 (Cloud Function)
 
@@ -782,6 +808,7 @@ const postsSnap = await getDocs(query(
 
 | 함수 | 트리거 | 역할 |
 |------|--------|------|
+| `onRunCreate` ✅ | runs 생성 | EXP·누적 거리·스탯·성장 단계 반영, 돌 변신 해제, 성장 알림 |
 | `onPostCreate` | posts 생성 | 팔로워 feed에 Fan-out 복사 |
 | `onPostDelete` | posts 삭제 | 팔로워 feed에서 제거 |
 | `onLikeCreate` | likes 생성 | like_count +1, 작성자 알림 |

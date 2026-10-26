@@ -105,7 +105,7 @@ function App() {
   }
 
   if (route === 'main') {
-    return <MainAppScreen user={profile?.user ?? null} />;
+    return <MainAppScreen user={profile?.user ?? null} character={profile?.character ?? null} />;
   }
 
   return <AuthStartScreen onStart={goToStartOrMain} />;

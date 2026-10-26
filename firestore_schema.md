@@ -78,9 +78,31 @@ parks/{parkId}
   stat_stamina:   number,    // 체력 스탯 (0~100)
   stat_speed:     number,    // 속도 스탯 (0~100)
   stat_endurance: number,    // 지구력 스탯 (0~100)
+  equipped?:      {          // 꾸미기 슬롯별 장착 아이템 id (2단계)
+    back?, bottom?, top?, shoes?, hat?, accessory?: string
+  },
   last_active_at: Timestamp
 }
 ```
+
+stage·exp·스탯은 Cloud Function `onRunCreate`만 갱신 (클라이언트 수정 불가)
+
+---
+
+## users/{uid}/inventory/{itemId} (2단계 예정)
+
+보유한 꾸미기 아이템. 구매·보상 지급은 서버만 쓰기, `equipped`는 보유 아이템만 장착 가능하게 Rules로 검사
+
+```js
+{
+  item_id:     string,
+  slot:        'back' | 'bottom' | 'top' | 'shoes' | 'hat' | 'accessory',
+  acquired_at: Timestamp,
+  source:      'shop' | 'gacha' | 'reward' | 'event'
+}
+```
+
+아이템 정의(이름·가격·에셋 경로)는 `items/{itemId}` 카탈로그 컬렉션에 둔다
 
 ---
 
@@ -121,6 +143,7 @@ parks/{parkId}
   actor_uid:  string,        // 알림을 발생시킨 유저
   actor_name: string,        // 복사 (표시용)
   target_id:  string | null, // post_id 또는 room_id
+  stage?:     string,        // level_up일 때 새 성장 단계
   is_read:    boolean,
   created_at: Timestamp
 }
@@ -144,9 +167,11 @@ parks/{parkId}
   avg_speed_kmh:  number,
   avg_heart_rate: number | null,
   calories:       number,
-  route:          GeoPoint[], // GPS 좌표 배열 [{lat, lng}, ...]
+  route:          {lat, lng, timestamp}[], // GPS 좌표 배열 (5m 이상 이동 시에만 추가)
   park_id:        string | null, // 공원 달리기인 경우
-  exp_earned:     number,
+  exp_earned:     number,    // 클라이언트는 0으로 생성, onRunCreate가 채움
+  growth_applied: boolean,   // onRunCreate 반영 완료 (중복 방지, 서버만 씀)
+  flagged:        boolean,   // 평균 25km/h 초과 → 성장 미반영 (서버만 씀)
   created_at:     Timestamp
 }
 ```
@@ -304,6 +329,7 @@ parks/{parkId}
 
 | 함수 | 트리거 | 역할 |
 |------|--------|------|
+| `onRunCreate` ✅ | runs 도큐먼트 생성 | EXP·누적 거리·스탯·성장 단계 반영, 돌 변신 해제, 성장 알림 |
 | `onPostCreate` | posts 도큐먼트 생성 | 작성자 팔로워 전원의 feed에 Fan-out 복사 |
 | `onPostDelete` | posts 도큐먼트 삭제 | 팔로워 feed에서 해당 포스트 삭제 |
 | `onLikeCreate` | likes 도큐먼트 생성 | posts.like_count +1, 작성자에게 알림 |

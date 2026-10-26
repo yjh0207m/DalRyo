@@ -1,7 +1,8 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {Animated, Image, StatusBar, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {fetchCharacterImageUrl} from '../../services/character.service';
+import {CharacterView} from '../../components/character/CharacterView';
+import {colors, radius, shadow, spacing, typography} from '../../theme';
 import type {CharacterStage, CharacterType} from '../../types/character.types';
 import {formatDuration, formatPace} from '../../utils/pace';
 
@@ -9,10 +10,6 @@ const images = {
   egg: require('../../assets/images/egg.png'),
   brokenEgg: require('../../assets/images/broken_egg.png'),
 };
-
-const MINT = '#58CFA6';
-const TEXT = '#151515';
-const MUTED = '#808080';
 
 type Props = {
   distanceKm: number;
@@ -25,8 +22,10 @@ type Props = {
   stageBeforeRun: CharacterStage;
   // 이번 달리기 반영 후 단계 (getCharacterStage(total_km))
   stageAfterRun: CharacterStage;
-  onTakePhoto: () => void;
+  // 카메라 필터(F-CAM-01) 구현 전에는 넘기지 않으면 버튼이 숨겨진다
+  onTakePhoto?: () => void;
   onViewRecord: () => void;
+  onClose: () => void;
 };
 
 export function RunCompleteScreen({
@@ -40,26 +39,14 @@ export function RunCompleteScreen({
   stageAfterRun,
   onTakePhoto,
   onViewRecord,
+  onClose,
 }: Props) {
   const shouldHatch = stageBeforeRun === 'egg' && distanceKm > 0;
-  const [characterUrl, setCharacterUrl] = useState<string | null>(null);
+  const grewUp = !shouldHatch && stageAfterRun !== stageBeforeRun;
   const [hatched, setHatched] = useState(!shouldHatch);
   const eggShake = useRef(new Animated.Value(0)).current;
   const characterScale = useRef(new Animated.Value(shouldHatch ? 0 : 1)).current;
   const rotate = eggShake.interpolate({inputRange: [-1, 0, 1], outputRange: ['-8deg', '0deg', '8deg']});
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchCharacterImageUrl(characterType, stageAfterRun)
-      .then(url => {
-        if (!cancelled) setCharacterUrl(url);
-      })
-      .catch(() => undefined);
-
-    return () => {
-      cancelled = true;
-    };
-  }, [characterType, stageAfterRun]);
 
   useEffect(() => {
     if (!shouldHatch) {
@@ -82,20 +69,16 @@ export function RunCompleteScreen({
     });
   }, [shouldHatch, eggShake, characterScale]);
 
-  const title = shouldHatch
-    ? hatched
-      ? `${petName} 탄생!`
-      : '알이 흔들려요!'
-    : '잘 달렸어요!';
-  const subtitle = shouldHatch
-    ? hatched
-      ? '첫 달리기를 축하해요. 이제 함께 자라요!'
-      : '첫 달리기 덕분에 알이 깨어나고 있어요.'
-    : `${petName}도 한 뼘 더 자랐어요.`;
+  const {title, subtitle} = getHeadline({shouldHatch, hatched, grewUp, petName});
 
   return (
     <SafeAreaView style={styles.screen}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F6FEFF" />
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
+      <View style={styles.header}>
+        <TouchableOpacity activeOpacity={0.75} disabled={!hatched} onPress={onClose} style={styles.closeButton} accessibilityLabel="닫기">
+          <Text style={styles.closeText}>✕</Text>
+        </TouchableOpacity>
+      </View>
       <Text style={styles.title}>{title}</Text>
       <Text style={styles.subtitle}>{subtitle}</Text>
 
@@ -108,8 +91,8 @@ export function RunCompleteScreen({
         {hatched && (
           <>
             {shouldHatch && <Image source={images.brokenEgg} resizeMode="contain" style={styles.brokenEgg} />}
-            <Animated.View style={[styles.characterWrap, {transform: [{scale: characterScale}]}]}>
-              {characterUrl && <Image source={{uri: characterUrl}} resizeMode="contain" style={styles.character} />}
+            <Animated.View style={{transform: [{scale: characterScale}]}}>
+              <CharacterView type={characterType} stage={stageAfterRun} motion="idle" size={230} />
             </Animated.View>
           </>
         )}
@@ -117,19 +100,38 @@ export function RunCompleteScreen({
 
       <View style={styles.statsCard}>
         <Stat label="총 거리" value={`${distanceKm.toFixed(2)}km`} />
-        <Stat label="평균 페이스" value={formatPace(avgPaceSec)} />
+        <Stat label="평균 페이스" value={avgPaceSec > 0 ? formatPace(avgPaceSec) : `-'--"`} />
         <Stat label="소요 시간" value={formatDuration(durationSec)} />
         <Stat label="칼로리" value={`${calories}kcal`} />
       </View>
 
-      <TouchableOpacity activeOpacity={0.86} disabled={!hatched} onPress={onTakePhoto} style={[styles.primaryButton, !hatched && styles.buttonDisabled]}>
-        <Text style={styles.primaryButtonText}>달료랑 사진 찍기</Text>
-      </TouchableOpacity>
-      <TouchableOpacity activeOpacity={0.8} disabled={!hatched} onPress={onViewRecord} style={styles.secondaryButton}>
-        <Text style={styles.secondaryButtonText}>운동 기록 보기</Text>
+      {onTakePhoto && (
+        <TouchableOpacity activeOpacity={0.86} disabled={!hatched} onPress={onTakePhoto} style={[styles.primaryButton, !hatched && styles.buttonDisabled]}>
+          <Text style={styles.primaryButtonText}>달료랑 사진 찍기</Text>
+        </TouchableOpacity>
+      )}
+      <TouchableOpacity
+        activeOpacity={0.8}
+        disabled={!hatched}
+        onPress={onViewRecord}
+        style={onTakePhoto ? styles.secondaryButton : [styles.primaryButton, !hatched && styles.buttonDisabled]}>
+        <Text style={onTakePhoto ? styles.secondaryButtonText : styles.primaryButtonText}>운동 기록 보기</Text>
       </TouchableOpacity>
     </SafeAreaView>
   );
+}
+
+function getHeadline({shouldHatch, hatched, grewUp, petName}: {shouldHatch: boolean; hatched: boolean; grewUp: boolean; petName: string}) {
+  if (shouldHatch && !hatched) {
+    return {title: '알이 흔들려요!', subtitle: '첫 달리기 덕분에 알이 깨어나고 있어요.'};
+  }
+  if (shouldHatch) {
+    return {title: `${petName} 탄생!`, subtitle: '첫 달리기를 축하해요. 이제 함께 자라요!'};
+  }
+  if (grewUp) {
+    return {title: `${petName} 성장!`, subtitle: '꾸준히 달린 덕분에 한 단계 자랐어요.'};
+  }
+  return {title: '잘 달렸어요!', subtitle: `${petName}도 한 뼘 더 자랐어요.`};
 }
 
 function Stat({label, value}: {label: string; value: string}) {
@@ -142,21 +144,22 @@ function Stat({label, value}: {label: string; value: string}) {
 }
 
 const styles = StyleSheet.create({
-  screen: {flex: 1, backgroundColor: '#F6FEFF', paddingHorizontal: 28, paddingTop: 40, paddingBottom: 30},
-  title: {color: TEXT, fontSize: 28, fontWeight: '900', lineHeight: 38, textAlign: 'center'},
-  subtitle: {color: MUTED, fontSize: 16, fontWeight: '700', textAlign: 'center', marginTop: 8},
+  screen: {flex: 1, backgroundColor: colors.background, paddingHorizontal: spacing.xxl - 4, paddingBottom: 30},
+  header: {height: 52, alignItems: 'flex-end', justifyContent: 'center'},
+  closeButton: {width: 44, height: 44, alignItems: 'center', justifyContent: 'center'},
+  closeText: {color: colors.text, fontSize: 22, fontWeight: '700'},
+  title: {...typography.title, color: colors.text, textAlign: 'center'},
+  subtitle: {...typography.body, color: colors.textMuted, textAlign: 'center', marginTop: spacing.sm},
   stage: {flex: 1, alignItems: 'center', justifyContent: 'center'},
   egg: {width: 200, height: 232},
   brokenEgg: {position: 'absolute', width: 200, height: 144, bottom: 40},
-  characterWrap: {alignItems: 'center', justifyContent: 'center'},
-  character: {width: 230, height: 230},
-  statsCard: {flexDirection: 'row', flexWrap: 'wrap', borderRadius: 24, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E4ECE9', paddingVertical: 8, marginBottom: 20},
-  stat: {width: '50%', alignItems: 'center', paddingVertical: 12},
-  statValue: {color: TEXT, fontSize: 22, fontWeight: '900'},
-  statLabel: {color: MUTED, fontSize: 13, fontWeight: '800', marginTop: 4},
-  primaryButton: {height: 60, borderRadius: 20, backgroundColor: MINT, alignItems: 'center', justifyContent: 'center', shadowColor: MINT, shadowOpacity: 0.25, shadowRadius: 16, shadowOffset: {width: 0, height: 8}, elevation: 6},
-  primaryButtonText: {color: '#FFFFFF', fontSize: 19, fontWeight: '900'},
+  statsCard: {flexDirection: 'row', flexWrap: 'wrap', borderRadius: radius.xl, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, paddingVertical: spacing.sm, marginBottom: spacing.lg + 4},
+  stat: {width: '50%', alignItems: 'center', paddingVertical: spacing.md},
+  statValue: {color: colors.text, fontSize: 22, fontWeight: '900'},
+  statLabel: {...typography.caption, color: colors.textMuted, marginTop: spacing.xs},
+  primaryButton: {height: 60, borderRadius: radius.lg, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', ...shadow.button},
+  primaryButtonText: {color: colors.textOnPrimary, fontSize: 19, fontWeight: '900'},
   buttonDisabled: {opacity: 0.45},
-  secondaryButton: {height: 54, alignItems: 'center', justifyContent: 'center', marginTop: 8},
-  secondaryButtonText: {color: '#37AE86', fontSize: 16, fontWeight: '900'},
+  secondaryButton: {height: 54, alignItems: 'center', justifyContent: 'center', marginTop: spacing.sm},
+  secondaryButtonText: {color: colors.primaryStrong, fontSize: 16, fontWeight: '900'},
 });
