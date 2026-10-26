@@ -104,7 +104,7 @@ export const storage = getStorage(app)
 ### F-AUTH-01 · 시작 화면
 
 - 달료 로고 + 서브타이틀 "함께 달리는 즐거움!"
-- 캐릭터(펭귄+토끼) 달리기 애니메이션
+- 캐릭터(오리+토끼) 달리기 배경 (`bg-day.png` / `bg-dusk.png`, 시간대별 전환)
 - "시작하기" 버튼 → F-AUTH-02
 
 ### F-AUTH-02 · 로그인 화면
@@ -137,7 +137,7 @@ await createUserWithEmailAndPassword(auth, email, password)
 STEP 1/4  반가워요! → 닉네임 입력
 STEP 2/4  신체 정보 → 키(cm) / 몸무게(kg) / 성별
 STEP 3/4  내 지역 → 사투리 선택
-STEP 4/4  달이 탄생! → 캐릭터 알 증정 연출 → F-CHAR-01
+STEP 4/4  알 받기 → 알이 떨어져 통통 튀는 증정 연출 → F-CHAR-01 (부화는 F-CHAR-02)
 ```
 
 ```ts
@@ -251,6 +251,7 @@ await updateDoc(doc(db, 'users', uid), {
 ```
 총 거리 | 평균 페이스 | 소요 시간 | 칼로리
 달료 완주 리액션 애니메이션 + t('run.complete') 사투리
+  (달리기 전 stage가 'egg'면 알 부화 연출로 대체 → F-CHAR-02)
 [달료랑 사진 찍기] → F-CAM-01
 [운동 기록 보기]
 ```
@@ -359,11 +360,33 @@ const unsubscribe = onSnapshot(
 
 ## CHAR — 캐릭터 시스템
 
+### 캐릭터 에셋
+
+Firebase Storage `characters/{type}/{type}_{S|M|L}.png` — 37종 × 3단계
+
+```
+bear capybara cat cheetah chick chicken cow crocodile deer dog duck eagle
+elephant fox frog giraffe goldpig gorilla hamster hippo horse koala lion
+monkey ostrich otter penguin pig platypus quokka rabbit raccoon sheep
+sparrow squirrel tiger zebra
+```
+
+| 단계 | 이미지 | 조건 (total_km) |
+|------|--------|-----------------|
+| `egg` | 로컬 `egg.png` (부화 시 `broken_egg.png`) | 0 (첫 달리기 전) |
+| `baby` | `{type}_S.png` — 아기, 기어가기 | 첫 달리기 완료 (> 0) |
+| `child` | `{type}_M.png` — 어린이, 깡충 뛰기 | 50 이상 |
+| `runner` | `{type}_L.png` — 러너, 전력 질주 | 200 이상 |
+
+- `goldpig`는 특별 캐릭터 → 가입 시 지급 대상에서 제외 (뽑기·보상용)
+- Storage 규칙: 로그인 유저 읽기만 허용, 업로드는 콘솔에서만
+
 ### F-CHAR-01 · 알 지급 (온보딩)
 
 ```ts
-const types = ['penguin', 'rabbit', 'bear', 'fox']
-const type = types[Math.floor(Math.random() * types.length)]
+// CHARACTER_TYPES(37종)에서 goldpig 제외 후 랜덤
+const starters = CHARACTER_TYPES.filter(t => t !== 'goldpig')
+const type = starters[Math.floor(Math.random() * starters.length)]
 
 await setDoc(doc(db, 'users', uid, 'character', uid), {
   stage: 'egg',
@@ -378,8 +401,10 @@ await setDoc(doc(db, 'users', uid, 'character', uid), {
 
 ### F-CHAR-02 · 부화 연출
 
-- 첫 달리기 완료 후 Lottie 알 깨지는 애니메이션
-- `character.stage = 'sprout'` 업데이트
+- 위치: 운동 완료 화면 (`src/screens/run/RunCompleteScreen.tsx`), 온보딩에서는 알만 증정
+- 조건: 달리기 전 `stage === 'egg'` 이고 이번 거리 > 0
+- 연출: 알 흔들림 → `broken_egg.png` + `{type}_S.png` 튀어나옴 (부화 끝나야 버튼 활성)
+- `character.stage = 'baby'` 업데이트는 서버(Cloud Function)에서 처리 — 클라이언트는 character 수정 불가(Security Rules)
 - 캐릭터 타입 공개 + 이름 짓기 (선택)
 
 ### F-CHAR-03 · 속도 연동 모션
@@ -405,12 +430,11 @@ const itemMultiplier = userItem?.multiplier ?? 1.0
 const streakBonus = getStreakBonus(consecutiveDays)  // 최대 1.5
 const expEarned = Math.floor(baseExp * itemMultiplier * streakBonus)
 
-// 성장 단계 (total_km 기준)
-function getStage(totalKm: number) {
-  if (totalKm >= 500) return 'champion'
-  if (totalKm >= 200) return 'runner'
-  if (totalKm >= 50)  return 'baby'
-  if (totalKm >= 10)  return 'sprout'
+// 성장 단계 (total_km 기준) — src/utils/exp.tsx
+function getStage(totalKm: number): CharacterStage {
+  if (totalKm >= 200) return 'runner'  // _L
+  if (totalKm >= 50)  return 'child'   // _M
+  if (totalKm > 0)    return 'baby'    // _S (첫 달리기에서 부화)
   return 'egg'
 }
 
@@ -598,7 +622,7 @@ const runsSnap = await getDocs(query(
 </Camera>
 ```
 
-성장 단계별 이펙트: 새싹~아기 기본 / 러너 바람선 / 챔피언 파티클
+성장 단계별 이펙트: 아기~어린이 기본 / 러너 바람선
 
 ### F-CAM-02 · 외부 공유
 

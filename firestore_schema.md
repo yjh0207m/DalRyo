@@ -70,8 +70,10 @@ parks/{parkId}
 
 ```js
 {
-  stage:          'egg' | 'sprout' | 'baby' | 'runner' | 'champion' | 'stone',
-  character_type: string,    // 'penguin' | 'rabbit' | 'bear' | 'fox' (가입 시 랜덤)
+  stage:          'egg' | 'baby' | 'child' | 'runner',
+                             // egg: 로컬 egg.png / baby·child·runner: Storage {type}_S·M·L.png
+                             // 돌 변신은 stage가 아니라 users.is_frozen으로 표현
+  character_type: string,    // Storage characters/ 폴더명 37종 중 하나 (가입 시 goldpig 제외 랜덤)
   exp:            number,    // 현재 경험치
   stat_stamina:   number,    // 체력 스탯 (0~100)
   stat_speed:     number,    // 속도 스탯 (0~100)

@@ -1,8 +1,18 @@
 import type {FirebaseFirestoreTypes} from '@react-native-firebase/firestore';
 
-export type CharacterType = 'penguin' | 'rabbit' | 'duck';
+// Firebase Storage characters/{type}/ 폴더 이름과 1:1 대응
+export const CHARACTER_TYPES = [
+  'bear', 'capybara', 'cat', 'cheetah', 'chick', 'chicken', 'cow', 'crocodile',
+  'deer', 'dog', 'duck', 'eagle', 'elephant', 'fox', 'frog', 'giraffe',
+  'goldpig', 'gorilla', 'hamster', 'hippo', 'horse', 'koala', 'lion', 'monkey',
+  'ostrich', 'otter', 'penguin', 'pig', 'platypus', 'quokka', 'rabbit', 'raccoon',
+  'sheep', 'sparrow', 'squirrel', 'tiger', 'zebra',
+] as const;
 
-export type CharacterStage = 'egg' | 'sprout' | 'baby' | 'runner' | 'champion';
+export type CharacterType = (typeof CHARACTER_TYPES)[number];
+
+// egg는 로컬 egg.png, baby/child/runner는 Storage의 {type}_S/M/L.png
+export type CharacterStage = 'egg' | 'baby' | 'child' | 'runner';
 
 export type CharacterDocument = {
   uid: string;

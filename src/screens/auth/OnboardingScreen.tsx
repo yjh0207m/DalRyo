@@ -18,7 +18,6 @@ import type {Dialect, Gender, OnboardingProfileInput} from '../../types/user.typ
 
 const images = {
   egg: require('../../assets/images/egg.png'),
-  brokenEgg: require('../../assets/images/broken_egg.png'),
 };
 
 type Props = {
@@ -65,12 +64,14 @@ export function OnboardingScreen({onBack, onDone}: Props) {
   const [weightKg, setWeightKg] = useState('');
   const [selectedRegion, setSelectedRegion] = useState(regions[0]);
   const [characterType, setCharacterType] = useState<CharacterType>(() => pickStarterCharacter());
-  const [hatched, setHatched] = useState(false);
+  const [eggReceived, setEggReceived] = useState(false);
   const [isSaving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const eggShake = useRef(new Animated.Value(0)).current;
-  const characterScale = useRef(new Animated.Value(0)).current;
-  const rotate = eggShake.interpolate({inputRange: [-1, 0, 1], outputRange: ['-8deg', '0deg', '8deg']});
+  const eggDrop = useRef(new Animated.Value(0)).current;
+  const eggWobble = useRef(new Animated.Value(0)).current;
+  const eggTranslateY = eggDrop.interpolate({inputRange: [0, 1], outputRange: [-260, 0]});
+  const eggScale = eggDrop.interpolate({inputRange: [0, 0.7, 1], outputRange: [0.6, 1.08, 1]});
+  const rotate = eggWobble.interpolate({inputRange: [-1, 0, 1], outputRange: ['-4deg', '0deg', '4deg']});
 
   const goNext = () => setStep(current => Math.min(current + 1, 4) as Step);
   const goBack = () => {
@@ -81,27 +82,28 @@ export function OnboardingScreen({onBack, onDone}: Props) {
     setStep(current => Math.max(current - 1, 1) as Step);
   };
 
-  const runHatchAnimation = () => {
-    setHatched(false);
-    characterScale.setValue(0);
-    eggShake.setValue(0);
+  // 알이 위에서 떨어져 통통 튄 뒤 살짝 흔들림. 부화는 첫 달리기 완료 화면에서
+  const runEggGiftAnimation = () => {
+    setEggReceived(false);
+    eggDrop.setValue(0);
+    eggWobble.setValue(0);
     Animated.sequence([
+      Animated.spring(eggDrop, {toValue: 1, friction: 5, tension: 60, useNativeDriver: true}),
       Animated.loop(
         Animated.sequence([
-          Animated.timing(eggShake, {toValue: 1, duration: 80, useNativeDriver: true}),
-          Animated.timing(eggShake, {toValue: -1, duration: 80, useNativeDriver: true}),
-          Animated.timing(eggShake, {toValue: 0, duration: 80, useNativeDriver: true}),
+          Animated.timing(eggWobble, {toValue: 1, duration: 140, useNativeDriver: true}),
+          Animated.timing(eggWobble, {toValue: -1, duration: 140, useNativeDriver: true}),
+          Animated.timing(eggWobble, {toValue: 0, duration: 140, useNativeDriver: true}),
         ]),
-        {iterations: 5},
+        {iterations: 2},
       ),
-      Animated.timing(characterScale, {toValue: 1, duration: 360, useNativeDriver: true}),
-    ]).start(() => setHatched(true));
+    ]).start(() => setEggReceived(true));
   };
 
-  const openHatchStep = () => {
+  const openEggGiftStep = () => {
     setCharacterType(pickStarterCharacter());
     setStep(4);
-    requestAnimationFrame(runHatchAnimation);
+    requestAnimationFrame(runEggGiftAnimation);
   };
 
   const saveOnboarding = async () => {
@@ -200,23 +202,22 @@ export function OnboardingScreen({onBack, onDone}: Props) {
             ))}
           </View>
           <View style={styles.stepSpacer} />
-          <PrimaryButton label="다음" onPress={openHatchStep} />
+          <PrimaryButton label="다음" onPress={openEggGiftStep} />
         </View>
       )}
       {step === 4 && (
         <View style={styles.hatchContent}>
-          <Text style={styles.stepTitle}>{hatched ? '달료 펫이 태어났어요!' : '알이 흔들려요!'}</Text>
-          <Text style={styles.hatchSubtitle}>{hatched ? '함께 달리며 건강한 습관을 만들어봐요.' : '잠시 후 새로운 달료가 태어나요.'}</Text>
+          <Text style={styles.stepTitle}>{eggReceived ? `${petName.trim()}의 알을\n받았어요!` : '달료 알이 도착했어요!'}</Text>
+          <Text style={styles.hatchSubtitle}>
+            {eggReceived ? '첫 달리기를 마치면 알이 부화해요.' : '어떤 친구가 들어 있을까요?'}
+          </Text>
           <View style={styles.hatchStage}>
-            {!hatched && (
-              <Animated.View style={{transform: [{rotate}]}}>
-                <EggImage size={210} />
-              </Animated.View>
-            )}
-            {hatched && <Image source={images.brokenEgg} resizeMode="contain" style={styles.brokenEgg} />}
+            <Animated.View style={{transform: [{translateY: eggTranslateY}, {scale: eggScale}, {rotate}]}}>
+              <EggImage size={210} />
+            </Animated.View>
           </View>
           {!!errorMessage && <Text style={styles.errorText}>{errorMessage}</Text>}
-          <PrimaryButton label={isSaving ? '저장중...' : hatched ? '달리기 시작하기' : '두근두근...'} onPress={saveOnboarding} disabled={!hatched || isSaving} />
+          <PrimaryButton label={isSaving ? '저장중...' : eggReceived ? '달리기 시작하기' : '두근두근...'} onPress={saveOnboarding} disabled={!eggReceived || isSaving} />
         </View>
       )}
     </SafeAreaView>
@@ -275,7 +276,7 @@ function getStepName(step: Step) {
   if (step === 1) return '기본 정보';
   if (step === 2) return '신체 정보';
   if (step === 3) return '내 지역';
-  return '달료 탄생';
+  return '알 받기';
 }
 
 function parseOptionalNumber(value: string) {
@@ -326,8 +327,6 @@ const styles = StyleSheet.create({
   hatchContent: {flex: 1, paddingHorizontal: 32, paddingTop: 50, paddingBottom: 34},
   hatchSubtitle: {color: MUTED, fontSize: 16, fontWeight: '700', marginTop: -12, marginBottom: 36},
   hatchStage: {flex: 1, alignItems: 'center', justifyContent: 'center'},
-  bornCharacter: {position: 'absolute', width: 230, height: 260},
-  brokenEgg: {position: 'absolute', width: 210, height: 150, bottom: 58},
   errorText: {color: '#C95B5B', fontSize: 14, fontWeight: '800', lineHeight: 20, textAlign: 'center', marginBottom: 12},
   wideButton: {height: 58, borderRadius: 10, backgroundColor: MINT, alignItems: 'center', justifyContent: 'center', shadowColor: MINT, shadowOpacity: 0.24, shadowRadius: 16, shadowOffset: {width: 0, height: 8}, elevation: 6},
   wideButtonDisabled: {opacity: 0.45},
