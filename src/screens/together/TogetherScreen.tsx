@@ -239,6 +239,7 @@ export function TogetherScreen({
           petName={character.pet_name}
           stageBeforeRun={character.stage}
           stageAfterRun={character.stage}
+          totalKmBefore={user.total_km}
           wasFrozen={false}
           onViewRecord={() => {
             setResult(null);

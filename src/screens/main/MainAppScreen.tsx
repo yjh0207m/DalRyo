@@ -12,6 +12,7 @@ import {useUnreadNotifications} from '../../hooks/useNotifications';
 import {usePushNotifications} from '../../hooks/usePushNotifications';
 import {GoalValueScreen} from '../run/GoalValueScreen';
 import {RecordScreen} from '../run/RecordScreen';
+import {RunDetailScreen} from '../run/RunDetailScreen';
 import {RunCompleteScreen} from '../run/RunCompleteScreen';
 import {RunningScreen} from '../run/RunningScreen';
 import {RunStartSheet} from '../run/RunStartSheet';
@@ -21,7 +22,7 @@ import {BottomTabBar, type MainTab} from '../../navigation/BottomTabBar';
 import {saveRunRecord} from '../../services/run.service';
 import {colors} from '../../theme';
 import type {CharacterDocument, CharacterStage} from '../../types/character.types';
-import type {RunGoalType} from '../../types/run.types';
+import type {RunDocument, RunGoalType} from '../../types/run.types';
 import type {UserDocument} from '../../types/user.types';
 import {getCharacterStage} from '../../utils/exp';
 import {calculateAveragePace} from '../../utils/pace';
@@ -42,7 +43,9 @@ type RunFlow =
   | {phase: 'setup'; goalType: Exclude<RunGoalType, 'free'>}
   | ({phase: 'running'} & RunStart)
   | ({phase: 'saving'; result: RunResult} & RunStart)
-  | {phase: 'complete'; stageBefore: CharacterStage; stageAfter: CharacterStage; wasFrozen: boolean; result: RunResult};
+  | {phase: 'complete'; stageBefore: CharacterStage; stageAfter: CharacterStage; totalKmBefore: number; wasFrozen: boolean; result: RunResult; run: RunDocument}
+  // 완료 화면의 '기록 보기' → 방금 저장한 달리기의 상세(경로 지도)로 바로 간다
+  | {phase: 'detail'; run: RunDocument};
 
 export function MainAppScreen({user, character}: Props) {
   const [activeTab, setActiveTab] = useState<MainTab>('home');
@@ -80,7 +83,7 @@ export function MainAppScreen({user, character}: Props) {
     setRunFlow({...flow, phase: 'saving', result});
 
     try {
-      await saveRunRecord({
+      const run = await saveRunRecord({
         goalType: flow.goal.goalType,
         goalValue: flow.goal.goalValue,
         startedAt: result.startedAt,
@@ -94,8 +97,10 @@ export function MainAppScreen({user, character}: Props) {
         phase: 'complete',
         stageBefore: flow.stageBefore,
         stageAfter: getCharacterStage(flow.totalKmBefore + result.distanceKm),
+        totalKmBefore: flow.totalKmBefore,
         wasFrozen: flow.wasFrozen,
         result,
+        run,
       });
     } catch {
       Alert.alert('기록 저장에 실패했어요', '네트워크를 확인하고 다시 시도해 주세요.', [
@@ -149,18 +154,25 @@ export function MainAppScreen({user, character}: Props) {
       );
     }
 
+    if (runFlow.phase === 'detail') {
+      // 상세에서 뒤로 가면 기록 탭(달력)에 도착한다
+      return <RunDetailScreen run={runFlow.run} character={character} onBack={() => closeRunFlow('records')} />;
+    }
+
     return (
       <RunCompleteScreen
         distanceKm={runFlow.result.distanceKm}
         durationSec={runFlow.result.durationSec}
         avgPaceSec={calculateAveragePace(runFlow.result.durationSec, runFlow.result.distanceKm)}
         calories={runFlow.result.calories}
+        route={runFlow.result.route}
         characterType={character.character_type}
         petName={character.pet_name}
         stageBeforeRun={runFlow.stageBefore}
         stageAfterRun={runFlow.stageAfter}
+        totalKmBefore={runFlow.totalKmBefore}
         wasFrozen={runFlow.wasFrozen}
-        onViewRecord={() => closeRunFlow('records')}
+        onViewRecord={() => setRunFlow({phase: 'detail', run: runFlow.run})}
         onClose={() => closeRunFlow('home')}
       />
     );

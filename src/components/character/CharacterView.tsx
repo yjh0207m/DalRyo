@@ -321,7 +321,8 @@ function useRiveSource(type: CharacterType, stage: CharacterStage, pngOnly: bool
   return bundled ?? (remote?.key === key ? remote.url : null);
 }
 
-function useCharacterSource(type: CharacterType, stage: CharacterStage) {
+// 성장 연출의 실루엣처럼 그림 원본이 필요한 곳에서도 쓴다
+export function useCharacterSource(type: CharacterType, stage: CharacterStage) {
   const [source, setSource] = useState<ImageSourcePropType | null>(null);
 
   useEffect(() => {

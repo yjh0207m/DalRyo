@@ -21,7 +21,20 @@ import {
   Timer,
   type LucideIcon,
 } from 'lucide-react-native';
-import Svg, { Circle, Polyline } from 'react-native-svg';
+import Svg, {
+  Circle,
+  G,
+  Path,
+  Polyline,
+  Rect,
+  Text as SvgText,
+} from 'react-native-svg';
+import {
+  FINISH_COLOR,
+  START_COLOR,
+  labelSides,
+  routeSegments,
+} from '../../utils/routeMap';
 import {
   AppText,
   Badge,
@@ -356,6 +369,11 @@ function RunCard({ run, onOpen }: { run: RunDocument; onOpen: () => void }) {
   const points = projectRunRoute(run.route);
   const start = points[0];
   const end = points[points.length - 1];
+  // 화면 좌표는 y가 아래로 커지므로 [-y, x]로 넘긴다. 미리보기 단위로 40 이내면 겹친다고 본다
+  const sides = labelSides(
+    points.map(point => [-point.y, point.x] as [number, number]),
+    40,
+  );
   return (
     <Card style={styles.runCard}>
       <View style={styles.runHeader}>
@@ -396,39 +414,51 @@ function RunCard({ run, onOpen }: { run: RunDocument; onOpen: () => void }) {
         <View
           style={styles.route}
           accessible
-          accessibilityLabel="GPS에 기록된 달리기 경로. 초록 점은 출발, 진한 점은 도착이에요."
+          accessibilityLabel="GPS에 기록된 달리기 경로. START에서 출발해 FINISH에 도착했어요."
         >
           <AppText variant="label" color={colors.textMuted}>
             나의 달리기 경로
           </AppText>
-          <Svg width="100%" height={160} viewBox="0 0 300 160">
+          {/* 이름표가 잘리지 않도록 위아래로 여백을 더 둔다 */}
+          <Svg width="100%" height={200} viewBox="0 -24 300 208">
             <Polyline
               points={points.map(point => `${point.x},${point.y}`).join(' ')}
               fill="none"
-              stroke={colors.primary}
-              strokeWidth={4}
+              stroke={colors.surface}
+              strokeWidth={9}
               strokeLinecap="round"
               strokeLinejoin="round"
             />
-            <Circle
-              cx={start.x}
-              cy={start.y}
-              r={6}
-              fill={colors.primary}
-              stroke={colors.surface}
-              strokeWidth={2}
+            {routeSegments(
+              points.map(point => [point.x, point.y] as [number, number]),
+            ).map((segment, index) => (
+              <Polyline
+                key={index}
+                points={segment.points.map(([x, y]) => `${x},${y}`).join(' ')}
+                fill="none"
+                stroke={segment.color}
+                strokeWidth={5}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            ))}
+            <RouteTag
+              x={end.x}
+              y={end.y}
+              label="FINISH"
+              color={FINISH_COLOR}
+              below={sides.finish === 'below'}
             />
-            <Circle
-              cx={end.x}
-              cy={end.y}
-              r={6}
-              fill={colors.text}
-              stroke={colors.surface}
-              strokeWidth={2}
+            <RouteTag
+              x={start.x}
+              y={start.y}
+              label="START"
+              color={START_COLOR}
+              below={sides.start === 'below'}
             />
           </Svg>
           <AppText variant="label" color={colors.textMuted}>
-            지형을 생략한 경로 미리보기
+            지형을 생략한 경로 미리보기 · 지도는 상세에서 볼 수 있어요
           </AppText>
         </View>
       ) : (
@@ -472,6 +502,60 @@ function Metric({
         {unit ? ` · ${unit}` : ''}
       </AppText>
     </View>
+  );
+}
+
+// 출발·도착 이름표 (지도 화면의 START/FINISH와 같은 모양). 위치 규칙은 labelSides
+function RouteTag({
+  x,
+  y,
+  label,
+  color,
+  below,
+}: {
+  x: number;
+  y: number;
+  label: string;
+  color: string;
+  below: boolean;
+}) {
+  const width = label.length * 7.4 + 16;
+  const height = 18;
+  const top = below ? y + 10 : y - 10 - height;
+  const tail = below
+    ? `M${x - 5} ${y + 10.5} L${x + 5} ${y + 10.5} L${x} ${y + 5} Z`
+    : `M${x - 5} ${y - 10.5} L${x + 5} ${y - 10.5} L${x} ${y - 5} Z`;
+  return (
+    <G>
+      <Rect
+        x={x - width / 2}
+        y={top}
+        width={width}
+        height={height}
+        rx={6}
+        fill={color}
+      />
+      <Path d={tail} fill={color} />
+      <SvgText
+        x={x}
+        y={top + 12.8}
+        fontSize={10}
+        fontWeight="800"
+        fill="#FFFFFF"
+        textAnchor="middle"
+        letterSpacing={0.4}
+      >
+        {label}
+      </SvgText>
+      <Circle
+        cx={x}
+        cy={y}
+        r={4}
+        fill={color}
+        stroke={colors.surface}
+        strokeWidth={2}
+      />
+    </G>
   );
 }
 
