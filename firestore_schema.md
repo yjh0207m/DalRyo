@@ -144,6 +144,7 @@ stage·exp·스탯은 Cloud Function `onRunCreate`만 갱신 (클라이언트 �
   actor_name: string,        // 복사 (표시용)
   target_id:  string | null, // post_id 또는 room_id
   stage?:     string,        // level_up일 때 새 성장 단계
+  level?:     'warn3' | 'warn5' | 'stone', // stone_warning일 때
   is_read:    boolean,
   created_at: Timestamp
 }
@@ -337,7 +338,7 @@ stage·exp·스탯은 Cloud Function `onRunCreate`만 갱신 (클라이언트 �
 | `onCommentCreate` | comments 도큐먼트 생성 | posts.comment_count +1, 작성자에게 알림 |
 | `onFollowCreate` | follows 도큐먼트 생성 | follower_count/following_count +1, Fan-out 시작, 알림 |
 | `onFollowDelete` | follows 도큐먼트 삭제 | follower_count/following_count -1, 피드 정리 |
-| `stoneScheduler` | 매일 자정 (Cron) | last_run_at 기준 돌 변신 처리 + FCM 알림 |
+| `stoneScheduler` ✅ | 매일 자정 KST (Cron) | last_run_at 기준 3·5일 경고, 7일 돌 변신 + FCM 알림 |
 | `tierCalculator` | 매일 자정 (Cron) | follower_count 기준 influencer_tier 업데이트 |
 
 ---

@@ -25,6 +25,8 @@
 | 카메라 | react-native-vision-camera |
 | 사투리 | i18next + react-i18next |
 | 인앱결제 | react-native-iap |
+| 폰트 | Pretendard (SIL OFL, `android/app/src/main/assets/fonts`, `ios/DalRyoTemp/Fonts`) |
+| 아이콘 | lucide-react-native + react-native-svg |
 | iOS 빌드 | GitHub Actions Mac Runner |
 
 ---
@@ -463,44 +465,82 @@ stat_endurance += Math.floor(durationSec / 60 * 0.2)
 />
 ```
 
-- **현재**: Storage PNG 한 장 + Animated(위아래 흔들림·기울기)로 모션 표현
-- **애니메이션 교체 계획**: 실제로 움직이는 캐릭터는 Rive(`rive-react-native`) 권장
-  — 상태 머신으로 idle/run/sprint 전환, 옷은 뼈대에 붙는 교체 가능한 파츠로 구성.
-  교체 시 `CharacterView` 내부만 바꾸고 화면 코드는 그대로 둔다
+- **현재**: Storage PNG 한 장을 게임식 절차 애니메이션으로 움직인다 (`CharacterView`)
+  - 달리기: 포물선 점프 + 착지 찌그러짐(squash)·상승 늘어남(stretch, 발 기준) + 앞으로 기울기 + 흙먼지(`dust`)
+  - 대기: 숨쉬기, 알은 가끔 좌우로 흔들림
+  - `facing`(좌우 방향), `jumpKey`(값이 바뀔 때 크게 점프)
+- **홈 로비** (`WanderingCharacter`): 2~4초 쉬고 → 아무 곳으로 깡충깡충 이동(방향 전환) → 반복.
+  탭하면 점프 + 하트 + 대사 변경. 알·돌 상태는 돌아다니지 않음
+- **달리기 월드** (`RunningWorld`): 구름·먼 언덕·가까운 땅이 다른 속도로 흐르는 횡스크롤(패럴랙스).
+  흐르는 속도 = 실제 달리기 속도(km/h, 1km/h 단위), 멈추면 월드도 멈춘다
+- **Rive 애니메이션** (`RiveCharacter`, 앱 연결 완료 · 동물별 `.riv` 파일 제작 대기):
+  - Storage `characters/{type}/{type}.riv`가 있으면 그 동물은 Rive로, 없으면 위 PNG 애니메이션으로 그린다
+  - 아트보드 `baby`·`child`·`runner`, 상태 머신 `Character`, 입력 `speed`·`running`·`stone`·`jump`
+  - 파일·아트보드·상태 머신 오류면 PNG로 자동 대체, 그 외 경고는 무시
+  - 걷기 이동·방향·먼지·월드·화면 코드는 그대로 쓰고 몸의 움직임만 Rive가 맡는다
+  - 제작 규격: `docs/rive-character-spec.md`
 - **꾸미기 슬롯**: `back`(몸 뒤) → 몸 → `bottom` → `top` → `shoes` → `hat` → `accessory`
 - **PNG 레이어 규칙**: 옷 이미지는 각 동물·단계의 몸 이미지와 같은 캔버스 크기·기준점으로 제작
-  (동물 37종 × 3단계마다 체형이 달라 공용 옷 1장으로는 맞지 않음 → Rive 전환 시 해결)
+  (동물 37종 × 3단계마다 체형이 달라 공용 옷 1장으로는 맞지 않음 → Rive에서는 슬롯별 교체 이미지 에셋으로 해결)
 - **데이터**: `character.equipped = {hat: itemId, ...}`,
   보유 아이템은 `users/{uid}/inventory/{itemId}` (서버만 쓰기) — firestore_schema 참고
 - **디자인 토큰**: 색·간격·모서리·글자 크기는 `src/theme/index.ts`에서만 정의.
   새 화면은 토큰을 쓰고, 리디자인은 토큰부터 바꾼다
+- **캐릭터 연출**: 발밑 그림자(`grounded`, 뛰면 작아짐), 화면별로 연한 초록 원·카드 배경 위에 둔다
+
+### 디자인 시스템
+
+| 항목 | 규칙 |
+|---|---|
+| 색 | 배경 중성 오프화이트(`background`), 브랜드 초록(`primary`)은 누를 수 있는 것·진행 상태에만. 따뜻한 색(`accent`)은 경고·일시정지 같은 감정 신호에만 |
+| 글자 | Pretendard. `AppText`의 variant로만 지정 (display·title·heading·subheading·body·caption·label·number). 커스텀 폰트에 `fontWeight`를 같이 주지 않는다 |
+| 아이콘 | lucide 선 아이콘만 사용. 유니코드 기호(⌂ ✧ ⌕ 등)·이모지로 아이콘을 대신하지 않는다 |
+| 깊이 | 그림자는 최소(`shadow.card`), 영역은 얇은 선으로 나눈다 |
+| 공용 컴포넌트 | `src/components/ui` — `AppText`, `Button`(primary/secondary/ghost), `IconButton`, `Card`(surface/soft/warm/stone), `Badge`, `ProgressBar` |
+| 하단 탭 | `src/navigation/BottomTabBar.tsx` — 가운데 달리기 버튼은 탭이 아니라 행동이라 크게 띄우고 내 캐릭터를 보여 준다 |
+| 무드 | "런닝 + 게임". 맑은 하늘 + 민트 + 초원 월드. 장면은 `src/components/scene` (`RunningWorld` 횡스크롤 월드, `MeadowScene` 초원, `IslandScene` 풀밭 섬) |
+| 게임 UI | 입체 버튼(아래 턱이 있고 누르면 눌림) — `Button`, 탭바 가운데 달리기 버튼. HUD — `src/components/game/Hud.tsx` (레벨 배지, 두꺼운 경험치 바, 연속 기록 칩) |
+
+### 화면 구성 (Figma "달료 UI 구성" 반영)
+
+Figma는 구조·기능 참고용이고, 시각 디자인은 위 디자인 시스템으로 다듬어 적용한다.
+
+| 영역 | 구성 |
+|---|---|
+| 하단 탭 | 홈 · 성장 · (달리기) · 커뮤니티 · 기록 |
+| 헤더 | `ScreenHeader` — 왼쪽은 페이지마다(홈은 로고, 나머지는 제목), 오른쪽 알림·설정 고정. 설정 → 마이 페이지 |
+| 홈 (게임 로비) | 위: 캐릭터가 돌아다니는 월드 + HUD(플레이어 카드: 레벨 배지·이름·경험치 바, 알림·설정, 연속 기록 칩). 아래 패널: 달리기 시작(입체 버튼) → 오늘 기록 → 이번 주 활동 |
+| 달리기 시작 | 탭바 가운데 버튼·홈 버튼 → 하단 시트(`RunStartSheet`) 2×2: 자유 달리기는 바로 시작, 시간·거리·칼로리는 목표 값 화면(`GoalValueScreen`: 큰 숫자 + ± + 자주 쓰는 값) |
+| 달리기 | 민트 타이머 → 기록 카드 → 목표 진행 → 실제 속도로 흐르는 횡스크롤 월드 위를 달리는 캐릭터(흙먼지) + 원형 조작 버튼 |
+| 운동 완료 | 같은 초원에서 부화·완주 리액션, 기록 카드가 풀밭 위에 놓임 |
+| 성장 | 누적·최근 7일·EXP 요약 → 최근 7일 거리 막대그래프 → 캐릭터 스탯 → AI 코치(준비 중) |
+| 마이 | 프로필 + 꾸미기·마이룸·아이템·설정 메뉴 |
+
+리디자인 적용 완료: 하단 탭, 헤더, 홈, 달리기 시작 시트, 목표 값, 달리기, 운동 완료, 성장, 마이.
+아직 예전 스타일: 시작(Splash), 로그인, 온보딩, 기록, 커뮤니티
 
 ### F-CHAR-05 · 돌 변신 스케줄러 (Cloud Function)
 
-```ts
-// functions/src/stoneScheduler.ts
-export const stoneScheduler = onSchedule('every day 00:00', async () => {
-  const now = Date.now()
-  const usersSnap = await db.collection('users')
-    .where('is_frozen', '==', false)
-    .get()
+**`functions/src/stoneScheduler.ts`** — 매일 00:00 KST, 리전 asia-northeast3
 
-  for (const userDoc of usersSnap.docs) {
-    const user = userDoc.data()
-    if (!user.last_run_at) continue
-    const daysSince = (now - user.last_run_at.toMillis()) / 86400000
+| 마지막 달리기 후 | 처리 |
+|---|---|
+| 3일째 | 경고 알림 (`warn3`) |
+| 5일째 | 경고 알림 (`warn5`) |
+| 7일 이상 | `users.is_frozen = true` + 돌 변신 알림 (`stone`) |
 
-    if (daysSince >= 7) {
-      await userDoc.ref.update({ is_frozen: true })
-      await sendFCM(user.fcm_token, getMsg(user.dialect, 'stoneFull'))
-    } else if (daysSince >= 5) {
-      await sendFCM(user.fcm_token, getMsg(user.dialect, 'stoneWarning5'))
-    } else if (daysSince >= 3) {
-      await sendFCM(user.fcm_token, getMsg(user.dialect, 'stoneWarning3'))
-    }
-  }
-})
-```
+- 경고는 **정확히 3일·5일째에만** 보낸다 (매일 반복 발송 방지). 돌이 되면 이후엔 대상에서 빠진다
+- `users.last_run_at <= 3일 전` 단일 필드 쿼리 (복합 인덱스 불필요), `is_frozen`은 코드에서 거름
+- FCM 푸시 + `notifications`에 `stone_warning`(level) 생성. 문구는 README 5-8 사투리 표 사용
+  (서울·경기·강원은 표준어, 5일 경고는 아직 표준어만)
+- 해동: 달리기 기록이 저장되면 `onRunCreate`가 `is_frozen = false`
+- 규칙(`getStoneLevel`, `getStoneNotice`)은 `functions/src/growth.ts`, 앱은 `src/utils/exp.tsx`
+
+**앱 표시**
+
+- 홈: 3일·5일 경고 배너, 7일 이상(또는 `is_frozen`)이면 캐릭터 `motion="stone"` + 돌 배너
+- 마이페이지: "돌 변신 중 🪨"
+- 운동 완료: 돌 상태에서 달렸으면 "해동 완료!" 문구
 
 ---
 
@@ -816,7 +856,7 @@ const postsSnap = await getDocs(query(
 | `onCommentCreate` | comments 생성 | comment_count +1, 작성자 알림 |
 | `onFollowCreate` | follows 생성 | 카운트 +1, Fan-out 시작, 알림 |
 | `onFollowDelete` | follows 삭제 | 카운트 -1, 피드 정리 |
-| `stoneScheduler` | 매일 자정 | 돌 변신 처리 + FCM 알림 |
+| `stoneScheduler` ✅ | 매일 자정 (KST) | 3·5일 경고, 7일 돌 변신 + FCM 알림 |
 | `tierCalculator` | 매일 자정 | 인플루언서 등급 업데이트 |
 
 ---

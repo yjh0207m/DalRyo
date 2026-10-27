@@ -1,13 +1,17 @@
 import React, {useState} from 'react';
-import {ActivityIndicator, Alert, Image, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {ActivityIndicator, Alert, StatusBar, StyleSheet, View} from 'react-native';
 import {CommunityScreen} from '../community/CommunityScreen';
+import {GrowthScreen} from '../growth/GrowthScreen';
 import {HomeScreen} from '../home/HomeScreen';
 import {MyPageScreen} from '../profile/MyPageScreen';
-import {GoalSetScreen} from '../run/GoalSetScreen';
+import {GoalValueScreen} from '../run/GoalValueScreen';
 import {RecordScreen} from '../run/RecordScreen';
 import {RunCompleteScreen} from '../run/RunCompleteScreen';
 import {RunningScreen} from '../run/RunningScreen';
+import {RunStartSheet} from '../run/RunStartSheet';
 import type {RunResult} from '../../hooks/useRunSession';
+import {AppText} from '../../components/ui';
+import {BottomTabBar, type MainTab} from '../../navigation/BottomTabBar';
 import {saveRunRecord} from '../../services/run.service';
 import {colors} from '../../theme';
 import type {CharacterDocument, CharacterStage} from '../../types/character.types';
@@ -15,12 +19,6 @@ import type {RunGoalType} from '../../types/run.types';
 import type {UserDocument} from '../../types/user.types';
 import {getCharacterStage} from '../../utils/exp';
 import {calculateAveragePace} from '../../utils/pace';
-
-const images = {
-  avatar: require('../../assets/images/dalryo-avatar.png'),
-};
-
-type MainTab = 'home' | 'community' | 'run' | 'records' | 'my';
 
 type Props = {
   user: UserDocument | null;
@@ -31,25 +29,37 @@ type RunGoal = {goalType: RunGoalType; goalValue: number | null};
 
 // 달리기 중에는 바텀 탭을 숨기고 전체 화면으로 진행한다.
 // 시작 시점의 단계·누적 거리를 들고 다녀야 서버 반영 전에도 부화/성장 여부를 판단할 수 있다
-type RunFlow =
-  | {phase: 'running'; goal: RunGoal; stageBefore: CharacterStage; totalKmBefore: number}
-  | {phase: 'saving'; goal: RunGoal; stageBefore: CharacterStage; totalKmBefore: number; result: RunResult}
-  | {phase: 'complete'; stageBefore: CharacterStage; stageAfter: CharacterStage; result: RunResult};
+type RunStart = {goal: RunGoal; stageBefore: CharacterStage; totalKmBefore: number; wasFrozen: boolean};
 
-const MINT = colors.primary;
+type RunFlow =
+  // 시간·거리·칼로리 목표는 값을 고르는 화면을 먼저 거친다
+  | {phase: 'setup'; goalType: Exclude<RunGoalType, 'free'>}
+  | ({phase: 'running'} & RunStart)
+  | ({phase: 'saving'; result: RunResult} & RunStart)
+  | {phase: 'complete'; stageBefore: CharacterStage; stageAfter: CharacterStage; wasFrozen: boolean; result: RunResult};
 
 export function MainAppScreen({user, character}: Props) {
   const [activeTab, setActiveTab] = useState<MainTab>('home');
   const [runFlow, setRunFlow] = useState<RunFlow | null>(null);
+  const [runSheetOpen, setRunSheetOpen] = useState(false);
 
-  const openRunGoal = () => setActiveTab('run');
+  const openRunSheet = () => setRunSheetOpen(true);
+
+  const selectGoal = (goalType: RunGoalType) => {
+    setRunSheetOpen(false);
+    if (goalType === 'free') {
+      startRun({goalType, goalValue: null});
+      return;
+    }
+    setRunFlow({phase: 'setup', goalType});
+  };
 
   const startRun = (goal: RunGoal) => {
     if (!user || !character) {
       Alert.alert('잠시만요', '캐릭터 정보를 불러오는 중이에요. 잠시 후 다시 시도해 주세요.');
       return;
     }
-    setRunFlow({phase: 'running', goal, stageBefore: character.stage, totalKmBefore: user.total_km});
+    setRunFlow({phase: 'running', goal, stageBefore: character.stage, totalKmBefore: user.total_km, wasFrozen: user.is_frozen});
   };
 
   const saveRun = async (flow: Extract<RunFlow, {phase: 'running' | 'saving'}>, result: RunResult) => {
@@ -70,6 +80,7 @@ export function MainAppScreen({user, character}: Props) {
         phase: 'complete',
         stageBefore: flow.stageBefore,
         stageAfter: getCharacterStage(flow.totalKmBefore + result.distanceKm),
+        wasFrozen: flow.wasFrozen,
         result,
       });
     } catch {
@@ -86,6 +97,19 @@ export function MainAppScreen({user, character}: Props) {
   };
 
   if (runFlow && character) {
+    if (runFlow.phase === 'setup') {
+      return (
+        <GoalValueScreen
+          goalType={runFlow.goalType}
+          onBack={() => {
+            setRunFlow(null);
+            setRunSheetOpen(true);
+          }}
+          onStart={value => startRun({goalType: runFlow.goalType, goalValue: value})}
+        />
+      );
+    }
+
     if (runFlow.phase === 'running') {
       return (
         <RunningScreen
@@ -103,8 +127,10 @@ export function MainAppScreen({user, character}: Props) {
     if (runFlow.phase === 'saving') {
       return (
         <View style={styles.savingScreen}>
-          <ActivityIndicator color={MINT} size="large" />
-          <Text style={styles.savingText}>기록 저장 중...</Text>
+          <ActivityIndicator color={colors.primary} size="large" />
+          <AppText variant="subheading" color={colors.textMuted} style={styles.savingText}>
+            기록 저장 중
+          </AppText>
         </View>
       );
     }
@@ -119,72 +145,34 @@ export function MainAppScreen({user, character}: Props) {
         petName={character.pet_name}
         stageBeforeRun={runFlow.stageBefore}
         stageAfterRun={runFlow.stageAfter}
+        wasFrozen={runFlow.wasFrozen}
         onViewRecord={() => closeRunFlow('records')}
         onClose={() => closeRunFlow('home')}
       />
     );
   }
 
+  const header = {onNotificationPress: () => undefined, onSettingsPress: () => setActiveTab('my')};
+
   return (
     <View style={styles.screen}>
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
       <View style={styles.body}>
-        {activeTab === 'home' && <HomeScreen user={user} onRunPress={openRunGoal} onNotificationPress={() => undefined} />}
+        {activeTab === 'home' && <HomeScreen user={user} character={character} onRunPress={openRunSheet} {...header} />}
+        {activeTab === 'growth' && <GrowthScreen user={user} character={character} {...header} />}
         {activeTab === 'community' && <CommunityScreen />}
-        {activeTab === 'run' && (
-          <GoalSetScreen onClose={() => setActiveTab('home')} onStart={(goalType, goalValue) => startRun({goalType, goalValue})} />
-        )}
         {activeTab === 'records' && <RecordScreen />}
-        {activeTab === 'my' && <MyPageScreen user={user} />}
+        {activeTab === 'my' && <MyPageScreen user={user} character={character} onBack={() => setActiveTab('home')} />}
       </View>
-      <BottomNav activeTab={activeTab} onChange={setActiveTab} />
+      <BottomTabBar activeTab={activeTab} onChange={tab => (tab === 'run' ? openRunSheet() : setActiveTab(tab))} />
+      <RunStartSheet visible={runSheetOpen} onClose={() => setRunSheetOpen(false)} onSelect={selectGoal} />
     </View>
-  );
-}
-
-function BottomNav({activeTab, onChange}: {activeTab: MainTab; onChange: (tab: MainTab) => void}) {
-  return (
-    <View style={styles.bottomNav}>
-      <NavItem active={activeTab === 'home'} icon="⌂" label="홈" onPress={() => onChange('home')} />
-      <NavItem active={activeTab === 'community'} icon="▣" label="커뮤니티" onPress={() => onChange('community')} />
-      <TouchableOpacity activeOpacity={0.86} onPress={() => onChange('run')} style={styles.navRunButton}>
-        <Text style={styles.navRunIcon}>✧</Text>
-      </TouchableOpacity>
-      <NavItem active={activeTab === 'records'} icon="▦" label="기록" onPress={() => onChange('records')} />
-      <NavItem active={activeTab === 'my'} icon="⌾" label="마이페이지" onPress={() => onChange('my')} />
-    </View>
-  );
-}
-
-function NavItem({active, icon, label, onPress}: {active: boolean; icon: string; label: string; onPress: () => void}) {
-  return (
-    <TouchableOpacity activeOpacity={0.78} onPress={onPress} style={styles.navItem}>
-      <View style={[styles.navIconWrap, active && styles.navIconActive]}>
-        {label === '마이페이지' ? (
-          <Image source={images.avatar} resizeMode="contain" style={[styles.navAvatar, active && styles.navAvatarActive]} />
-        ) : (
-          <Text style={[styles.navIcon, active && styles.navIconTextActive]}>{icon}</Text>
-        )}
-      </View>
-      <Text style={[styles.navLabel, active && styles.navLabelActive]}>{label}</Text>
-    </TouchableOpacity>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {flex: 1, backgroundColor: '#F6FEFF'},
+  screen: {flex: 1, backgroundColor: colors.background},
   body: {flex: 1},
   savingScreen: {flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center'},
-  savingText: {color: colors.text, fontSize: 17, fontWeight: '900', marginTop: 18},
-  bottomNav: {position: 'absolute', left: 0, right: 0, bottom: 0, height: 96, backgroundColor: 'rgba(255,255,255,0.96)', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', paddingBottom: 14, borderTopWidth: 1, borderTopColor: 'rgba(199,224,215,0.55)'},
-  navItem: {flex: 1, alignItems: 'center', justifyContent: 'center'},
-  navIconWrap: {width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center'},
-  navIconActive: {backgroundColor: '#EFFFF8'},
-  navIcon: {color: '#8E8E8E', fontSize: 25, fontWeight: '900'},
-  navIconTextActive: {color: MINT},
-  navAvatar: {width: 30, height: 30, opacity: 0.72},
-  navAvatarActive: {opacity: 1},
-  navLabel: {color: '#878787', fontSize: 11, fontWeight: '900', marginTop: 2},
-  navLabelActive: {color: '#2BAF85'},
-  navRunButton: {width: 74, height: 74, borderRadius: 37, backgroundColor: '#E7FFF7', borderWidth: 3, borderColor: '#A7E6CF', alignItems: 'center', justifyContent: 'center', marginTop: -34, shadowColor: '#9ADCC6', shadowOpacity: 0.28, shadowRadius: 14, shadowOffset: {width: 0, height: 7}, elevation: 8},
-  navRunIcon: {color: MINT, fontSize: 36, fontWeight: '900'},
+  savingText: {marginTop: 16},
 });

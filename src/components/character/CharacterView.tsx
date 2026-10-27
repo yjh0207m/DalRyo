@@ -1,18 +1,42 @@
 import React, {useEffect, useMemo, useRef, useState} from 'react';
-import {Animated, Easing, Image, StyleSheet, View, type ImageSourcePropType, type StyleProp, type ViewStyle} from 'react-native';
+import {
+  Animated,
+  Easing,
+  Image,
+  StyleSheet,
+  View,
+  type ImageSourcePropType,
+  type ImageStyle,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import {colors} from '../../theme';
 import type {CharacterMotion, CharacterStage, CharacterType, OutfitSlot} from '../../types/character.types';
-import {resolveCharacterSource} from './characterAssets';
+import {resolveCharacterRiveUrl, resolveCharacterSource} from './characterAssets';
+import {RiveCharacter} from './RiveCharacter';
 
-// 캐릭터를 그리는 유일한 진입점. 화면은 이 컴포넌트만 쓰고, 그리는 방식(PNG → Rive 등)은
-// 이 파일 안에서만 바꾼다. 옷 레이어는 몸 이미지와 같은 캔버스 크기로 제작된 PNG를 겹쳐 그린다.
+// 캐릭터를 그리는 유일한 진입점. 화면은 이 컴포넌트만 쓰고, 그리는 방식은 이 파일 안에서만 바꾼다.
+//
+// 지금은 캐릭터 PNG 한 장을 "게임식 절차 애니메이션"으로 움직인다:
+//   - 달리기: 포물선 점프 + 착지 찌그러짐(squash)·상승 늘어남(stretch) + 앞으로 기울기 + 흙먼지
+//   - 대기: 숨쉬기(살짝 부풀었다 줄어듦), 알은 가끔 흔들림
+//   - 방향 전환(facing), 외부 트리거 점프(jumpKey)
+// 팔다리까지 움직이려면 스프라이트 시트(포즈별 프레임) 또는 Rive 리깅 에셋이 필요하다.
+// 에셋이 생기면 이 컴포넌트의 몸 그리기 부분만 교체하고 위 동작(점프·방향·먼지)은 그대로 쓴다.
 
 type Props = {
   type: CharacterType;
   stage: CharacterStage;
   motion?: CharacterMotion;
   size?: number;
+  facing?: 'left' | 'right';
+  // 값이 바뀔 때마다 한 번 크게 점프한다 (탭 반응 등)
+  jumpKey?: number;
+  // 달릴 때 발밑 흙먼지
+  dust?: boolean;
   outfitLayers?: Partial<Record<OutfitSlot, ImageSourcePropType>>;
+  // 발밑 그림자. 캐릭터가 바닥에 서 있는 느낌을 준다 (작은 아바타에서는 끈다)
+  grounded?: boolean;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -20,84 +44,258 @@ type Props = {
 const BEHIND_BODY: OutfitSlot[] = ['back'];
 const OVER_BODY: OutfitSlot[] = ['bottom', 'top', 'shoes', 'hat', 'accessory'];
 
-type MotionSpec = {bob: number; durationMs: number; tiltDeg: number; leanDeg: number};
+// 캐릭터 PNG에서 발이 닿는 높이(위에서부터 비율). 찌그러짐·그림자의 기준점
+const FEET_RATIO = 0.82;
 
-const MOTION_SPECS: Record<CharacterMotion, MotionSpec | null> = {
-  idle: {bob: 4, durationMs: 1200, tiltDeg: 0, leanDeg: 0},
-  rest: {bob: 2, durationMs: 1800, tiltDeg: 0, leanDeg: 0},
-  slow: {bob: 5, durationMs: 600, tiltDeg: 2, leanDeg: 0},
-  run: {bob: 8, durationMs: 320, tiltDeg: 4, leanDeg: 3},
-  sprint: {bob: 10, durationMs: 200, tiltDeg: 5, leanDeg: 8},
+type Keyframes = {
+  durationMs: number;
+  t: number[];
+  y: number[]; // size 대비 비율, 음수가 위
+  scaleY: number[];
+  scaleX: number[];
+  rotate: number[]; // deg
+  shadow: number[]; // 그림자 가로 배율
+};
+
+// 한 걸음 = 한 번의 포물선 점프. 착지 순간(0, 1) 찌그러지고 상승 중엔 늘어난다
+function hop(height: number, durationMs: number, lean: number): Keyframes {
+  const t = [0, 0.08, 0.25, 0.5, 0.75, 0.92, 1];
+  return {
+    durationMs,
+    t,
+    y: [0, -0.15, -0.75, -1, -0.75, -0.15, 0].map(v => v * height),
+    scaleY: [0.88, 1.0, 1.05, 1.03, 1.0, 0.97, 0.88],
+    scaleX: [1.1, 1.0, 0.96, 0.98, 1.0, 1.03, 1.1],
+    rotate: [lean - 2, lean, lean + 1, lean + 2, lean + 1, lean, lean - 2],
+    shadow: [1, 0.95, 0.8, 0.72, 0.8, 0.95, 1],
+  };
+}
+
+function breathe(durationMs: number, amount: number): Keyframes {
+  return {
+    durationMs,
+    t: [0, 0.5, 1],
+    y: [0, 0, 0],
+    scaleY: [1, 1 + amount, 1],
+    scaleX: [1, 1 - amount * 0.4, 1],
+    rotate: [0, 0, 0],
+    shadow: [1, 0.97, 1],
+  };
+}
+
+// 알: 대부분 가만히 있다가 가끔 좌우로 톡톡 흔들린다
+const EGG_WOBBLE: Keyframes = {
+  durationMs: 2800,
+  t: [0, 0.62, 0.68, 0.74, 0.8, 0.86, 1],
+  y: [0, 0, -0.01, 0, -0.01, 0, 0],
+  scaleY: [1, 1, 1.02, 0.98, 1.02, 1, 1],
+  scaleX: [1, 1, 0.99, 1.01, 0.99, 1, 1],
+  rotate: [0, 0, -7, 6, -4, 0, 0],
+  shadow: [1, 1, 0.97, 1, 0.97, 1, 1],
+};
+
+const MOTIONS: Record<CharacterMotion, Keyframes | null> = {
+  idle: breathe(2200, 0.03),
+  rest: breathe(3000, 0.02),
+  slow: hop(0.05, 560, 3),
+  run: hop(0.08, 400, 7),
+  sprint: hop(0.1, 300, 12),
   stone: null,
 };
 
-export function CharacterView({type, stage, motion = 'idle', size = 200, outfitLayers, style}: Props) {
+const RUNNING: CharacterMotion[] = ['slow', 'run', 'sprint'];
+
+export function CharacterView({
+  type,
+  stage,
+  motion = 'idle',
+  size = 200,
+  facing = 'right',
+  jumpKey,
+  dust = false,
+  outfitLayers,
+  grounded = true,
+  style,
+}: Props) {
   const source = useCharacterSource(type, stage);
-  const progress = useRef(new Animated.Value(0)).current;
-  const spec = MOTION_SPECS[motion];
+  const riveUrl = useRiveUrl(type, stage);
+  const [riveFailed, setRiveFailed] = useState(false);
+  useEffect(() => setRiveFailed(false), [riveUrl]);
+  // Rive 파일이 있으면 몸의 움직임(점프 포함)은 Rive가 맡고, 아래 PNG 절차 애니메이션은 끈다
+  const riveStage = stage !== 'egg' && riveUrl && !riveFailed ? stage : null;
+  const phase = useRef(new Animated.Value(0)).current;
+  const jump = useRef(new Animated.Value(0)).current;
+  const frames = riveStage ? null : stage === 'egg' && motion !== 'stone' ? EGG_WOBBLE : MOTIONS[motion];
 
   useEffect(() => {
-    progress.stopAnimation();
-    progress.setValue(0);
+    phase.stopAnimation();
+    phase.setValue(0);
 
-    if (!spec) {
+    if (!frames) {
       return undefined;
     }
 
-    const half = spec.durationMs / 2;
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(progress, {toValue: 1, duration: half, easing: Easing.inOut(Easing.quad), useNativeDriver: true}),
-        Animated.timing(progress, {toValue: 0, duration: half, easing: Easing.inOut(Easing.quad), useNativeDriver: true}),
-      ]),
-    );
+    const loop = Animated.loop(Animated.timing(phase, {toValue: 1, duration: frames.durationMs, easing: Easing.linear, useNativeDriver: true}));
     loop.start();
-
     return () => loop.stop();
-  }, [progress, spec]);
+  }, [phase, frames]);
 
-  const transform = useMemo(() => {
-    if (!spec) {
-      return [];
+  // 탭 등 외부 트리거 점프: 웅크렸다가 크게 뛰고 착지
+  useEffect(() => {
+    if (jumpKey === undefined || jumpKey === 0 || riveStage) {
+      return;
+    }
+    jump.setValue(0);
+    Animated.sequence([
+      Animated.timing(jump, {toValue: -1, duration: 230, easing: Easing.out(Easing.quad), useNativeDriver: true}),
+      Animated.timing(jump, {toValue: 0, duration: 260, easing: Easing.in(Easing.quad), useNativeDriver: true}),
+    ]).start();
+  }, [jumpKey, jump, riveStage]);
+
+  const animated = useMemo(() => {
+    const jumpHeight = size * 0.32;
+    const jumpY = jump.interpolate({inputRange: [-1, 0], outputRange: [-jumpHeight, 0]});
+    const jumpShadow = jump.interpolate({inputRange: [-1, 0], outputRange: [0.55, 1]});
+
+    if (!frames) {
+      return {body: [{translateY: jumpY}], shadow: jumpShadow};
     }
 
-    return [
-      {translateY: progress.interpolate({inputRange: [0, 1], outputRange: [0, -spec.bob]})},
-      {
-        rotate: progress.interpolate({
-          inputRange: [0, 1],
-          outputRange: [`${spec.leanDeg - spec.tiltDeg}deg`, `${spec.leanDeg + spec.tiltDeg}deg`],
-        }),
-      },
-    ];
-  }, [progress, spec]);
+    const range = {inputRange: frames.t};
+    const scaleY = phase.interpolate({...range, outputRange: frames.scaleY});
+    // 가운데 기준으로 늘리고 줄이면 발이 뜨거나 파묻히므로, 발 위치가 고정되도록 보정한다
+    const feetOffset = (FEET_RATIO - 0.5) * size;
+    const squashCompensation = phase.interpolate({...range, outputRange: frames.scaleY.map(s => -(s - 1) * feetOffset)});
+    const loopY = phase.interpolate({...range, outputRange: frames.y.map(v => v * size)});
+
+    return {
+      body: [
+        {translateY: Animated.add(Animated.add(loopY, squashCompensation), jumpY)},
+        {rotate: phase.interpolate({...range, outputRange: frames.rotate.map(d => `${facing === 'left' ? -d : d}deg`)})},
+        {scaleX: phase.interpolate({...range, outputRange: frames.scaleX})},
+        {scaleY},
+      ],
+      shadow: Animated.multiply(phase.interpolate({...range, outputRange: frames.shadow}), jumpShadow),
+    };
+  }, [frames, phase, jump, size, facing]);
 
   const box = {width: size, height: size};
+  // Image는 absoluteFill만으로는 크기가 잡히지 않아(Android) 모든 레이어에 명시적 크기를 준다
+  const layer = [styles.layer, box];
+  const flip = facing === 'left' ? styles.flipped : null;
+
+  const groundShadow = {
+    left: size * 0.3,
+    top: size * FEET_RATIO,
+    width: size * 0.4,
+    height: Math.max(3, size * 0.045),
+    borderRadius: size,
+  };
 
   return (
     <View style={[box, style]}>
-      <Animated.View style={[box, {transform}]}>
-        {BEHIND_BODY.map(slot => renderLayer(outfitLayers?.[slot], slot))}
-        {source ? (
-          <Image source={source} resizeMode="contain" style={StyleSheet.absoluteFill} />
-        ) : (
-          <View style={[styles.placeholder, {borderRadius: size / 2}]} />
-        )}
-        {OVER_BODY.map(slot => renderLayer(outfitLayers?.[slot], slot))}
-        {motion === 'stone' && source && (
-          <Image source={source} resizeMode="contain" style={[StyleSheet.absoluteFill, styles.stoneOverlay]} />
-        )}
+      {grounded && <Animated.View style={[styles.groundShadow, groundShadow, {transform: [{scaleX: animated.shadow}]}]} />}
+      {dust && RUNNING.includes(motion) && <DustTrail size={size} facing={facing} intervalMs={MOTIONS[motion]?.durationMs ?? 400} />}
+      <Animated.View style={[box, {transform: animated.body}]}>
+        <View style={[box, flip]}>
+          {riveUrl && riveStage ? (
+            // 옷은 Rive 파일 안의 교체 가능한 이미지(referenced asset)로 입힌다 — 규격 문서 참고
+            <RiveCharacter url={riveUrl} stage={riveStage} motion={motion} jumpKey={jumpKey} style={box} onError={() => setRiveFailed(true)} />
+          ) : (
+            <>
+              {BEHIND_BODY.map(slot => renderLayer(outfitLayers?.[slot], slot, layer))}
+              {source ? (
+                <Image source={source} resizeMode="contain" style={layer} />
+              ) : (
+                <View style={[styles.placeholder, {borderRadius: size / 2}]} />
+              )}
+              {OVER_BODY.map(slot => renderLayer(outfitLayers?.[slot], slot, layer))}
+              {motion === 'stone' && source && <Image source={source} resizeMode="contain" style={[layer, styles.stoneOverlay]} />}
+            </>
+          )}
+        </View>
       </Animated.View>
     </View>
   );
 }
 
-function renderLayer(layer: ImageSourcePropType | undefined, slot: OutfitSlot) {
-  if (!layer) {
+// 발뒤꿈치 뒤로 흩어지는 흙먼지 3개. 걸음 박자에 맞춰 번갈아 피어오른다
+function DustTrail({size, facing, intervalMs}: {size: number; facing: 'left' | 'right'; intervalMs: number}) {
+  const puffs = useRef([0, 1, 2].map(() => new Animated.Value(0))).current;
+
+  useEffect(() => {
+    const loops = puffs.map((value, index) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay((intervalMs * index) / puffs.length),
+          Animated.timing(value, {toValue: 1, duration: intervalMs * 1.6, easing: Easing.out(Easing.quad), useNativeDriver: true}),
+          Animated.timing(value, {toValue: 0, duration: 0, useNativeDriver: true}),
+        ]),
+      ),
+    );
+    loops.forEach(loop => loop.start());
+    return () => loops.forEach(loop => loop.stop());
+  }, [puffs, intervalMs]);
+
+  const direction = facing === 'right' ? -1 : 1;
+  const puffSize = size * 0.09;
+
+  return (
+    <>
+      {puffs.map((value, index) => (
+        <Animated.View
+          key={index}
+          pointerEvents="none"
+          style={[
+            styles.dust,
+            {
+              width: puffSize,
+              height: puffSize,
+              borderRadius: puffSize,
+              left: size / 2 - puffSize / 2 + direction * size * 0.12,
+              top: size * FEET_RATIO - puffSize * 0.8,
+              opacity: value.interpolate({inputRange: [0, 0.15, 1], outputRange: [0, 0.85, 0]}),
+              transform: [
+                {translateX: value.interpolate({inputRange: [0, 1], outputRange: [0, direction * size * 0.28]})},
+                {translateY: value.interpolate({inputRange: [0, 1], outputRange: [0, -size * 0.06 * (index + 1)]})},
+                {scale: value.interpolate({inputRange: [0, 1], outputRange: [0.4, 1.4]})},
+              ],
+            },
+          ]}
+        />
+      ))}
+    </>
+  );
+}
+
+function renderLayer(source: ImageSourcePropType | undefined, slot: OutfitSlot, style: StyleProp<ImageStyle>) {
+  if (!source) {
     return null;
   }
 
-  return <Image key={slot} source={layer} resizeMode="contain" style={StyleSheet.absoluteFill} />;
+  return <Image key={slot} source={source} resizeMode="contain" style={style} />;
+}
+
+// 동물별 Rive 파일 URL (없으면 null). 알 단계는 항상 PNG
+function useRiveUrl(type: CharacterType, stage: CharacterStage) {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (stage === 'egg') {
+      setUrl(null);
+      return undefined;
+    }
+
+    let cancelled = false;
+    resolveCharacterRiveUrl(type).then(next => {
+      if (!cancelled) setUrl(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [type, stage]);
+
+  return url;
 }
 
 function useCharacterSource(type: CharacterType, stage: CharacterStage) {
@@ -125,6 +323,11 @@ function useCharacterSource(type: CharacterType, stage: CharacterStage) {
 }
 
 const styles = StyleSheet.create({
+  layer: {position: 'absolute', top: 0, left: 0},
+  flipped: {transform: [{scaleX: -1}]},
+  groundShadow: {position: 'absolute', backgroundColor: 'rgba(16,24,20,0.08)'},
+  // 풀밭·하늘 어느 쪽에서도 보이도록 밝은 흰색 먼지
+  dust: {position: 'absolute', backgroundColor: '#FFFFFF'},
   placeholder: {...StyleSheet.absoluteFill, margin: '20%', backgroundColor: colors.primarySoft},
   stoneOverlay: {tintColor: colors.stoneTint, opacity: 0.7},
 });

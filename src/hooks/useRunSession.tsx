@@ -18,6 +18,8 @@ export type RunResult = {
 const MAX_PLAUSIBLE_KMH = 45;
 // 경로는 이 거리 이상 움직였을 때만 저장 (Firestore 도큐먼트 크기 절약)
 const ROUTE_MIN_STEP_KM = 0.005;
+// 튄 위치가 이만큼 연속되면 기준점을 새 위치로 옮긴다
+const MAX_CONSECUTIVE_REJECTS = 3;
 // 이 시간 동안 새 위치가 없으면 멈춘 것으로 본다
 const STALE_FIX_MS = 5000;
 
@@ -33,6 +35,7 @@ export function useRunSession({weightKg}: {weightKg: number | null}) {
   const accumulatedMsRef = useRef(0);
   const distanceRef = useRef(0);
   const lastFixRef = useRef<GpsFix | null>(null);
+  const rejectedFixesRef = useRef(0);
   const routeRef = useRef<GpsPoint[]>([]);
 
   const setPhaseBoth = (next: RunPhase) => {
@@ -48,16 +51,27 @@ export function useRunSession({weightKg}: {weightKg: number | null}) {
     const last = lastFixRef.current;
     if (last) {
       const stepKm = calcDistanceKm(last.lat, last.lng, fix.lat, fix.lng);
-      const dtHours = Math.max(1, fix.timestamp - last.timestamp) / 3_600_000;
-      const impliedKmh = stepKm / dtHours;
+      // GPS 시각이 앞으로 가지 않는 기기(에뮬레이터 등)는 앱이 받은 시각으로 계산
+      const gpsDtMs = fix.timestamp - last.timestamp;
+      const dtMs = gpsDtMs > 0 ? gpsDtMs : fix.receivedAt - last.receivedAt;
+      const impliedKmh = stepKm / (Math.max(1, dtMs) / 3_600_000);
 
       if (impliedKmh > MAX_PLAUSIBLE_KMH) {
+        // 튄 위치가 연속되면 실제로 위치가 바뀐 것(터널 통과 등)으로 보고 기준점을 옮긴다.
+        // 이 구간 거리는 더하지 않는다
+        rejectedFixesRef.current += 1;
+        if (rejectedFixesRef.current >= MAX_CONSECUTIVE_REJECTS) {
+          rejectedFixesRef.current = 0;
+          lastFixRef.current = fix;
+        }
         return;
       }
 
+      rejectedFixesRef.current = 0;
       distanceRef.current += stepKm;
       setDistanceKm(distanceRef.current);
-      const measuredKmh = fix.speedMps !== null ? fix.speedMps * 3.6 : impliedKmh;
+      // 일부 기기는 이동 중에도 속도를 0으로 주므로, 그때는 위치 변화로 계산한 속도를 쓴다
+      const measuredKmh = fix.speedMps !== null && fix.speedMps > 0 ? fix.speedMps * 3.6 : impliedKmh;
       setSpeedKmh(prev => prev * 0.6 + measuredKmh * 0.4);
     }
 
@@ -90,11 +104,13 @@ export function useRunSession({weightKg}: {weightKg: number | null}) {
     return () => clearInterval(timer);
   }, [phase]);
 
+  // 위치 권한 창이 떠 있는 동안 시간이 흐르지 않도록, 권한 요청이 끝난 뒤에 시작한다
   const begin = useCallback(async () => {
+    const granted = await startGps();
     startedAtRef.current = new Date();
     activeSinceRef.current = Date.now();
     setPhaseBoth('running');
-    return startGps();
+    return granted;
   }, [startGps]);
 
   const pause = useCallback(() => {

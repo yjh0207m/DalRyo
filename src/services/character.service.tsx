@@ -34,6 +34,23 @@ export async function fetchCharacterImageUrl(type: CharacterType, stage: Charact
   return storage().ref(path).getDownloadURL();
 }
 
+// Rive 애니메이션 파일: 동물마다 한 파일, 성장 단계는 파일 안의 아트보드(baby·child·runner)로 나눈다
+export function getCharacterRivePath(type: CharacterType) {
+  return `characters/${type}/${type}.riv`;
+}
+
+// 아직 Rive 파일이 없는 동물이면 null (PNG 애니메이션으로 대체)
+export async function fetchCharacterRiveUrl(type: CharacterType) {
+  try {
+    return await storage().ref(getCharacterRivePath(type)).getDownloadURL();
+  } catch (error) {
+    if ((error as {code?: string})?.code === 'storage/object-not-found') {
+      return null;
+    }
+    throw error;
+  }
+}
+
 export async function createInitialCharacter({
   uid,
   petName,

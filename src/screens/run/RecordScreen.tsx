@@ -29,6 +29,12 @@ export function RecordScreen() {
           setRuns(result);
         }
       })
+      // 조회 실패(네트워크·인덱스 미배포 등) 시 빈 달력으로 둔다
+      .catch(() => {
+        if (mounted) {
+          setRuns([]);
+        }
+      })
       .finally(() => {
         if (mounted) {
           setLoading(false);

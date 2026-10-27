@@ -1,6 +1,6 @@
 import React, {useCallback, useEffect, useState} from 'react';
 import {ActivityIndicator, LogBox, StatusBar, StyleSheet, Text, View} from 'react-native';
-import {SafeAreaView} from 'react-native-safe-area-context';
+import {SafeAreaProvider, SafeAreaView} from 'react-native-safe-area-context';
 import auth, {type FirebaseAuthTypes} from '@react-native-firebase/auth';
 import {AuthStartScreen} from './src/screens/auth/SplashScreen';
 import {PhoneLoginScreen} from './src/screens/auth/LoginScreen';
@@ -17,7 +17,16 @@ LogBox.ignoreLogs([
 ]);
 
 
+// 하단 탭바 등이 기기 홈 인디케이터 영역을 피할 수 있게 safe area 값을 제공한다
 function App() {
+  return (
+    <SafeAreaProvider>
+      <AppRoutes />
+    </SafeAreaProvider>
+  );
+}
+
+function AppRoutes() {
   const [route, setRoute] = useState<Route>('loading');
   const [firebaseUser, setFirebaseUser] = useState<FirebaseAuthTypes.User | null>(null);
   const [profile, setProfile] = useState<UserProfileBundle | null>(null);

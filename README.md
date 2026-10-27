@@ -93,6 +93,8 @@
 | 카메라 | react-native-vision-camera | AR 필터 오버레이 |
 | 사투리 | i18next + react-i18next | 즉시 전환 |
 | 인앱결제 | react-native-iap | Apple IAP + Google Play |
+| 폰트 | Pretendard (SIL OFL) | 한국어 앱 표준 서체, 5단계 굵기 |
+| 아이콘 | lucide-react-native + react-native-svg | 일관된 선 아이콘 |
 | iOS 빌드 | GitHub Actions Mac Runner | 윈도우 개발 환경 대응 |
 
 ### Firebase 선택 근거

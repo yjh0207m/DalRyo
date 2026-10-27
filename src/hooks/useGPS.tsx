@@ -9,7 +9,10 @@ export type GpsFix = {
   lng: number;
   accuracyM: number;
   speedMps: number | null;
+  // GPS가 기록한 시각
   timestamp: number;
+  // 앱이 위치를 받은 시각
+  receivedAt: number;
 };
 
 // 정확도가 이보다 나쁜 위치는 버린다 (비기능 요구사항: 오차 10m 목표, 실측 여유 포함)
@@ -70,6 +73,7 @@ export function useGPS(onFix: (fix: GpsFix) => void) {
           accuracyM: accuracy,
           speedMps: speed !== null && speed >= 0 ? speed : null,
           timestamp: position.timestamp,
+          receivedAt: Date.now(),
         });
       },
       () => setStatus('error'),

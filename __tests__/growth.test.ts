@@ -1,4 +1,4 @@
-import {calculateRunExp, getCharacterStage} from '../src/utils/exp';
+import {calculateRunExp, getCharacterStage, getDaysSinceRun, getNextStageProgress, getStoneLevel} from '../src/utils/exp';
 import {getMotion} from '../src/utils/motion';
 import {calcDistanceKm, estimateCalories} from '../src/utils/distance';
 import {formatClock} from '../src/utils/pace';
@@ -32,6 +32,56 @@ describe('성장 단계', () => {
   test('스탯은 100을 넘지 않는다', () => {
     expect(server.addStat(98, 5)).toBe(100);
     expect(server.addStat(undefined, 3)).toBe(3);
+  });
+});
+
+describe('다음 단계 진행률', () => {
+  test('아기 25km → 어린이까지 25km, 50%', () => {
+    expect(getNextStageProgress('baby', 25)).toEqual({next: 'child', remainingKm: 25, progress: 0.5});
+  });
+
+  test('어린이 125km → 러너까지 75km, 50%', () => {
+    expect(getNextStageProgress('child', 125)).toEqual({next: 'runner', remainingKm: 75, progress: 0.5});
+  });
+
+  test('알과 러너는 진행률 없음', () => {
+    expect(getNextStageProgress('egg', 0)).toBeNull();
+    expect(getNextStageProgress('runner', 300)).toBeNull();
+  });
+});
+
+describe('돌 변신', () => {
+  const DAY = 86_400_000;
+  const now = Date.UTC(2026, 9, 26);
+
+  test.each([
+    [null, 'none'],
+    [0, 'none'],
+    [2, 'none'],
+    [3, 'warn3'],
+    [4, 'warn3'],
+    [5, 'warn5'],
+    [6, 'warn5'],
+    [7, 'stone'],
+    [30, 'stone'],
+  ])('%s일 → %s', (days, level) => {
+    expect(getStoneLevel(days as number | null)).toBe(level);
+  });
+
+  test('경과 일수는 내림', () => {
+    expect(getDaysSinceRun(now - 3 * DAY + 1000, now)).toBe(2);
+    expect(getDaysSinceRun(now - 3 * DAY, now)).toBe(3);
+    expect(getDaysSinceRun(null, now)).toBeNull();
+  });
+
+  test('앱과 서버의 돌 변신 규칙이 같다', () => {
+    for (const days of [null, 0, 3, 4, 5, 6, 7, 10]) {
+      expect(server.getStoneLevel(days)).toBe(getStoneLevel(days));
+    }
+  });
+
+  test('경고 알림은 3일·5일째에만, 7일 이상은 돌', () => {
+    expect([2, 3, 4, 5, 6, 7, 9].map(server.getStoneNotice)).toEqual([null, 'warn3', null, 'warn5', null, 'stone', 'stone']);
   });
 });
 

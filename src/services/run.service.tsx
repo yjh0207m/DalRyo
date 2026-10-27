@@ -55,24 +55,39 @@ export async function saveRunRecord({
   return run;
 }
 
-export async function fetchMonthlyRuns(year: number, monthIndex: number) {
+export async function fetchRunsBetween(start: Date, end: Date) {
   const user = auth().currentUser;
 
   if (!user) {
     return [];
   }
 
-  const monthStart = new Date(year, monthIndex, 1);
-  const monthEnd = new Date(year, monthIndex + 1, 0, 23, 59, 59, 999);
   const snap = await db()
     .collection('runs')
     .where('uid', '==', user.uid)
-    .where('started_at', '>=', firestore.Timestamp.fromDate(monthStart))
-    .where('started_at', '<=', firestore.Timestamp.fromDate(monthEnd))
+    .where('started_at', '>=', firestore.Timestamp.fromDate(start))
+    .where('started_at', '<=', firestore.Timestamp.fromDate(end))
     .orderBy('started_at', 'desc')
     .get();
 
   return snap.docs.map(doc => doc.data() as RunDocument);
+}
+
+export function fetchMonthlyRuns(year: number, monthIndex: number) {
+  return fetchRunsBetween(new Date(year, monthIndex, 1), new Date(year, monthIndex + 1, 0, 23, 59, 59, 999));
+}
+
+// 이번 주(월요일 시작) 기록
+export function fetchThisWeekRuns(now = new Date()) {
+  const mondayOffset = (now.getDay() + 6) % 7;
+  const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - mondayOffset);
+  const weekEnd = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + 6, 23, 59, 59, 999);
+  return fetchRunsBetween(weekStart, weekEnd);
+}
+
+export function getRunStartedAtDate(run: RunDocument) {
+  const startedAt = run.started_at as {toDate?: () => Date};
+  return startedAt?.toDate ? startedAt.toDate() : new Date();
 }
 
 export function summarizeRuns(runs: RunDocument[]): RunSummary {

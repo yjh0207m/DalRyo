@@ -1,116 +1,289 @@
-import React from 'react';
-import {ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import React, {useEffect, useMemo, useState} from 'react';
+import {ScrollView, StyleSheet, View} from 'react-native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {Bell, Check, Flame, Footprints, Mountain, Route, Settings, Snowflake, Timer, type LucideIcon} from 'lucide-react-native';
+import {WanderingCharacter} from '../../components/character/WanderingCharacter';
+import {ExpBar, LevelBadge, StreakChip} from '../../components/game/Hud';
+import {RunningWorld} from '../../components/scene/RunningWorld';
+import {AppText, Badge, Button, Card, IconButton} from '../../components/ui';
+import {TAB_BAR_HEIGHT} from '../../navigation/BottomTabBar';
+import {fetchThisWeekRuns, getRunStartedAtDate} from '../../services/run.service';
+import {colors, radius, shadow, spacing} from '../../theme';
+import {CHARACTER_STAGE_ORDER, type CharacterDocument, type CharacterStage} from '../../types/character.types';
+import type {RunDocument} from '../../types/run.types';
 import type {UserDocument} from '../../types/user.types';
+import {getDaysSinceRun, getNextStageProgress, getStoneLevel, STAGE_LABELS, type StoneLevel} from '../../utils/exp';
 
 type Props = {
   user: UserDocument | null;
+  character: CharacterDocument | null;
   onRunPress: () => void;
   onNotificationPress: () => void;
+  onSettingsPress: () => void;
 };
 
-const MINT = '#58CFA6';
-const TEXT = '#151515';
+const WEEK_LABELS = ['월', '화', '수', '목', '금', '토', '일'];
+const WEEKLY_GOAL_DAYS = 5;
+const CHARACTER_SIZE = 150;
+const WORLD_HEIGHT = 420;
+const GROUND_TOP = 0.76;
 
-export function HomeScreen({user, onRunPress, onNotificationPress}: Props) {
-  const exp = user?.total_exp ?? 0;
+const STAGE_TITLES: Record<CharacterStage, string> = {
+  egg: '알 품는 중',
+  baby: '신입 달리너',
+  child: '성장하는 달리너',
+  runner: '베테랑 러너',
+};
+
+const TAP_LINES = ['간지러워요!', '오늘 몇 km 달릴까요?', '같이 달리면 쑥쑥 자라요', '헤헤, 좋아요!', '준비 운동 완료!'];
+
+const STONE_MESSAGES: Record<Exclude<StoneLevel, 'none'>, {title: string; body: string}> = {
+  warn3: {title: '달료가 뻣뻣해졌어요', body: '3일째 쉬는 중이에요. 오늘 가볍게 달려 볼까요?'},
+  warn5: {title: '달료 몸이 회색이 되고 있어요', body: '이틀 안에 달리지 않으면 돌이 돼요.'},
+  stone: {title: '달료가 돌이 됐어요', body: '오늘 달리면 바로 녹아요.'},
+};
+
+// 홈 = 게임 로비. 위쪽은 캐릭터가 돌아다니는 월드 + 상태(HUD), 아래 패널에 출발 버튼과 오늘 기록
+export function HomeScreen({user, character, onRunPress, onNotificationPress, onSettingsPress}: Props) {
+  const insets = useSafeAreaInsets();
+  const lastRunAtMs = user?.last_run_at?.toMillis() ?? null;
+  const weekRuns = useWeekRuns(lastRunAtMs);
   const totalKm = user?.total_km ?? 0;
-  const level = Math.max(1, Math.floor(totalKm / 10) + 1);
-  const currentExp = exp % 100;
+  const stoneLevel: StoneLevel = user?.is_frozen ? 'stone' : getStoneLevel(getDaysSinceRun(lastRunAtMs));
+  const {today, ranDays} = useMemo(() => summarizeWeek(weekRuns), [weekRuns]);
+  const todayIndex = (new Date().getDay() + 6) % 7;
+  const streak = getWeekStreak(ranDays, todayIndex);
+  const worldHeight = WORLD_HEIGHT + insets.top;
 
   return (
-    <View style={styles.screen}>
-      <View style={styles.header}>
-        <Text style={styles.logo}>달료</Text>
-        <TouchableOpacity activeOpacity={0.8} onPress={onNotificationPress} style={styles.bellButton}>
-          <Text style={styles.bellText}>⌕</Text>
-          <View style={styles.notificationDot} />
-        </TouchableOpacity>
+    <ScrollView
+      style={styles.screen}
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={{paddingBottom: TAB_BAR_HEIGHT + insets.bottom + spacing.xxxl}}>
+      <View style={{height: worldHeight}}>
+        <RunningWorld speedKmh={0} height={worldHeight} groundTop={GROUND_TOP} cloudsTop={0.3}>
+          {character && (
+            <View style={styles.actorOnGround}>
+              <WanderingCharacter
+                type={character.character_type}
+                stage={character.stage}
+                size={CHARACTER_SIZE}
+                areaWidth={340}
+                frozen={stoneLevel === 'stone'}
+                speech={getSpeech({stage: character.stage, stoneLevel, ranToday: today.distanceKm > 0})}
+                tapLines={stoneLevel === 'stone' || character.stage === 'egg' ? [] : TAP_LINES}
+              />
+            </View>
+          )}
+        </RunningWorld>
+
+        <View style={[styles.hud, {paddingTop: insets.top + spacing.sm}]}>
+          {character && <PlayerCard character={character} totalKm={totalKm} />}
+          <View style={styles.hudActions}>
+            <IconButton icon={Bell} accessibilityLabel="알림" size={40} onPress={onNotificationPress} />
+            <IconButton icon={Settings} accessibilityLabel="설정" size={40} onPress={onSettingsPress} />
+          </View>
+        </View>
+        <View style={[styles.hudChips, {top: insets.top + 96}]}>
+          <StreakChip days={streak} />
+        </View>
       </View>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
-        <View style={styles.levelCard}>
-          <View style={styles.levelInfo}>
-            <View style={styles.levelTitleRow}>
-              <Text style={styles.levelMeta}>LV. {level}</Text>
-              <Text style={styles.levelName}>신입 달리너</Text>
-              <Text style={styles.levelExp}>{currentExp} / 100</Text>
-            </View>
-            <View style={styles.expTrack}>
-              <View style={[styles.expFill, {width: `${Math.max(6, currentExp)}%`}]} />
-            </View>
-          </View>
-        </View>
 
-        <View style={styles.dashboardCard}>
-          <Text style={styles.cardTitle}>나의 오늘 기록</Text>
+      <View style={styles.panel}>
+        <Button label="달리기 시작" icon={Footprints} onPress={onRunPress} />
+
+        {stoneLevel !== 'none' && (
+          <Card tone={stoneLevel === 'stone' ? 'stone' : 'warm'} style={styles.notice}>
+            {stoneLevel === 'stone' ? <Mountain color={colors.textMuted} size={22} /> : <Snowflake color={colors.accentInk} size={22} />}
+            <View style={styles.noticeText}>
+              <AppText variant="subheading">{STONE_MESSAGES[stoneLevel].title}</AppText>
+              <AppText variant="caption" color={colors.textMuted}>
+                {STONE_MESSAGES[stoneLevel].body}
+              </AppText>
+            </View>
+          </Card>
+        )}
+
+        <Card style={styles.section}>
+          <AppText variant="subheading">나의 오늘 기록</AppText>
           <View style={styles.statsRow}>
-            <Metric icon="⌁" value="0" label="걸음" />
-            <Metric icon="⌖" value="0.00" label="km" />
-            <Metric icon="⌂" value="0" label="kcal" />
+            <Stat icon={Route} value={today.distanceKm.toFixed(2)} unit="km" />
+            <View style={styles.divider} />
+            <Stat icon={Timer} value={String(Math.round(today.durationSec / 60))} unit="분" />
+            <View style={styles.divider} />
+            <Stat icon={Flame} value={String(today.calories)} unit="kcal" />
           </View>
-        </View>
+        </Card>
 
-        <View style={styles.dashboardCard}>
-          <Text style={styles.cardTitle}>이번 주 활동</Text>
+        <Card style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <AppText variant="subheading">이번 주 활동</AppText>
+            <Badge label={`${Math.min(ranDays.size, WEEKLY_GOAL_DAYS)} / ${WEEKLY_GOAL_DAYS}일 목표`} tone={ranDays.size >= WEEKLY_GOAL_DAYS ? 'brand' : 'neutral'} />
+          </View>
           <View style={styles.weekRow}>
-            {['월', '화', '수', '목', '금', '토', '일'].map(day => (
-              <View key={day} style={styles.weekDay}>
-                <Text style={styles.weekText}>{day}</Text>
-                <View style={styles.weekDot} />
-              </View>
-            ))}
+            {WEEK_LABELS.map((day, index) => {
+              const done = ranDays.has(index);
+              const isToday = index === todayIndex;
+              return (
+                <View key={day} style={styles.weekDay}>
+                  <AppText variant="label" color={isToday ? colors.primaryInk : colors.textSubtle}>
+                    {day}
+                  </AppText>
+                  <View style={[styles.weekDot, done && styles.weekDotDone, !done && isToday && styles.weekDotToday]}>
+                    {done && <Check color={colors.textOnPrimary} size={16} strokeWidth={3} />}
+                  </View>
+                </View>
+              );
+            })}
           </View>
-          <Text style={styles.goalText}>
-            <Text style={styles.goalStrong}>0</Text> / 5 목표 달성
-          </Text>
-        </View>
+        </Card>
+      </View>
+    </ScrollView>
+  );
+}
 
-        <TouchableOpacity activeOpacity={0.86} onPress={onRunPress} style={styles.runCta}>
-          <Text style={styles.runCtaText}>달리기 시작하기</Text>
-        </TouchableOpacity>
-      </ScrollView>
+// 게임 HUD의 플레이어 카드: 레벨 배지 + 이름·칭호 + 경험치 바(다음 성장 단계까지)
+function PlayerCard({character, totalKm}: {character: CharacterDocument; totalKm: number}) {
+  const level = CHARACTER_STAGE_ORDER.indexOf(character.stage) + 1;
+  const next = getNextStageProgress(character.stage, totalKm);
+
+  return (
+    <View style={styles.playerCard}>
+      <LevelBadge level={level} />
+      <View style={styles.playerText}>
+        <View style={styles.playerName}>
+          <AppText variant="subheading" numberOfLines={1} style={styles.flexShrink}>
+            {character.pet_name}
+          </AppText>
+          <AppText variant="label" color={colors.textMuted}>
+            {STAGE_TITLES[character.stage]}
+          </AppText>
+        </View>
+        <ExpBar value={character.stage === 'egg' ? 0 : next ? next.progress : 1} />
+        <AppText variant="label" color={colors.textMuted}>
+          {character.stage === 'egg'
+            ? '첫 달리기를 하면 부화해요'
+            : next
+              ? `${STAGE_LABELS[next.next]}까지 ${next.remainingKm.toFixed(1)}km`
+              : `최종 단계 · 누적 ${totalKm.toFixed(1)}km`}
+        </AppText>
+      </View>
     </View>
   );
 }
 
-function Metric({icon, value, label}: {icon: string; value: string; label: string}) {
+// 상황에 따라 캐릭터가 건네는 말 (사투리 시스템이 붙으면 i18n 키로 바꾼다)
+function getSpeech({stage, stoneLevel, ranToday}: {stage: CharacterStage; stoneLevel: StoneLevel; ranToday: boolean}) {
+  if (stoneLevel === 'stone') return '몸이 굳었어요… 같이 달려줘요';
+  if (stoneLevel !== 'none') return '슬슬 몸이 근질근질해요!';
+  if (stage === 'egg') return '톡톡… 밖이 궁금해요';
+  if (ranToday) return '오늘 정말 잘 달렸어요!';
+  return '오늘도 같이 달려요!';
+}
+
+// 이번 주 안에서 오늘(오늘 안 달렸으면 어제)부터 거슬러 올라간 연속 달린 날 수
+function getWeekStreak(ranDays: Set<number>, todayIndex: number) {
+  let day = ranDays.has(todayIndex) ? todayIndex : todayIndex - 1;
+  let streak = 0;
+  while (day >= 0 && ranDays.has(day)) {
+    streak += 1;
+    day -= 1;
+  }
+  return streak;
+}
+
+// 마지막 달리기 시각이 바뀌면(새 기록 저장) 다시 불러온다
+function useWeekRuns(lastRunAtMs: number | null) {
+  const [runs, setRuns] = useState<RunDocument[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+    fetchThisWeekRuns()
+      .then(result => {
+        if (mounted) setRuns(result);
+      })
+      .catch(() => undefined);
+
+    return () => {
+      mounted = false;
+    };
+  }, [lastRunAtMs]);
+
+  return runs;
+}
+
+function summarizeWeek(runs: RunDocument[]) {
+  const now = new Date();
+  const today = {distanceKm: 0, durationSec: 0, calories: 0};
+  const ranDays = new Set<number>();
+
+  runs.forEach(run => {
+    const startedAt = getRunStartedAtDate(run);
+    ranDays.add((startedAt.getDay() + 6) % 7);
+
+    if (startedAt.toDateString() === now.toDateString()) {
+      today.distanceKm += run.distance_km;
+      today.durationSec += run.duration_sec;
+      today.calories += run.calories;
+    }
+  });
+
+  return {today, ranDays};
+}
+
+function Stat({icon: Icon, value, unit}: {icon: LucideIcon; value: string; unit: string}) {
   return (
-    <View style={styles.metric}>
-      <Text style={styles.metricIcon}>{icon}</Text>
-      <Text style={styles.metricValue}>{value}</Text>
-      <Text style={styles.metricLabel}>{label}</Text>
+    <View style={styles.stat}>
+      <Icon color={colors.textSubtle} size={18} />
+      <AppText variant="number" color={colors.primaryInk}>
+        {value}
+      </AppText>
+      <AppText variant="caption" color={colors.textMuted}>
+        {unit}
+      </AppText>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {flex: 1, backgroundColor: '#F6FEFF'},
-  header: {minHeight: 118, paddingHorizontal: 30, paddingTop: 24, paddingBottom: 10, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between'},
-  logo: {color: MINT, fontSize: 44, fontWeight: '900', textShadowColor: 'rgba(88,207,166,0.16)', textShadowOffset: {width: 0, height: 2}, textShadowRadius: 1},
-  bellButton: {width: 52, height: 52, borderRadius: 26, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', marginTop: 18, shadowColor: '#9ACAB8', shadowOpacity: 0.16, shadowRadius: 12, shadowOffset: {width: 0, height: 6}, elevation: 5},
-  bellText: {color: '#5A5A5A', fontSize: 26, fontWeight: '900'},
-  notificationDot: {position: 'absolute', right: 11, top: 10, width: 9, height: 9, borderRadius: 5, backgroundColor: MINT},
-  content: {paddingHorizontal: 28, paddingBottom: 118},
-  levelCard: {minHeight: 100, borderRadius: 26, backgroundColor: '#FFFFFF', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, shadowColor: '#A7D7C4', shadowOpacity: 0.18, shadowRadius: 16, shadowOffset: {width: 0, height: 8}, elevation: 6},
-  levelInfo: {flex: 1},
-  levelTitleRow: {flexDirection: 'row', alignItems: 'center', marginBottom: 12},
-  levelMeta: {color: '#696969', fontSize: 18, fontWeight: '900', marginRight: 12},
-  levelName: {color: TEXT, fontSize: 18, fontWeight: '900', flex: 1},
-  levelExp: {color: '#4D4D4D', fontSize: 18, fontWeight: '900'},
-  expTrack: {height: 8, borderRadius: 4, backgroundColor: '#E4E4E4', overflow: 'hidden'},
-  expFill: {height: 8, borderRadius: 4, backgroundColor: '#FFD889'},
-  dashboardCard: {borderRadius: 26, backgroundColor: '#FFFFFF', padding: 24, marginTop: 18, shadowColor: '#A7D7C4', shadowOpacity: 0.15, shadowRadius: 18, shadowOffset: {width: 0, height: 8}, elevation: 5},
-  cardTitle: {color: TEXT, fontSize: 20, fontWeight: '900', marginBottom: 18},
-  statsRow: {flexDirection: 'row', justifyContent: 'space-between'},
-  metric: {flex: 1, alignItems: 'center'},
-  metricIcon: {color: '#9B9B9B', fontSize: 26, fontWeight: '900', marginBottom: 8},
-  metricValue: {color: MINT, fontSize: 34, fontWeight: '900'},
-  metricLabel: {color: '#777777', fontSize: 15, fontWeight: '800', marginTop: 6},
-  weekRow: {flexDirection: 'row', justifyContent: 'space-between', marginTop: 4},
-  weekDay: {alignItems: 'center', width: 36},
-  weekText: {color: '#7D7D7D', fontSize: 14, fontWeight: '900', marginBottom: 14},
-  weekDot: {width: 34, height: 34, borderRadius: 17, backgroundColor: '#F0F0F0'},
-  goalText: {textAlign: 'center', color: '#8A8A8A', fontSize: 18, fontWeight: '900', marginTop: 22},
-  goalStrong: {color: '#1A9A75'},
-  runCta: {height: 66, borderRadius: 28, backgroundColor: MINT, alignItems: 'center', justifyContent: 'center', marginTop: 26, shadowColor: MINT, shadowOpacity: 0.25, shadowRadius: 18, shadowOffset: {width: 0, height: 8}, elevation: 7},
-  runCtaText: {color: '#FFFFFF', fontSize: 22, fontWeight: '900'},
+  screen: {flex: 1, backgroundColor: colors.sky},
+  // 캐릭터 PNG의 발 위치(약 82%)가 땅 윗면에 오도록 끌어올린다
+  actorOnGround: {marginTop: -CHARACTER_SIZE * 0.82},
+  hud: {position: 'absolute', left: 0, right: 0, top: 0, flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, paddingHorizontal: spacing.lg},
+  hudActions: {gap: spacing.sm},
+  hudChips: {position: 'absolute', left: spacing.lg, flexDirection: 'row', gap: spacing.sm},
+  playerCard: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    // Android는 반투명 배경 + 그림자(elevation)면 그림자가 안쪽으로 비쳐 보여 불투명하게 둔다
+    backgroundColor: colors.surface,
+    ...shadow.card,
+  },
+  playerText: {flex: 1, gap: 4},
+  playerName: {flexDirection: 'row', alignItems: 'baseline', gap: spacing.sm},
+  flexShrink: {flexShrink: 1},
+  // 월드의 땅 위에 겹쳐 올라오는 아래 패널
+  panel: {
+    marginTop: -28,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    backgroundColor: colors.background,
+    padding: spacing.xl,
+  },
+  notice: {flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginTop: spacing.lg, paddingVertical: spacing.lg},
+  noticeText: {flex: 1, gap: 2},
+  section: {marginTop: spacing.md},
+  sectionHeader: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'},
+  statsRow: {flexDirection: 'row', alignItems: 'center', marginTop: spacing.lg},
+  stat: {flex: 1, alignItems: 'center', gap: 2},
+  divider: {width: StyleSheet.hairlineWidth, height: 48, backgroundColor: colors.border},
+  weekRow: {flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.lg},
+  weekDay: {alignItems: 'center', gap: spacing.sm},
+  weekDot: {width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surfaceMuted, alignItems: 'center', justifyContent: 'center'},
+  weekDotDone: {backgroundColor: colors.primary},
+  weekDotToday: {backgroundColor: colors.surface, borderWidth: 2, borderColor: colors.primary},
 });

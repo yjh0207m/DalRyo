@@ -28,7 +28,6 @@ type Props = {
 type Step = 1 | 2 | 3 | 4;
 
 const MINT = '#58CFA6';
-const GREEN = '#78B85F';
 const TEXT = '#151515';
 const MUTED = '#808080';
 

@@ -1,11 +1,19 @@
 import {auth, firestore as db} from '../lib/firebase';
 import type {CharacterDocument} from '../types/character.types';
 import type {UserDocument} from '../types/user.types';
+import {normalizeCharacterStage} from '../utils/exp';
 
 export type UserProfileBundle = {
   user: UserDocument;
   character: CharacterDocument | null;
 };
+
+function toBundle(user: UserDocument, character: CharacterDocument | null): UserProfileBundle {
+  return {
+    user,
+    character: character ? {...character, stage: normalizeCharacterStage(character.stage, user.total_km)} : null,
+  };
+}
 
 export async function fetchMyProfile(): Promise<UserProfileBundle | null> {
   const currentUser = auth().currentUser;
@@ -23,10 +31,10 @@ export async function fetchMyProfile(): Promise<UserProfileBundle | null> {
     return null;
   }
 
-  return {
-    user: userSnap.data() as UserDocument,
-    character: characterSnap.exists() ? (characterSnap.data() as CharacterDocument) : null,
-  };
+  return toBundle(
+    userSnap.data() as UserDocument,
+    characterSnap.exists() ? (characterSnap.data() as CharacterDocument) : null,
+  );
 }
 
 export function subscribeMyProfile(onChange: (profile: UserProfileBundle | null) => void) {
@@ -41,7 +49,7 @@ export function subscribeMyProfile(onChange: (profile: UserProfileBundle | null)
   let latestCharacter: CharacterDocument | null = null;
 
   const emit = () => {
-    onChange(latestUser ? {user: latestUser, character: latestCharacter} : null);
+    onChange(latestUser ? toBundle(latestUser, latestCharacter) : null);
   };
 
   const userUnsubscribe = db()

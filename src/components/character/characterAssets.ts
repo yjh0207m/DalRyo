@@ -1,5 +1,5 @@
 import type {ImageSourcePropType} from 'react-native';
-import {fetchCharacterImageUrl} from '../../services/character.service';
+import {fetchCharacterImageUrl, fetchCharacterRiveUrl} from '../../services/character.service';
 import type {CharacterStage, CharacterType} from '../../types/character.types';
 
 const localImages = {
@@ -29,4 +29,22 @@ export function resolveCharacterSource(
   }
 
   return pending.then(url => (url ? {uri: url} : null));
+}
+
+const riveCache = new Map<CharacterType, Promise<string | null>>();
+
+// 동물별 Rive 파일 URL. 파일이 없거나 받지 못하면 null → PNG 애니메이션을 쓴다
+export function resolveCharacterRiveUrl(type: CharacterType): Promise<string | null> {
+  let pending = riveCache.get(type);
+
+  if (!pending) {
+    pending = fetchCharacterRiveUrl(type).catch(() => {
+      // 네트워크 오류는 다음 화면에서 다시 시도할 수 있게 캐시하지 않는다
+      riveCache.delete(type);
+      return null;
+    });
+    riveCache.set(type, pending);
+  }
+
+  return pending;
 }
