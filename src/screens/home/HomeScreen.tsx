@@ -4,7 +4,7 @@ import type {Translate} from '../../locales/translate';
 import {ScrollView, StyleSheet, View} from 'react-native';
 import {SafeAreaView, useSafeAreaInsets} from 'react-native-safe-area-context';
 import {Bell, Check, Flame, Footprints, Mountain, Route, Settings, Snowflake, Timer, type LucideIcon} from 'lucide-react-native';
-import {WanderingCharacter} from '../../components/character/WanderingCharacter';
+import {LobbyCharacter} from '../../components/character/LobbyCharacter';
 import {ExpBar, LevelBadge, StreakChip} from '../../components/game/Hud';
 import {RunningWorld} from '../../components/scene/RunningWorld';
 import {AppText, Badge, Button, Card, IconButton} from '../../components/ui';
@@ -74,11 +74,10 @@ export function HomeScreen({user, character, onRunPress, onNotificationPress, on
           <RunningWorld speedKmh={0} height={worldHeight} groundTop={GROUND_TOP} cloudsTop={0.3}>
             {character && (
               <View style={styles.actorOnGround}>
-                <WanderingCharacter
+                <LobbyCharacter
                   type={character.character_type}
                   stage={character.stage}
                   size={CHARACTER_SIZE}
-                  areaWidth={340}
                   frozen={stoneLevel === 'stone'}
                   speech={getSpeech({stage: character.stage, stoneLevel, ranToday: today.distanceKm > 0}, t)}
                   tapLines={stoneLevel === 'stone' || character.stage === 'egg' ? [] : tapLines}

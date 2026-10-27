@@ -14,14 +14,16 @@ import Svg, {Ellipse} from 'react-native-svg';
 import {colors} from '../../theme';
 import type {CharacterMotion, CharacterStage, CharacterType, OutfitSlot} from '../../types/character.types';
 import {bundledCharacterRive, bundledCharacterStepMs, resolveCharacterRiveUrl, resolveCharacterSource} from './characterAssets';
+import {CharacterEffects} from './CharacterEffects';
 import {RiveCharacter} from './RiveCharacter';
 
 // 캐릭터를 그리는 유일한 진입점. 화면은 이 컴포넌트만 쓰고, 그리는 방식은 이 파일 안에서만 바꾼다.
 //
-// 준비된 동물·단계는 번들 또는 원격 Rive로 그린다. 나머지는 PNG 절차 애니메이션:
-//   - 달리기: 포물선 점프 + 착지 찌그러짐(squash)·상승 늘어남(stretch) + 앞으로 기울기 + 흙먼지
-//   - 대기: 숨쉬기(살짝 부풀었다 줄어듦), 알은 가끔 흔들림
-//   - 방향 전환(facing), 외부 트리거 점프(jumpKey)
+// 준비된 동물·단계는 번들 또는 원격 Rive로 그린다. 나머지는 PNG 한 장을 '스티커'처럼 통째로만 움직인다.
+// 몸을 늘리거나 접으면 입체 일러스트가 고무처럼 보이므로, 움직임은 아주 작게 두고 생동감은 주변 효과로 낸다.
+//   - 대기: 느린 숨쉬기(1.5% 이내), 알은 가끔 흔들림
+//   - 달리기: 살짝 앞으로 기울인 채 걸음 박자에 맞춰 아주 작게 들썩 + 흙먼지·땀방울·속도선(CharacterEffects)
+//   - 방향 전환(facing), 탭 반응(jumpKey → 톡 튀었다 돌아오기)
 // Rive에서는 내부 리깅이 몸·점프를 맡고 이 컴포넌트는 방향·그림자·먼지를 그린다.
 
 type Props = {
@@ -34,6 +36,8 @@ type Props = {
   jumpKey?: number;
   // 달릴 때 발밑 흙먼지
   dust?: boolean;
+  // 달릴 때 땀방울·속도선 (작은 아바타에서는 자동으로 끈다)
+  effects?: boolean;
   outfitLayers?: Partial<Record<OutfitSlot, ImageSourcePropType>>;
   // 발밑 그림자. 캐릭터가 바닥에 서 있는 느낌을 준다 (작은 아바타에서는 끈다)
   grounded?: boolean;
@@ -48,6 +52,8 @@ const OVER_BODY: OutfitSlot[] = ['bottom', 'top', 'shoes', 'hat', 'accessory'];
 
 // 캐릭터 PNG에서 발이 닿는 높이(위에서부터 비율). 찌그러짐·그림자의 기준점
 const FEET_RATIO = 0.82;
+// 이보다 작게 그릴 때는 효과가 캐릭터를 가려 끈다
+const EFFECTS_MIN_SIZE = 110;
 
 type Keyframes = {
   durationMs: number;
@@ -59,17 +65,16 @@ type Keyframes = {
   shadow: number[]; // 그림자 가로 배율
 };
 
-// 한 걸음 = 한 번의 포물선 점프. 착지 순간(0, 1) 찌그러지고 상승 중엔 늘어난다
-function hop(height: number, durationMs: number, lean: number): Keyframes {
-  const t = [0, 0.08, 0.25, 0.5, 0.75, 0.92, 1];
+// 한 걸음 = 아주 작은 들썩임. 모양은 그대로 두고 위치·기울기만 조금 바뀐다
+function pace(durationMs: number, bob: number, lean: number): Keyframes {
   return {
     durationMs,
-    t,
-    y: [0, -0.15, -0.75, -1, -0.75, -0.15, 0].map(v => v * height),
-    scaleY: [0.88, 1.0, 1.05, 1.03, 1.0, 0.97, 0.88],
-    scaleX: [1.1, 1.0, 0.96, 0.98, 1.0, 1.03, 1.1],
-    rotate: [lean - 2, lean, lean + 1, lean + 2, lean + 1, lean, lean - 2],
-    shadow: [1, 0.95, 0.8, 0.72, 0.8, 0.95, 1],
+    t: [0, 0.25, 0.5, 0.75, 1],
+    y: [0, -0.7, -1, -0.7, 0].map(v => v * bob),
+    scaleY: [1, 1, 1, 1, 1],
+    scaleX: [1, 1, 1, 1, 1],
+    rotate: [lean, lean + 0.6, lean, lean - 0.6, lean],
+    shadow: [1, 0.97, 0.95, 0.97, 1],
   };
 }
 
@@ -97,13 +102,16 @@ const EGG_WOBBLE: Keyframes = {
 };
 
 const MOTIONS: Record<CharacterMotion, Keyframes | null> = {
-  idle: breathe(2200, 0.03),
-  rest: breathe(3000, 0.02),
-  slow: hop(0.05, 560, 3),
-  run: hop(0.08, 400, 7),
-  sprint: hop(0.1, 300, 12),
+  idle: breathe(3400, 0.015),
+  rest: breathe(4200, 0.01),
+  slow: pace(560, 0.006, 1.5),
+  run: pace(400, 0.01, 3),
+  sprint: pace(320, 0.014, 5),
   stone: null,
 };
+
+// 탭 반응: 살짝 커지며 떴다가 → 조금 눌렸다가 → 제자리
+const POP = {durationMs: 560, t: [0, 0.16, 0.42, 0.68, 1], scale: [1, 1.09, 0.96, 1.02, 1], y: [0, -0.05, 0, 0, 0]};
 
 const RUNNING: CharacterMotion[] = ['slow', 'run', 'sprint'];
 
@@ -115,6 +123,7 @@ export function CharacterView({
   facing = 'right',
   jumpKey,
   dust = false,
+  effects = true,
   outfitLayers,
   grounded = true,
   previewRiveSource,
@@ -147,7 +156,7 @@ export function CharacterView({
     return () => loop.stop();
   }, [phase, frames]);
 
-  // 탭 등 외부 트리거 점프: 웅크렸다가 크게 뛰고 착지
+  // 탭 등 외부 트리거: 톡 튀었다 돌아온다
   useEffect(() => {
     if (riveStage) {
       jump.stopAnimation();
@@ -158,36 +167,31 @@ export function CharacterView({
       return;
     }
     jump.setValue(0);
-    Animated.sequence([
-      Animated.timing(jump, {toValue: -1, duration: 230, easing: Easing.out(Easing.quad), useNativeDriver: true}),
-      Animated.timing(jump, {toValue: 0, duration: 260, easing: Easing.in(Easing.quad), useNativeDriver: true}),
-    ]).start();
+    Animated.timing(jump, {toValue: 1, duration: POP.durationMs, easing: Easing.linear, useNativeDriver: true}).start();
   }, [jumpKey, jump, riveStage]);
 
   const animated = useMemo(() => {
-    const jumpHeight = size * 0.32;
-    const jumpY = jump.interpolate({inputRange: [-1, 0], outputRange: [-jumpHeight, 0]});
-    const jumpShadow = jump.interpolate({inputRange: [-1, 0], outputRange: [0.55, 1]});
+    const popRange = {inputRange: POP.t};
+    const pop = jump.interpolate({...popRange, outputRange: POP.scale});
+    const popY = jump.interpolate({...popRange, outputRange: POP.y.map(v => v * size)});
+    const popShadow = jump.interpolate({...popRange, outputRange: [1, 0.9, 1.04, 1, 1]});
 
     if (!frames) {
-      return {body: [{translateY: jumpY}], shadow: jumpShadow};
+      return {body: [{translateY: popY}, {scale: pop}], shadow: popShadow};
     }
 
+    // 크기·기울기의 기준점은 발(transformOrigin)이라 숨쉬거나 기울어도 발이 뜨지 않는다
     const range = {inputRange: frames.t};
-    const scaleY = phase.interpolate({...range, outputRange: frames.scaleY});
-    // 가운데 기준으로 늘리고 줄이면 발이 뜨거나 파묻히므로, 발 위치가 고정되도록 보정한다
-    const feetOffset = (FEET_RATIO - 0.5) * size;
-    const squashCompensation = phase.interpolate({...range, outputRange: frames.scaleY.map(s => -(s - 1) * feetOffset)});
     const loopY = phase.interpolate({...range, outputRange: frames.y.map(v => v * size)});
 
     return {
       body: [
-        {translateY: Animated.add(Animated.add(loopY, squashCompensation), jumpY)},
+        {translateY: Animated.add(loopY, popY)},
         {rotate: phase.interpolate({...range, outputRange: frames.rotate.map(d => `${facing === 'left' ? -d : d}deg`)})},
-        {scaleX: phase.interpolate({...range, outputRange: frames.scaleX})},
-        {scaleY},
+        {scaleX: Animated.multiply(phase.interpolate({...range, outputRange: frames.scaleX}), pop)},
+        {scaleY: Animated.multiply(phase.interpolate({...range, outputRange: frames.scaleY}), pop)},
       ],
-      shadow: Animated.multiply(phase.interpolate({...range, outputRange: frames.shadow}), jumpShadow),
+      shadow: Animated.multiply(phase.interpolate({...range, outputRange: frames.shadow}), popShadow),
     };
   }, [frames, phase, jump, size, facing]);
 
@@ -212,7 +216,8 @@ export function CharacterView({
         </Svg>
       </Animated.View>}
       {dust && RUNNING.includes(motion) && <DustTrail size={size} facing={facing} intervalMs={(riveStage ? bundledCharacterStepMs(type, stage, motion) : null) ?? MOTIONS[motion]?.durationMs ?? 400} />}
-      <Animated.View style={[box, {transform: animated.body}]}>
+      {effects && size >= EFFECTS_MIN_SIZE && <CharacterEffects motion={motion} size={size} facing={facing} />}
+      <Animated.View style={[box, {transformOrigin: [size / 2, size * FEET_RATIO, 0], transform: animated.body}]}>
         <View style={[box, flip]}>
           {riveSource !== null && riveStage ? (
             // 옷은 Rive 파일 안의 교체 가능한 이미지(referenced asset)로 입힌다 — 규격 문서 참고

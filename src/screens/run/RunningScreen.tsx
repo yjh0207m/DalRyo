@@ -4,6 +4,7 @@ import {Alert, BackHandler, Pressable, StatusBar, StyleSheet, View} from 'react-
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {MapPinOff, Pause, Play, Square, X, type LucideIcon} from 'lucide-react-native';
 import {CharacterView} from '../../components/character/CharacterView';
+import {SpeechBubble} from '../../components/character/SpeechBubble';
 import {RunningWorld} from '../../components/scene/RunningWorld';
 import {AppText, Badge, Card, IconButton, ProgressBar} from '../../components/ui';
 import {useRunSession, type RunResult} from '../../hooks/useRunSession';
@@ -51,6 +52,7 @@ export function RunningScreen({goalType, goalValue, characterType, characterStag
 
   const paceSec = calculateAveragePace(session.elapsedSec, session.distanceKm);
   const progress = getGoalProgress(goalType, goalValue, session);
+  const cheer = useCheer(Math.floor(session.distanceKm), progress !== null && progress >= 1, t);
   const motion = session.phase === 'running' ? getMotion(session.speedKmh) : 'rest';
   const paused = session.phase === 'paused';
   const latestProgress=useRef({onProgress,km:session.distanceKm,pace:paceSec,paused,phase:session.phase});
@@ -93,11 +95,24 @@ export function RunningScreen({goalType, goalValue, characterType, characterStag
       </View>
 
       <Card style={styles.stats}>
-        <Stat label="거리" value={session.distanceKm.toFixed(2)} unit="km" />
-        <View style={styles.divider} />
-        <Stat label="페이스" value={paceSec > 0 ? formatPace(paceSec) : `-'--"`} unit="/km" />
-        <View style={styles.divider} />
-        <Stat label="칼로리" value={String(session.calories)} unit="kcal" />
+        {/* 거리를 가장 크게: 달리는 중 가장 자주 보는 숫자 */}
+        <View style={styles.hero}>
+          <AppText variant="subheading" color={colors.textMuted}>
+            거리
+          </AppText>
+          <View style={styles.heroValue}>
+            <AppText style={styles.heroNumber}>{session.distanceKm.toFixed(2)}</AppText>
+            <AppText variant="heading" color={colors.textSubtle}>
+              km
+            </AppText>
+          </View>
+        </View>
+        <View style={styles.rowDivider} />
+        <View style={styles.statRow}>
+          <Stat label="페이스" value={paceSec > 0 ? formatPace(paceSec) : `-'--"`} unit="/km" />
+          <View style={styles.divider} />
+          <Stat label="칼로리" value={String(session.calories)} unit="kcal" />
+        </View>
       </Card>
       {livePanel}
 
@@ -120,14 +135,10 @@ export function RunningScreen({goalType, goalValue, characterType, characterStag
             groundTop={Math.max(0.4, 1 - (CONTROLS_AREA + insets.bottom) / worldHeight)}
             style={StyleSheet.absoluteFill}
           >
-            <CharacterView
-              type={characterType}
-              stage={characterStage}
-              motion={motion}
-              size={CHARACTER_SIZE}
-              dust={session.phase === 'running'}
-              style={styles.character}
-            />
+            <View style={styles.character}>
+              <CharacterView type={characterType} stage={characterStage} motion={motion} size={CHARACTER_SIZE} dust={session.phase === 'running'} />
+              {cheer && <SpeechBubble text={cheer} style={styles.cheer} />}
+            </View>
           </RunningWorld>
         )}
         {(session.gpsStatus === 'denied' || session.gpsStatus === 'error') && (
@@ -212,16 +223,44 @@ function RoundControl({
   );
 }
 
+// 1km를 넘길 때마다, 그리고 목표를 처음 달성했을 때 캐릭터가 잠깐 응원한다
+const CHEER_MS = 3500;
+function useCheer(km: number, goalReached: boolean, t: ReturnType<typeof useDialect>) {
+  const [cheer, setCheer] = useState<string | null>(null);
+  const goalShown = useRef(false);
+
+  useEffect(() => {
+    if (km > 0) setCheer(t('run.cheerKm', {km}));
+  }, [km, t]);
+
+  useEffect(() => {
+    if (goalReached && !goalShown.current) {
+      goalShown.current = true;
+      setCheer(t('run.cheerGoal'));
+    }
+  }, [goalReached, t]);
+
+  useEffect(() => {
+    if (!cheer) return undefined;
+    const timer = setTimeout(() => setCheer(null), CHEER_MS);
+    return () => clearTimeout(timer);
+  }, [cheer]);
+
+  return cheer;
+}
+
 function Stat({label, value, unit}: {label: string; value: string; unit: string}) {
   return (
     <View style={styles.stat}>
-      <AppText variant="label" color={colors.textMuted}>
+      <AppText variant="body" color={colors.textMuted}>
         {label}
       </AppText>
-      <AppText variant="number">{value}</AppText>
-      <AppText variant="caption" color={colors.textSubtle}>
-        {unit}
-      </AppText>
+      <View style={styles.statValue}>
+        <AppText style={styles.statNumber}>{value}</AppText>
+        <AppText variant="body" color={colors.textSubtle}>
+          {unit}
+        </AppText>
+      </View>
     </View>
   );
 }
@@ -247,15 +286,24 @@ function getGoalProgress(
 const styles = StyleSheet.create({
   screen: {flex: 1, backgroundColor: colors.sky, paddingHorizontal: spacing.xl},
   header: {height: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginRight: -spacing.sm},
-  clockBlock: {marginTop: spacing.lg, gap: spacing.xs},
+  // 상단에 붙지 않도록 시계·기록 카드를 아래로 내려 하늘 빈 공간과 균형을 맞춘다
+  clockBlock: {marginTop: spacing.xxxl, gap: spacing.xs},
   clock: {...typography.display, fontSize: 64, lineHeight: 72, fontVariant: ['tabular-nums']},
-  stats: {flexDirection: 'row', alignItems: 'center', marginTop: spacing.xl, paddingVertical: spacing.lg, paddingHorizontal: spacing.sm},
-  stat: {flex: 1, alignItems: 'center', gap: 2},
-  divider: {width: StyleSheet.hairlineWidth, height: 44, backgroundColor: colors.border},
+  stats: {marginTop: spacing.xl, paddingVertical: spacing.xl, paddingHorizontal: spacing.md},
+  hero: {alignItems: 'center', gap: spacing.xs},
+  heroValue: {flexDirection: 'row', alignItems: 'baseline', gap: spacing.xs},
+  heroNumber: {...typography.display, fontSize: 60, lineHeight: 68, fontVariant: ['tabular-nums']},
+  rowDivider: {height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginVertical: spacing.md},
+  statRow: {flexDirection: 'row', alignItems: 'center'},
+  stat: {flex: 1, alignItems: 'center', gap: spacing.xs},
+  statValue: {flexDirection: 'row', alignItems: 'baseline', gap: 4},
+  statNumber: {...typography.number, fontSize: 32, lineHeight: 38},
+  divider: {width: StyleSheet.hairlineWidth, height: 52, backgroundColor: colors.border},
   progress: {marginTop: spacing.lg, gap: spacing.sm},
   ground: {flex: 1, marginHorizontal: -spacing.xl, marginTop: spacing.md},
   // 캐릭터 PNG의 발 위치(약 82%)가 땅 윗면에 오도록 끌어올린다
-  character: {marginTop: -CHARACTER_SIZE * 0.82},
+  character: {width: CHARACTER_SIZE, height: CHARACTER_SIZE, marginTop: -CHARACTER_SIZE * 0.82},
+  cheer: {bottom: CHARACTER_SIZE * 0.98},
   gpsWarning: {flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, marginBottom: spacing.md},
   controls: {position: 'absolute', left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: spacing.xxxl + spacing.lg},
   control: {alignItems: 'center', gap: spacing.sm},

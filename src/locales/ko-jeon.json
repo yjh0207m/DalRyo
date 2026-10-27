@@ -3,6 +3,8 @@
   "run.startAction": "같이 달려부러!",
   "run.stop": "섰어부러!",
   "run.countdown": "곧 출발한당께",
+  "run.cheerKm": "{{km}}km 돌파! 겁나 잘한당께",
+  "run.cheerGoal": "목표 달성! 징하게 잘했당께!",
   "run.goalStart": "이 목표로 달려부러!",
   "run.complete": "다 달렸당께!",
   "run.completeBody": "{{name}}도 쑥쑥 컸당께",

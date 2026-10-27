@@ -135,7 +135,8 @@
 - 서버 `roomAction`: friends / invites / create(inviteUids) / invite / join(요청받은 사람만) / decline 추가, 기존 start/leave/finish 유지.
 - 에뮬레이터 백엔드 시나리오 12개 통과 (친구 아닌 사람 요청 차단, 미초대자 참가·읽기 차단, 거절 시 자리 반환, 추가 초대, 시작 시 미응답 요청 정리 포함).
 - 앱 테스트 116개, TypeScript, ESLint 통과.
-- `dalryo-dev` 배포 전이다. 배포 전까지 앱의 같이 달리기 화면은 이전 서버 함수를 호출해 친구 목록을 불러오지 못한다.
+- `dalryo-dev`에 roomAction·socialAction·규칙·인덱스 배포 완료. ADB에서 같이 달리기 화면이 친구 목록·받은 요청을 오류 없이 불러오는 것을 확인했다(테스트 계정은 서로 팔로우한 친구가 없어 빈 안내 표시).
+- 두 계정으로 요청 → 수락 → 함께 달리기는 아직 실제로 해 보지 않았다(백엔드 테스트로만 검증). 이전 공개 방 목록용 인덱스 1개는 서버에 남아 있다(삭제하려면 --force).
 - 에뮬레이터 실행 메모: firebase-tools는 Java 21 이상이 필요하다. Android Studio 내장 JBR(25)과
   `JAVA_TOOL_OPTIONS=-Djdk.net.unixdomain.tmpdir=C:/tmp/jdk`로
   `npx firebase emulators:exec --project demo-dalryo --only auth,functions,firestore "node scripts/test-social-functions.cjs"`를 실행한다.
