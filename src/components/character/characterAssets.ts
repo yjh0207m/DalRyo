@@ -1,10 +1,24 @@
 import type {ImageSourcePropType} from 'react-native';
 import {fetchCharacterImageUrl, fetchCharacterRiveUrl} from '../../services/character.service';
-import type {CharacterStage, CharacterType} from '../../types/character.types';
+import type {CharacterMotion, CharacterStage, CharacterType} from '../../types/character.types';
+import bipedGaits from '../../../assets/rive/biped-v1.motion.json';
 
 const localImages = {
   egg: require('../../assets/images/egg.png'),
 };
+
+// 시각 검수를 통과한 단계만 등록한다. 이전 이족 토끼는 비율/옷 문제로 제외했다.
+const bundledRives: Partial<Record<`${CharacterType}/${CharacterStage}`, number>> = {};
+
+export function bundledCharacterRive(type: CharacterType, stage: CharacterStage): number | null {
+  return bundledRives[`${type}/${stage}`] ?? null;
+}
+
+export function bundledCharacterStepMs(type: CharacterType, stage: CharacterStage, motion: CharacterMotion): number | null {
+  if (bundledCharacterRive(type, stage) === null) return null;
+  const gait = motion === 'slow' ? bipedGaits.walk : motion === 'run' ? bipedGaits.run : motion === 'sprint' ? bipedGaits.sprint : null;
+  return gait ? gait.frames / 60 * 1000 / 2 : null;
+}
 
 // 같은 캐릭터 이미지를 화면마다 다시 받지 않도록 다운로드 URL을 앱 실행 동안 캐시
 const urlCache = new Map<string, Promise<string | null>>();

@@ -1,6 +1,6 @@
 import React, {useCallback, useEffect, useRef} from 'react';
 import {type ViewStyle} from 'react-native';
-import Rive, {Alignment, Fit, RNRiveErrorType, type RiveRef} from 'rive-react-native';
+import Rive, {Alignment, AutoBind, Fit, RNRiveErrorType, type RiveRef} from 'rive-react-native';
 import type {CharacterMotion, CharacterStage} from '../../types/character.types';
 
 // Rive로 그리는 캐릭터 몸. 앱 상태를 Rive 상태 머신 입력으로 넘기고, 움직임은 Rive 파일이 담당한다.
@@ -26,7 +26,7 @@ const MOTION_SPEED: Record<CharacterMotion, number> = {
 };
 
 type Props = {
-  url: string;
+  source: number | string;
   stage: Exclude<CharacterStage, 'egg'>;
   motion: CharacterMotion;
   jumpKey?: number;
@@ -36,7 +36,9 @@ type Props = {
   onError: () => void;
 };
 
-export function RiveCharacter({url, stage, motion, jumpKey, style, onError}: Props) {
+const INPUTS_ONLY = AutoBind(false);
+
+export function RiveCharacter({source, stage, motion, jumpKey, style, onError}: Props) {
   const riveRef = useRef<RiveRef>(null);
 
   const applyInputs = useCallback(() => {
@@ -58,7 +60,8 @@ export function RiveCharacter({url, stage, motion, jumpKey, style, onError}: Pro
   return (
     <Rive
       ref={riveRef}
-      url={url}
+      source={typeof source === 'number' ? source : {uri: source}}
+      dataBinding={INPUTS_ONLY}
       artboardName={stage}
       stateMachineName={RIVE_STATE_MACHINE}
       autoplay

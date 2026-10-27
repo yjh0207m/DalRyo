@@ -25,7 +25,7 @@ export function ScreenHeader({title, onNotificationPress, onSettingsPress, hasUn
         </AppText>
       )}
       <View style={styles.actions}>
-        <IconButton icon={Bell} accessibilityLabel="알림" dot={hasUnread} size={40} onPress={onNotificationPress} />
+        <IconButton icon={Bell} accessibilityLabel={hasUnread ? '알림, 안 읽은 알림 있음' : '알림'} dot={hasUnread} size={40} onPress={onNotificationPress} />
         <IconButton icon={Settings} accessibilityLabel="설정" size={40} onPress={onSettingsPress} />
       </View>
     </View>

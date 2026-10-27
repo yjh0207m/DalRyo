@@ -10,19 +10,19 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+import Svg, {Ellipse} from 'react-native-svg';
 import {colors} from '../../theme';
 import type {CharacterMotion, CharacterStage, CharacterType, OutfitSlot} from '../../types/character.types';
-import {resolveCharacterRiveUrl, resolveCharacterSource} from './characterAssets';
+import {bundledCharacterRive, bundledCharacterStepMs, resolveCharacterRiveUrl, resolveCharacterSource} from './characterAssets';
 import {RiveCharacter} from './RiveCharacter';
 
 // 캐릭터를 그리는 유일한 진입점. 화면은 이 컴포넌트만 쓰고, 그리는 방식은 이 파일 안에서만 바꾼다.
 //
-// 지금은 캐릭터 PNG 한 장을 "게임식 절차 애니메이션"으로 움직인다:
+// 준비된 동물·단계는 번들 또는 원격 Rive로 그린다. 나머지는 PNG 절차 애니메이션:
 //   - 달리기: 포물선 점프 + 착지 찌그러짐(squash)·상승 늘어남(stretch) + 앞으로 기울기 + 흙먼지
 //   - 대기: 숨쉬기(살짝 부풀었다 줄어듦), 알은 가끔 흔들림
 //   - 방향 전환(facing), 외부 트리거 점프(jumpKey)
-// 팔다리까지 움직이려면 스프라이트 시트(포즈별 프레임) 또는 Rive 리깅 에셋이 필요하다.
-// 에셋이 생기면 이 컴포넌트의 몸 그리기 부분만 교체하고 위 동작(점프·방향·먼지)은 그대로 쓴다.
+// Rive에서는 내부 리깅이 몸·점프를 맡고 이 컴포넌트는 방향·그림자·먼지를 그린다.
 
 type Props = {
   type: CharacterType;
@@ -37,6 +37,8 @@ type Props = {
   outfitLayers?: Partial<Record<OutfitSlot, ImageSourcePropType>>;
   // 발밑 그림자. 캐릭터가 바닥에 서 있는 느낌을 준다 (작은 아바타에서는 끈다)
   grounded?: boolean;
+  // 개발 화면에서만 미검수 동작 후보를 비교한다. 일반 화면에는 전달하지 않는다.
+  previewRiveSource?: number;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -115,14 +117,19 @@ export function CharacterView({
   dust = false,
   outfitLayers,
   grounded = true,
+  previewRiveSource,
   style,
 }: Props) {
   const source = useCharacterSource(type, stage);
-  const riveUrl = useRiveUrl(type, stage);
-  const [riveFailed, setRiveFailed] = useState(false);
-  useEffect(() => setRiveFailed(false), [riveUrl]);
+  // 외부 의상 레이어는 PNG 경로에서 합성한다. 기본/돌 상태는 Rive 내부 재질을 쓴다.
+  const pngOnly = Object.values(outfitLayers ?? {}).some(Boolean);
+  const resolvedRiveSource = useRiveSource(type, stage, pngOnly);
+  const riveSource = __DEV__ && previewRiveSource !== undefined && stage !== 'egg' && motion !== 'stone' && !pngOnly
+    ? previewRiveSource : resolvedRiveSource;
+  const riveKey = `${type}/${stage}/${riveSource}`;
+  const [failedRiveKey, setFailedRiveKey] = useState<string | null>(null);
   // Rive 파일이 있으면 몸의 움직임(점프 포함)은 Rive가 맡고, 아래 PNG 절차 애니메이션은 끈다
-  const riveStage = stage !== 'egg' && riveUrl && !riveFailed ? stage : null;
+  const riveStage = stage !== 'egg' && riveSource !== null && failedRiveKey !== riveKey ? stage : null;
   const phase = useRef(new Animated.Value(0)).current;
   const jump = useRef(new Animated.Value(0)).current;
   const frames = riveStage ? null : stage === 'egg' && motion !== 'stone' ? EGG_WOBBLE : MOTIONS[motion];
@@ -142,7 +149,12 @@ export function CharacterView({
 
   // 탭 등 외부 트리거 점프: 웅크렸다가 크게 뛰고 착지
   useEffect(() => {
-    if (jumpKey === undefined || jumpKey === 0 || riveStage) {
+    if (riveStage) {
+      jump.stopAnimation();
+      jump.setValue(0);
+      return;
+    }
+    if (jumpKey === undefined || jumpKey === 0) {
       return;
     }
     jump.setValue(0);
@@ -194,13 +206,17 @@ export function CharacterView({
 
   return (
     <View style={[box, style]}>
-      {grounded && <Animated.View style={[styles.groundShadow, groundShadow, {transform: [{scaleX: animated.shadow}]}]} />}
-      {dust && RUNNING.includes(motion) && <DustTrail size={size} facing={facing} intervalMs={MOTIONS[motion]?.durationMs ?? 400} />}
+      {grounded && <Animated.View style={[styles.groundShadow, groundShadow, {transform: [{scaleX: animated.shadow}]}]}>
+        <Svg width={groundShadow.width} height={groundShadow.height}>
+          <Ellipse cx={groundShadow.width / 2} cy={groundShadow.height / 2} rx={groundShadow.width / 2} ry={groundShadow.height / 2} fill="rgba(16,24,20,0.08)" />
+        </Svg>
+      </Animated.View>}
+      {dust && RUNNING.includes(motion) && <DustTrail size={size} facing={facing} intervalMs={(riveStage ? bundledCharacterStepMs(type, stage, motion) : null) ?? MOTIONS[motion]?.durationMs ?? 400} />}
       <Animated.View style={[box, {transform: animated.body}]}>
         <View style={[box, flip]}>
-          {riveUrl && riveStage ? (
+          {riveSource !== null && riveStage ? (
             // 옷은 Rive 파일 안의 교체 가능한 이미지(referenced asset)로 입힌다 — 규격 문서 참고
-            <RiveCharacter url={riveUrl} stage={riveStage} motion={motion} jumpKey={jumpKey} style={box} onError={() => setRiveFailed(true)} />
+            <RiveCharacter key={riveKey} source={riveSource} stage={riveStage} motion={motion} jumpKey={jumpKey} style={box} onError={() => setFailedRiveKey(riveKey)} />
           ) : (
             <>
               {BEHIND_BODY.map(slot => renderLayer(outfitLayers?.[slot], slot, layer))}
@@ -276,26 +292,28 @@ function renderLayer(source: ImageSourcePropType | undefined, slot: OutfitSlot, 
   return <Image key={slot} source={source} resizeMode="contain" style={style} />;
 }
 
-// 동물별 Rive 파일 URL (없으면 null). 알 단계는 항상 PNG
-function useRiveUrl(type: CharacterType, stage: CharacterStage) {
-  const [url, setUrl] = useState<string | null>(null);
+// 준비된 로컬 단계 우선, 그 외는 원격 파일. 알·외부 의상은 PNG.
+function useRiveSource(type: CharacterType, stage: CharacterStage, pngOnly: boolean) {
+  const bundled = bundledCharacterRive(type, stage);
+  const key = `${type}/${stage}`;
+  const [remote, setRemote] = useState<{key: string; url: string | null} | null>(null);
 
   useEffect(() => {
-    if (stage === 'egg') {
-      setUrl(null);
+    if (stage === 'egg' || bundled !== null || pngOnly) {
       return undefined;
     }
 
     let cancelled = false;
     resolveCharacterRiveUrl(type).then(next => {
-      if (!cancelled) setUrl(next);
+      if (!cancelled) setRemote({key, url: next});
     });
     return () => {
       cancelled = true;
     };
-  }, [type, stage]);
+  }, [type, stage, key, bundled, pngOnly]);
 
-  return url;
+  if (stage === 'egg' || pngOnly) return null;
+  return bundled ?? (remote?.key === key ? remote.url : null);
 }
 
 function useCharacterSource(type: CharacterType, stage: CharacterStage) {
@@ -325,7 +343,7 @@ function useCharacterSource(type: CharacterType, stage: CharacterStage) {
 const styles = StyleSheet.create({
   layer: {position: 'absolute', top: 0, left: 0},
   flipped: {transform: [{scaleX: -1}]},
-  groundShadow: {position: 'absolute', backgroundColor: 'rgba(16,24,20,0.08)'},
+  groundShadow: {position: 'absolute'},
   // 풀밭·하늘 어느 쪽에서도 보이도록 밝은 흰색 먼지
   dust: {position: 'absolute', backgroundColor: '#FFFFFF'},
   placeholder: {...StyleSheet.absoluteFill, margin: '20%', backgroundColor: colors.primarySoft},

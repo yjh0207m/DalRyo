@@ -2,6 +2,7 @@ import React from 'react';
 import {Pressable, StyleSheet, View} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {CalendarDays, Footprints, House, MessageCircle, TrendingUp, type LucideIcon} from 'lucide-react-native';
+import Svg, {Rect} from 'react-native-svg';
 import {AppText} from '../components/ui';
 import {colors, radius, spacing} from '../theme';
 
@@ -64,7 +65,12 @@ function TabItem({label, icon: Icon, active, onPress}: {label: string; icon: Luc
 
   return (
     <Pressable accessibilityRole="tab" accessibilityState={{selected: active}} onPress={onPress} style={styles.tab}>
-      <View style={[styles.iconPill, active && styles.iconPillActive]}>
+      <View style={styles.iconPill}>
+        {active && (
+          <Svg width={52} height={30} style={StyleSheet.absoluteFill} pointerEvents="none">
+            <Rect width={52} height={30} rx={15} fill={colors.primarySoft} />
+          </Svg>
+        )}
         <Icon color={tint} size={22} strokeWidth={active ? 2.3 : 1.9} />
       </View>
       <AppText variant="label" color={tint} style={styles.tabLabel}>
@@ -95,7 +101,6 @@ const styles = StyleSheet.create({
   tab: {flex: 1, height: TAB_BAR_HEIGHT - spacing.sm, alignItems: 'center', justifyContent: 'center'},
   // Android는 배경 없던 뷰에 나중에 배경이 생기면 모서리가 각지게 그려질 수 있어 투명 배경을 항상 둔다
   iconPill: {width: 52, height: 30, borderRadius: 15, backgroundColor: 'transparent', alignItems: 'center', justifyContent: 'center'},
-  iconPillActive: {backgroundColor: colors.primarySoft},
   tabLabel: {marginTop: 2, fontSize: 11},
   runSlot: {flex: 1, alignItems: 'center'},
   runButton: {width: RUN_SIZE, height: RUN_SIZE + RUN_LIP, marginTop: -30},

@@ -1,312 +1,569 @@
-import React, {useEffect, useMemo, useState} from 'react';
-import {Image, ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
-import {fetchMonthlyRuns, summarizeRuns} from '../../services/run.service';
-import type {RunDocument} from '../../types/run.types';
-import {formatDuration, formatPace} from '../../utils/pace';
+import { useDialect } from '../../locales/DialectProvider';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  View,
+} from 'react-native';
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
+import {
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Flame,
+  Footprints,
+  Route,
+  Timer,
+  type LucideIcon,
+} from 'lucide-react-native';
+import Svg, { Circle, Polyline } from 'react-native-svg';
+import {
+  AppText,
+  Badge,
+  Button,
+  Card,
+  IconButton,
+  ScreenHeader,
+} from '../../components/ui';
+import { RunDetailScreen } from './RunDetailScreen';
+import type { CharacterDocument } from '../../types/character.types';
+import { RunRecordsStatus } from '../../components/ui/RunRecordsStatus';
+import { useRunRecords } from '../../hooks/useRunRecords';
+import { TAB_BAR_HEIGHT } from '../../navigation/BottomTabBar';
+import {
+  fetchMonthlyRuns,
+  getRunStartedAtDate,
+} from '../../services/run.service';
+import { colors, radius, spacing } from '../../theme';
+import type { RunDocument } from '../../types/run.types';
+import { formatDuration, formatPace } from '../../utils/pace';
+import {
+  buildCalendarCells,
+  projectRunRoute,
+  summarizeRunPeriod,
+} from '../../utils/runRecords';
 
-const images = {
-  bgDay: require('../../assets/images/bg-day.png'),
+type Props = {
+  hasUnread?: boolean;
+  onNotificationPress: () => void;
+  onSettingsPress: () => void;
+  character?: CharacterDocument | null;
+  onSubpageChange?: (open: boolean) => void;
+};
+const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+const GOAL_LABELS = {
+  free: '자유 달리기',
+  time: '시간 목표',
+  distance: '거리 목표',
+  calorie: '칼로리 목표',
 };
 
-const MINT = '#58CFA6';
-const TEXT = '#151515';
-
-export function RecordScreen() {
+export function RecordScreen({
+  onNotificationPress,
+  onSettingsPress,
+  hasUnread,
+  character = null,
+  onSubpageChange,
+}: Props) {
+  const insets = useSafeAreaInsets();
+  const t = useDialect();
   const now = new Date();
-  const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth());
+  const [period, setPeriod] = useState({
+    year: now.getFullYear(),
+    month: now.getMonth(),
+  });
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
-  const [runs, setRuns] = useState<RunDocument[]>([]);
-  const [loading, setLoading] = useState(true);
-
+  const [selectedRun, setSelectedRun] = useState<RunDocument | null>(null);
   useEffect(() => {
-    let mounted = true;
-
-    setLoading(true);
-    fetchMonthlyRuns(year, month)
-      .then(result => {
-        if (mounted) {
-          setRuns(result);
-        }
-      })
-      // 조회 실패(네트워크·인덱스 미배포 등) 시 빈 달력으로 둔다
-      .catch(() => {
-        if (mounted) {
-          setRuns([]);
-        }
-      })
-      .finally(() => {
-        if (mounted) {
-          setLoading(false);
-        }
-      });
-
-    return () => {
-      mounted = false;
-    };
-  }, [month, year]);
-
+    onSubpageChange?.(!!selectedRun);
+    return () => onSubpageChange?.(false);
+  }, [selectedRun, onSubpageChange]);
+  const { year, month } = period;
+  const loadRuns = useCallback(
+    () => fetchMonthlyRuns(year, month),
+    [year, month],
+  );
+  const { runs, status, retry } = useRunRecords(loadRuns);
+  const isCurrentMonth = year === now.getFullYear() && month === now.getMonth();
   const runsByDay = useMemo(() => {
-    const map = new Map<number, RunDocument[]>();
-
+    const grouped = new Map<number, RunDocument[]>();
     runs.forEach(run => {
-      const date = getRunStartedAt(run);
-      const day = date.getDate();
-      map.set(day, [...(map.get(day) ?? []), run]);
+      const day = getRunStartedAtDate(run).getDate();
+      grouped.set(day, [...(grouped.get(day) ?? []), run]);
     });
-
-    return map;
+    return grouped;
   }, [runs]);
-
-  const selectedRuns = selectedDay ? runsByDay.get(selectedDay) ?? [] : null;
-  const summary = summarizeRuns(runs);
-
+  const selectedRuns =
+    selectedDay === null ? null : runsByDay.get(selectedDay) ?? [];
+  const summary = useMemo(() => summarizeRunPeriod(runs), [runs]);
   const moveMonth = (delta: number) => {
-    const next = new Date(year, month + delta, 1);
-    setYear(next.getFullYear());
-    setMonth(next.getMonth());
+    const date = new Date(year, month + delta, 1);
     setSelectedDay(null);
+    setPeriod({ year: date.getFullYear(), month: date.getMonth() });
   };
-
+  if (selectedRun)
+    return (
+      <RunDetailScreen
+        run={selectedRun}
+        character={character}
+        onBack={() => setSelectedRun(null)}
+      />
+    );
   return (
-    <View style={styles.screen}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>기록</Text>
-        <View style={styles.headerActions}>
-          <TouchableOpacity activeOpacity={0.8} style={styles.iconButton}>
-            <Text style={styles.iconButtonText}>⚙</Text>
-          </TouchableOpacity>
-          <TouchableOpacity activeOpacity={0.8} style={styles.iconButton}>
-            <Text style={styles.iconButtonText}>⌕</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
-        <View style={styles.calendarCard}>
-          <View style={styles.calendarControls}>
-            <TouchableOpacity activeOpacity={0.8} onPress={() => moveMonth(-1)} style={styles.calendarArrow}>
-              <Text style={styles.calendarArrowText}>‹</Text>
-            </TouchableOpacity>
-            <View style={styles.calendarSelect}>
-              <Text style={styles.calendarSelectText}>{monthNames[month]}</Text>
-              <Text style={styles.calendarSelectArrow}>⌄</Text>
-            </View>
-            <View style={styles.calendarSelect}>
-              <Text style={styles.calendarSelectText}>{year}</Text>
-              <Text style={styles.calendarSelectArrow}>⌄</Text>
-            </View>
-            <TouchableOpacity activeOpacity={0.8} onPress={() => moveMonth(1)} style={styles.calendarArrow}>
-              <Text style={styles.calendarArrowText}>›</Text>
-            </TouchableOpacity>
+    <SafeAreaView style={styles.screen} edges={['top']}>
+      <ScrollView
+        style={styles.screen}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[
+          styles.content,
+          {
+            paddingTop: spacing.sm,
+            paddingBottom: TAB_BAR_HEIGHT + insets.bottom + spacing.xxxl,
+          },
+        ]}
+        refreshControl={
+          <RefreshControl
+            refreshing={status === 'loading'}
+            onRefresh={retry}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
+      >
+        <ScreenHeader
+          hasUnread={hasUnread}
+          title="기록"
+          onNotificationPress={onNotificationPress}
+          onSettingsPress={onSettingsPress}
+        />
+        <AppText
+          variant="caption"
+          color={colors.textMuted}
+          style={styles.subtitle}
+        >
+          차곡차곡 쌓이는 나의 달리기
+        </AppText>
+        <Card style={styles.section}>
+          <View style={styles.monthControls}>
+            <IconButton
+              icon={ChevronLeft}
+              variant="plain"
+              accessibilityLabel="이전 달"
+              onPress={() => moveMonth(-1)}
+            />
+            <AppText variant="heading">
+              {year}년 {month + 1}월
+            </AppText>
+            <IconButton
+              icon={ChevronRight}
+              variant="plain"
+              accessibilityLabel="다음 달"
+              onPress={() => moveMonth(1)}
+            />
           </View>
-          <View style={styles.weekHeaderRow}>
-            {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(day => (
-              <Text key={day} style={styles.weekHeaderText}>{day}</Text>
+          <View style={styles.calendarGrid}>
+            {WEEKDAYS.map(day => (
+              <AppText
+                key={day}
+                variant="label"
+                align="center"
+                color={colors.textMuted}
+                style={styles.weekday}
+              >
+                {day}
+              </AppText>
             ))}
-          </View>
-          <View style={styles.monthGrid}>
             {buildCalendarCells(year, month).map((day, index) => {
               const hasRun = day !== null && runsByDay.has(day);
               const selected = day !== null && selectedDay === day;
-
+              const today = isCurrentMonth && day === now.getDate();
               return (
-                <TouchableOpacity
-                  activeOpacity={day ? 0.82 : 1}
-                  disabled={!day}
-                  key={`${day ?? 'blank'}-${index}`}
-                  onPress={() => setSelectedDay(day)}
-                  style={styles.monthCell}>
-                  {!!day && (
-                    <View style={[styles.monthDay, hasRun && styles.monthRecordedDay, selected && (hasRun ? styles.monthSelectedRecordedDay : styles.monthSelectedEmptyDay)]}>
-                      <Text style={[styles.monthDayText, hasRun && styles.monthRecordedText, selected && styles.monthSelectedText]}>{day}</Text>
-                      {hasRun && <View style={[styles.recordDot, selected && styles.recordDotSelected]} />}
-                      {selected && !hasRun && <View style={styles.emptySelectedDot} />}
-                    </View>
+                <View key={index} style={styles.dayCell}>
+                  {day !== null && (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`${month + 1}월 ${day}일${
+                        today ? ', 오늘' : ''
+                      }${hasRun ? ', 달리기 기록 있음' : ''}`}
+                      accessibilityState={{
+                        selected,
+                        disabled: status !== 'success',
+                      }}
+                      disabled={status !== 'success'}
+                      onPress={() => setSelectedDay(selected ? null : day)}
+                      style={({ pressed }) => [
+                        styles.day,
+                        today && styles.today,
+                        hasRun && styles.recordedDay,
+                        selected && styles.selectedDay,
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <AppText
+                        variant="body"
+                        color={
+                          selected
+                            ? colors.textOnPrimary
+                            : hasRun
+                            ? colors.primaryInk
+                            : colors.text
+                        }
+                      >
+                        {day}
+                      </AppText>
+                      <View
+                        style={[
+                          styles.dot,
+                          hasRun && styles.recordedDot,
+                          selected && hasRun && styles.selectedDot,
+                        ]}
+                      />
+                    </Pressable>
                   )}
-                </TouchableOpacity>
+                </View>
               );
             })}
           </View>
-        </View>
-
-        {selectedRuns === null && <AverageRecordCard loading={loading} summary={summary} year={year} month={month} />}
-        {selectedRuns !== null && selectedRuns.length > 0 && <RunDetailCard day={selectedDay ?? 1} month={month} runs={selectedRuns} year={year} />}
-        {selectedRuns !== null && selectedRuns.length === 0 && <EmptyRecordCard day={selectedDay ?? 1} month={month} year={year} />}
+          <View style={styles.calendarFooter}>
+            <View style={styles.legend}>
+              <View style={[styles.dot, styles.recordedDot]} />
+              <AppText variant="label" color={colors.textMuted}>
+                달린 날
+              </AppText>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => {
+                setPeriod({ year: now.getFullYear(), month: now.getMonth() });
+                setSelectedDay(now.getDate());
+              }}
+              hitSlop={8}
+            >
+              <AppText variant="caption" color={colors.primaryInk}>
+                오늘 보기
+              </AppText>
+            </Pressable>
+          </View>
+        </Card>
+        {status !== 'success' ? (
+          <Card style={styles.section}>
+            <RunRecordsStatus status={status} onRetry={retry} />
+          </Card>
+        ) : (
+          <>
+            <View style={styles.sectionHeading}>
+              <AppText variant="heading">
+                {selectedDay === null
+                  ? '이번 달 모아보기'
+                  : `${month + 1}월 ${selectedDay}일`}
+              </AppText>
+              <Badge
+                label={`${
+                  selectedRuns === null ? runs.length : selectedRuns.length
+                }회 달리기`}
+                tone="neutral"
+              />
+            </View>
+            {selectedRuns === null ? (
+              <>
+                <Card tone="soft">
+                  <AppText variant="caption" color={colors.primaryInk}>
+                    총 달린 거리
+                  </AppText>
+                  <View style={styles.distance}>
+                    <AppText variant="display" color={colors.primaryInk}>
+                      {summary.distanceKm.toFixed(2)}
+                    </AppText>
+                    <AppText variant="subheading" color={colors.primaryInk}>
+                      km
+                    </AppText>
+                  </View>
+                  <AppText variant="caption" color={colors.primaryInk}>
+                    {runsByDay.size > 0
+                      ? `${runsByDay.size}일 동안 한 걸음씩 쌓았어요`
+                      : '첫 기록을 남겨 볼까요?'}
+                  </AppText>
+                </Card>
+                <Card style={styles.section}>
+                  <View style={styles.metrics}>
+                    <Metric
+                      icon={Timer}
+                      label="총 시간"
+                      value={formatDuration(summary.durationSec)}
+                    />
+                    <Metric
+                      icon={Route}
+                      label="평균 페이스"
+                      value={
+                        summary.distanceKm > 0
+                          ? formatPace(summary.paceSec)
+                          : '—'
+                      }
+                      unit="/km"
+                    />
+                    <Metric
+                      icon={Flame}
+                      label="총 칼로리"
+                      value={String(summary.calories)}
+                      unit="kcal"
+                    />
+                  </View>
+                </Card>
+                <View style={styles.hint}>
+                  <CalendarDays size={18} color={colors.textMuted} />
+                  <AppText variant="caption" color={colors.textMuted}>
+                    날짜를 누르면 그날의 기록을 볼 수 있어요
+                  </AppText>
+                </View>
+              </>
+            ) : selectedRuns.length === 0 ? (
+              <Card style={styles.empty}>
+                <View style={styles.emptyIcon}>
+                  <Footprints size={28} color={colors.primaryInk} />
+                </View>
+                <AppText variant="subheading">{t('record.empty')}</AppText>
+                <AppText
+                  variant="caption"
+                  color={colors.textMuted}
+                  align="center"
+                >
+                  {t('record.emptyBody')}
+                </AppText>
+              </Card>
+            ) : (
+              selectedRuns.map(run => (
+                <RunCard
+                  key={run.run_id}
+                  run={run}
+                  onOpen={() => setSelectedRun(run)}
+                />
+              ))
+            )}
+          </>
+        )}
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 
-function AverageRecordCard({loading, summary, year, month}: {loading: boolean; summary: ReturnType<typeof summarizeRuns>; year: number; month: number}) {
+function RunCard({ run, onOpen }: { run: RunDocument; onOpen: () => void }) {
+  const startedAt = getRunStartedAtDate(run);
+  const points = projectRunRoute(run.route);
+  const start = points[0];
+  const end = points[points.length - 1];
   return (
-    <View style={styles.detailCard}>
-      <Text style={styles.recordTitle}>{year}년 {month + 1}월 평균 기록</Text>
-      <View style={styles.averageGrid}>
-        <AverageMetric icon="⌖" value={loading ? '-' : summary.averageDistanceKm.toFixed(2)} unit="km" label="평균 거리" />
-        <AverageMetric icon="⏱" value={loading ? '-' : formatDuration(summary.averageDurationSec)} label="평균 시간" />
-        <AverageMetric icon="⌁" value={loading ? '-' : formatPace(summary.averagePaceSec)} unit="/km" label="평균 페이스" />
-        <AverageMetric icon="⌂" value={loading ? '-' : String(summary.averageCalories)} unit="kcal" label="평균 칼로리" />
-        <AverageMetric icon="△" value={loading ? '-' : `+${summary.averageElevationM}`} unit="m" label="평균 고도상승" />
-        <AverageMetric icon="♡" value={loading ? '-' : String(summary.averageHeartRate)} unit="bpm" label="평균 심박수" />
+    <Card style={styles.runCard}>
+      <View style={styles.runHeader}>
+        <Badge label={GOAL_LABELS[run.goal_type]} />
+        <AppText variant="caption" color={colors.textMuted}>
+          {String(startedAt.getHours()).padStart(2, '0')}:
+          {String(startedAt.getMinutes()).padStart(2, '0')} 출발
+        </AppText>
       </View>
-      <View style={styles.selectHintBox}>
-        <Text style={styles.selectHintIcon}>▣</Text>
-        <View>
-          <Text style={styles.selectHintTitle}>날짜를 선택하면</Text>
-          <Text style={styles.selectHintText}>해당 날의 상세 기록을 확인할 수 있어요!</Text>
+      <View style={styles.distance}>
+        <AppText variant="title" color={colors.primaryInk}>
+          {run.distance_km.toFixed(2)}
+        </AppText>
+        <AppText variant="caption" color={colors.textMuted}>
+          km
+        </AppText>
+      </View>
+      <View style={styles.metrics}>
+        <Metric
+          icon={Timer}
+          label="시간"
+          value={formatDuration(run.duration_sec)}
+        />
+        <Metric
+          icon={Route}
+          label="페이스"
+          value={run.distance_km > 0 ? formatPace(run.avg_pace_sec) : '—'}
+          unit="/km"
+        />
+        <Metric
+          icon={Flame}
+          label="칼로리"
+          value={String(run.calories)}
+          unit="kcal"
+        />
+      </View>
+      {points.length > 1 ? (
+        <View
+          style={styles.route}
+          accessible
+          accessibilityLabel="GPS에 기록된 달리기 경로. 초록 점은 출발, 진한 점은 도착이에요."
+        >
+          <AppText variant="label" color={colors.textMuted}>
+            나의 달리기 경로
+          </AppText>
+          <Svg width="100%" height={160} viewBox="0 0 300 160">
+            <Polyline
+              points={points.map(point => `${point.x},${point.y}`).join(' ')}
+              fill="none"
+              stroke={colors.primary}
+              strokeWidth={4}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            <Circle
+              cx={start.x}
+              cy={start.y}
+              r={6}
+              fill={colors.primary}
+              stroke={colors.surface}
+              strokeWidth={2}
+            />
+            <Circle
+              cx={end.x}
+              cy={end.y}
+              r={6}
+              fill={colors.text}
+              stroke={colors.surface}
+              strokeWidth={2}
+            />
+          </Svg>
+          <AppText variant="label" color={colors.textMuted}>
+            지형을 생략한 경로 미리보기
+          </AppText>
         </View>
-      </View>
-    </View>
+      ) : (
+        <AppText
+          variant="caption"
+          color={colors.textMuted}
+          style={styles.routeEmpty}
+        >
+          저장된 GPS 경로가 없어요
+        </AppText>
+      )}
+      <Button
+        label="상세·지도·공유"
+        size="md"
+        variant="secondary"
+        onPress={onOpen}
+      />
+    </Card>
   );
 }
 
-function RunDetailCard({day, month, runs, year}: {day: number; month: number; runs: RunDocument[]; year: number}) {
-  const total = summarizeRuns(runs);
-  const mainRun = runs[0];
-
+function Metric({
+  icon: Icon,
+  label,
+  value,
+  unit,
+}: {
+  icon: LucideIcon;
+  label: string;
+  value: string;
+  unit?: string;
+}) {
   return (
-    <View style={styles.detailCard}>
-      <Text style={styles.recordTitle}>{year}. {String(month + 1).padStart(2, '0')}. {String(day).padStart(2, '0')} 러닝 기록</Text>
-      <View style={styles.distanceHero}>
-        <Text style={styles.distanceNumber}>{total.totalDistanceKm.toFixed(1)}</Text>
-        <Text style={styles.distanceUnit}>km</Text>
-      </View>
-      <View style={styles.detailDivider} />
-      <View style={styles.runMetricGrid}>
-        <RunMetric icon="⌁" value={formatPace(mainRun.avg_pace_sec)} unit="/km" label="평균 페이스" />
-        <RunMetric icon="⏱" value={formatDuration(mainRun.duration_sec)} label="시간" />
-        <RunMetric icon="⌂" value={String(mainRun.calories)} unit="kcal" label="칼로리" />
-        <RunMetric icon="△" value="+0" unit="m" label="고도상승" />
-        <RunMetric icon="♡" value={String(mainRun.avg_heart_rate ?? 0)} unit="bpm" label="심박수" />
-        <RunMetric icon="⌾" value="0" unit="spm" label="케이던스" />
-      </View>
-      <View style={styles.routePreview}>
-        <Image source={images.bgDay} resizeMode="cover" style={styles.routeMapImage} />
-        <View style={[styles.routeLine, styles.routeLineOne]} />
-        <View style={[styles.routeLine, styles.routeLineTwo]} />
-        <Text style={[styles.routeBadge, styles.routeStart]}>START</Text>
-        <Text style={[styles.routeBadge, styles.routeFinish]}>FINISH</Text>
-      </View>
+    <View style={styles.metric}>
+      <Icon size={18} color={colors.textMuted} />
+      <AppText variant="subheading" numberOfLines={1} adjustsFontSizeToFit>
+        {value}
+      </AppText>
+      <AppText variant="label" color={colors.textMuted}>
+        {label}
+        {unit ? ` · ${unit}` : ''}
+      </AppText>
     </View>
   );
 }
-
-function EmptyRecordCard({day, month, year}: {day: number; month: number; year: number}) {
-  return (
-    <View style={[styles.detailCard, styles.emptyRecordCard]}>
-      <Text style={styles.recordTitle}>{year}. {String(month + 1).padStart(2, '0')}. {String(day).padStart(2, '0')}</Text>
-      <Text style={styles.emptyRecordTitle}>이 날은 기록이 없어요</Text>
-      <Text style={styles.emptyRecordSubtitle}>새로운 러닝에 도전해보세요!</Text>
-    </View>
-  );
-}
-
-function AverageMetric({icon, value, unit, label}: {icon: string; value: string; unit?: string; label: string}) {
-  return (
-    <View style={styles.averageMetric}>
-      <Text style={styles.averageIcon}>{icon}</Text>
-      <Text style={styles.averageValue}>{value} <Text style={styles.averageUnit}>{unit}</Text></Text>
-      <Text style={styles.averageLabel}>{label}</Text>
-    </View>
-  );
-}
-
-function RunMetric({icon, value, unit, label}: {icon: string; value: string; unit?: string; label: string}) {
-  return (
-    <View style={styles.runMetricCard}>
-      <Text style={styles.runMetricIcon}>{icon}</Text>
-      <View>
-        <Text style={styles.runMetricValue}>{value} <Text style={styles.runMetricUnit}>{unit}</Text></Text>
-        <Text style={styles.runMetricLabel}>{label}</Text>
-      </View>
-    </View>
-  );
-}
-
-function buildCalendarCells(year: number, month: number) {
-  const firstDay = new Date(year, month, 1).getDay();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const cells: Array<number | null> = Array.from({length: firstDay}, () => null);
-
-  for (let day = 1; day <= daysInMonth; day += 1) {
-    cells.push(day);
-  }
-
-  return cells;
-}
-
-function getRunStartedAt(run: RunDocument) {
-  const startedAt = run.started_at;
-
-  if (startedAt && typeof startedAt === 'object' && 'toDate' in startedAt && typeof startedAt.toDate === 'function') {
-    return startedAt.toDate();
-  }
-
-  return new Date();
-}
-
-const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 const styles = StyleSheet.create({
-  screen: {flex: 1, backgroundColor: '#F6FEFF'},
-  header: {minHeight: 104, paddingHorizontal: 30, paddingTop: 18, paddingBottom: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'},
-  headerTitle: {color: TEXT, fontSize: 32, fontWeight: '900'},
-  headerActions: {flexDirection: 'row', alignItems: 'center', gap: 10},
-  iconButton: {width: 46, height: 46, borderRadius: 23, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', shadowColor: '#9ACAB8', shadowOpacity: 0.16, shadowRadius: 12, shadowOffset: {width: 0, height: 6}, elevation: 5},
-  iconButtonText: {color: '#575757', fontSize: 22, fontWeight: '900'},
-  content: {paddingHorizontal: 24, paddingBottom: 128},
-  calendarCard: {borderRadius: 24, backgroundColor: '#FFFFFF', paddingHorizontal: 20, paddingTop: 18, paddingBottom: 22, borderWidth: 1, borderColor: '#E5EEEE', shadowColor: '#C5E3DA', shadowOpacity: 0.16, shadowRadius: 16, shadowOffset: {width: 0, height: 7}, elevation: 5},
-  calendarControls: {flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 22},
-  calendarArrow: {width: 34, height: 38, alignItems: 'center', justifyContent: 'center'},
-  calendarArrowText: {color: '#0E0E0E', fontSize: 38, lineHeight: 38, fontWeight: '800'},
-  calendarSelect: {flex: 1, height: 48, borderRadius: 13, borderWidth: 1, borderColor: '#E0E4E4', backgroundColor: '#FFFFFF', paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'},
-  calendarSelectText: {color: '#242424', fontSize: 20, fontWeight: '800'},
-  calendarSelectArrow: {color: '#111111', fontSize: 22, fontWeight: '900'},
-  weekHeaderRow: {flexDirection: 'row', marginBottom: 10},
-  weekHeaderText: {width: '14.285%', textAlign: 'center', color: '#9A9A9A', fontSize: 15, fontWeight: '800'},
-  monthGrid: {flexDirection: 'row', flexWrap: 'wrap'},
-  monthCell: {width: '14.285%', height: 56, alignItems: 'center', justifyContent: 'center'},
-  monthDay: {width: 44, height: 48, borderRadius: 13, alignItems: 'center', justifyContent: 'center'},
-  monthRecordedDay: {backgroundColor: '#DDF9EE'},
-  monthSelectedRecordedDay: {backgroundColor: '#16C47F', shadowColor: '#16C47F', shadowOpacity: 0.28, shadowRadius: 8, shadowOffset: {width: 0, height: 4}, elevation: 5},
-  monthSelectedEmptyDay: {backgroundColor: '#2B2B2B'},
-  monthDayText: {color: '#171717', fontSize: 20, fontWeight: '700', lineHeight: 24},
-  monthRecordedText: {color: '#159E72'},
-  monthSelectedText: {color: '#FFFFFF'},
-  recordDot: {width: 4, height: 4, borderRadius: 2, backgroundColor: '#15B87C', marginTop: 5},
-  recordDotSelected: {backgroundColor: '#FFFFFF'},
-  emptySelectedDot: {width: 4, height: 4, borderRadius: 2, backgroundColor: '#FFFFFF', marginTop: 5},
-  detailCard: {borderRadius: 24, backgroundColor: '#FFFFFF', padding: 22, marginTop: 10, borderWidth: 1, borderColor: '#E5EEEE', shadowColor: '#C5E3DA', shadowOpacity: 0.14, shadowRadius: 16, shadowOffset: {width: 0, height: 7}, elevation: 5},
-  recordTitle: {color: TEXT, fontSize: 19, fontWeight: '900', marginBottom: 18},
-  averageGrid: {flexDirection: 'row', flexWrap: 'wrap', gap: 12},
-  averageMetric: {width: '31%', minHeight: 126, borderRadius: 18, backgroundColor: '#F2FCFA', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8},
-  averageIcon: {color: MINT, fontSize: 30, fontWeight: '900', marginBottom: 10},
-  averageValue: {color: '#0B0B0B', fontSize: 23, fontWeight: '900'},
-  averageUnit: {fontSize: 13, fontWeight: '800'},
-  averageLabel: {color: '#686868', fontSize: 13, fontWeight: '800', marginTop: 8, textAlign: 'center'},
-  selectHintBox: {minHeight: 76, borderRadius: 18, backgroundColor: '#F7FBFA', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, marginTop: 16},
-  selectHintIcon: {color: '#969696', fontSize: 28, fontWeight: '900', marginRight: 16},
-  selectHintTitle: {color: '#777777', fontSize: 16, fontWeight: '900'},
-  selectHintText: {color: '#777777', fontSize: 15, fontWeight: '700', marginTop: 5},
-  distanceHero: {flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', marginTop: -2},
-  distanceNumber: {color: '#49BF99', fontSize: 66, lineHeight: 72, fontWeight: '900'},
-  distanceUnit: {color: '#000000', fontSize: 28, lineHeight: 42, fontWeight: '900', marginLeft: 7, marginBottom: 8},
-  detailDivider: {height: 1, backgroundColor: '#E3EEEE', marginTop: 8, marginBottom: 16},
-  runMetricGrid: {flexDirection: 'row', flexWrap: 'wrap', gap: 10},
-  runMetricCard: {width: '31.4%', minHeight: 86, borderRadius: 16, backgroundColor: '#F1FCFA', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8},
-  runMetricIcon: {color: '#6FB59D', fontSize: 27, fontWeight: '900', marginRight: 8},
-  runMetricValue: {color: '#070707', fontSize: 20, fontWeight: '900', textAlign: 'center'},
-  runMetricUnit: {fontSize: 11, fontWeight: '800'},
-  runMetricLabel: {color: '#3C3C3C', fontSize: 12, fontWeight: '800', marginTop: 5, textAlign: 'center'},
-  routePreview: {height: 210, borderRadius: 18, overflow: 'hidden', marginTop: 18, backgroundColor: '#E9F3EE'},
-  routeMapImage: {position: 'absolute', width: '100%', height: '100%', opacity: 0.36},
-  routeLine: {position: 'absolute', height: 8, borderRadius: 5, backgroundColor: '#37BE78'},
-  routeLineOne: {left: 88, top: 112, width: 170, transform: [{rotate: '-10deg'}]},
-  routeLineTwo: {left: 220, top: 96, width: 180, transform: [{rotate: '9deg'}]},
-  routeBadge: {position: 'absolute', overflow: 'hidden', color: '#FFFFFF', fontSize: 12, fontWeight: '900', paddingHorizontal: 10, paddingVertical: 7, borderRadius: 13},
-  routeStart: {left: 44, top: 88, backgroundColor: '#47BC8A'},
-  routeFinish: {right: 38, top: 104, backgroundColor: '#FF6B4B'},
-  emptyRecordCard: {minHeight: 372},
-  emptyRecordTitle: {color: '#0F0F0F', fontSize: 25, fontWeight: '900', textAlign: 'center', marginTop: 16},
-  emptyRecordSubtitle: {color: '#8A8A8A', fontSize: 17, fontWeight: '800', textAlign: 'center', marginTop: 14},
+  screen: { flex: 1, backgroundColor: colors.background },
+  content: { paddingHorizontal: spacing.xl },
+  subtitle: { marginTop: spacing.xs },
+  section: { marginTop: spacing.lg },
+  monthControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+  },
+  calendarGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  weekday: { width: '14.285714%', paddingBottom: spacing.sm },
+  dayCell: {
+    width: '14.285714%',
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  day: {
+    width: 38,
+    height: 44,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  today: { borderColor: colors.primaryBorder },
+  recordedDay: { backgroundColor: colors.primarySoft },
+  selectedDay: { backgroundColor: colors.primary, borderColor: colors.primary },
+  pressed: { opacity: 0.7 },
+  dot: { width: 4, height: 4, borderRadius: 2, backgroundColor: 'transparent' },
+  recordedDot: { backgroundColor: colors.primary },
+  selectedDot: { backgroundColor: colors.textOnPrimary },
+  calendarFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    paddingTop: spacing.md,
+    marginTop: spacing.md,
+  },
+  legend: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  sectionHeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: spacing.xxl,
+    marginBottom: spacing.md,
+  },
+  distance: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: spacing.sm,
+    marginVertical: spacing.sm,
+  },
+  metrics: { flexDirection: 'row', gap: spacing.sm },
+  metric: { flex: 1, alignItems: 'center', gap: spacing.xs },
+  hint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.xl,
+  },
+  empty: {
+    alignItems: 'center',
+    paddingVertical: spacing.xxxl,
+    gap: spacing.md,
+  },
+  emptyIcon: {
+    backgroundColor: colors.primarySoft,
+    borderRadius: radius.pill,
+    padding: spacing.lg,
+  },
+  runCard: { marginBottom: spacing.md },
+  runHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  route: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginTop: spacing.lg,
+  },
+  routeEmpty: { marginTop: spacing.lg },
 });

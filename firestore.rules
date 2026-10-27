@@ -1,171 +1,126 @@
 rules_version = '2';
-
+// Access/model audit: docs/firestore-access-review.md.
+// users are private PII. Growth, counters, social writes and memberships are server-owned.
+// Public/followers/private posts use canonical author + relationship authorization.
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() {
-      return request.auth != null;
+    function signedIn() { return request.auth != null; }
+    function isOwner(uid) { return signedIn() && request.auth.uid == uid; }
+    function nullableString(value,max) { return value == null || (value is string && value.size() <= max); }
+    function validName(value) { return value is string && value.size() >= 1 && value.size() <= 20; }
+    function validPreferences(d) {
+      return d is map && d.keys().hasOnly(['push','growth','social','stone']) && d.keys().hasAll(['push','growth','social','stone'])
+        && d.push is bool && d.growth is bool && d.social is bool && d.stone is bool;
     }
-
-    function isOwner(uid) {
-      return signedIn() && request.auth.uid == uid;
+    function validUser(d) {
+      return d.keys().hasAll(['uid','display_name','pet_name','region','dialect','total_km','total_exp','is_frozen','follower_count','following_count','influencer_tier','created_at','updated_at'])
+        && d.keys().hasOnly(['uid','email','phone','display_name','pet_name','profile_image','website','height_cm','weight_kg','gender','region','total_km','total_exp','last_run_at','is_frozen','influencer_tier','follower_count','following_count','dialect','fcm_token','notification_settings','created_at','updated_at'])
+        && d.uid is string && validName(d.display_name) && validName(d.pet_name)
+        && nullableString(d.get('email',null),320) && nullableString(d.get('phone',null),30)
+        && nullableString(d.get('profile_image',null),3000) && nullableString(d.get('website',null),500)
+        && (d.get('height_cm',null) == null || (d.height_cm is number && d.height_cm >= 50 && d.height_cm <= 250))
+        && (d.get('weight_kg',null) == null || (d.weight_kg is number && d.weight_kg >= 10 && d.weight_kg <= 400))
+        && d.get('gender',null) in [null,'female','male']
+        && d.region in ['서울','경기','인천','강원','충북','충남','대전','세종','경북','경남','대구','부산','울산','전북','전남','광주','제주']
+        && d.dialect in ['std','seoul','gyeonggi','gangwon','chung','jeon','gyeong','jeju']
+        && d.total_km is number && d.total_km >= 0 && d.total_km <= 10000000
+        && d.total_exp is int && d.total_exp >= 0 && d.is_frozen is bool
+        && d.follower_count is int && d.follower_count >= 0 && d.following_count is int && d.following_count >= 0
+        && d.influencer_tier in ['none','nano','micro','macro','mega']
+        && (d.get('last_run_at',null) == null || d.last_run_at is timestamp)
+        && nullableString(d.get('fcm_token',null),4096)
+        && (!('notification_settings' in d) || validPreferences(d.notification_settings))
+        && d.created_at is timestamp && d.updated_at is timestamp;
     }
-
-    function isCreatingSelf(uid) {
-      return isOwner(uid)
-        && request.resource.data.uid == uid
-        && request.resource.data.total_km == 0
-        && request.resource.data.total_exp == 0
-        && request.resource.data.is_frozen == false
-        && request.resource.data.follower_count == 0
-        && request.resource.data.following_count == 0
-        && request.resource.data.influencer_tier == 'none';
+    function validCharacter(d) {
+      return d.keys().hasAll(['uid','stage','character_type','pet_name','exp','stat_stamina','stat_speed','stat_endurance','last_active_at','created_at','updated_at'])
+        && d.keys().hasOnly(['uid','stage','character_type','pet_name','exp','stat_stamina','stat_speed','stat_endurance','last_active_at','created_at','updated_at'])
+        && d.uid is string && validName(d.pet_name) && d.stage == 'egg'
+        && d.character_type in ['bear','capybara','cat','cheetah','chick','chicken','cow','crocodile','deer','dog','duck','eagle','elephant','fox','frog','giraffe','gorilla','hamster','hippo','horse','koala','lion','monkey','ostrich','otter','penguin','pig','platypus','quokka','rabbit','raccoon','sheep','sparrow','squirrel','tiger','zebra']
+        && d.exp == 0 && d.stat_stamina == 0 && d.stat_speed == 0 && d.stat_endurance == 0
+        && d.last_active_at is timestamp && d.created_at is timestamp && d.updated_at is timestamp;
     }
-
-    function userClientEditableKeysOnly() {
-      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-        'display_name',
-        'pet_name',
-        'profile_image',
-        'website',
-        'height_cm',
-        'weight_kg',
-        'gender',
-        'region',
-        'dialect',
-        'fcm_token',
-        'updated_at'
-      ]);
+    function validRun(d,id) {
+      return d.keys().hasAll(['run_id','uid','goal_type','goal_value','started_at','ended_at','duration_sec','distance_km','avg_pace_sec','avg_speed_kmh','calories','route','exp_earned','created_at'])
+        && d.keys().hasOnly(['run_id','uid','goal_type','goal_value','started_at','ended_at','duration_sec','distance_km','avg_pace_sec','avg_speed_kmh','avg_heart_rate','calories','route','park_id','exp_earned','created_at'])
+        && d.run_id == id && d.uid == request.auth.uid && d.goal_type in ['free','time','distance','calorie']
+        && (d.goal_value == null || (d.goal_value is number && d.goal_value > 0 && d.goal_value <= 100000))
+        && d.started_at is timestamp && d.started_at <= request.time && d.ended_at == request.time && d.created_at == request.time
+        && d.duration_sec is number && d.duration_sec > 0 && d.duration_sec <= 86400
+        && d.distance_km is number && d.distance_km >= 0 && d.distance_km <= 100
+        && d.avg_pace_sec is number && d.avg_pace_sec >= 0 && d.avg_pace_sec <= 86400
+        && d.avg_speed_kmh is number && d.avg_speed_kmh >= 0 && d.avg_speed_kmh <= 200
+        && d.calories is number && d.calories >= 0 && d.calories <= 100000
+        && (d.get('avg_heart_rate',null) == null || (d.avg_heart_rate is number && d.avg_heart_rate >= 20 && d.avg_heart_rate <= 250))
+        && nullableString(d.get('park_id',null),128) && d.route is list && d.route.size() <= 12000 && d.exp_earned == 0;
     }
-
-    function runBelongsToRequester() {
-      return signedIn()
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.distance_km is number
-        && request.resource.data.distance_km >= 0
-        && request.resource.data.distance_km <= 100
-        && request.resource.data.duration_sec is number
-        && request.resource.data.duration_sec > 0
-        && request.resource.data.duration_sec <= 86400
-        && request.resource.data.exp_earned == 0;
+    function visiblePost(d) {
+      return signedIn() && (d.uid == request.auth.uid || d.visibility == 'public'
+        || (d.visibility == 'followers' && exists(/databases/$(database)/documents/follows/$(request.auth.uid + '_' + d.uid))));
     }
-
+    function visibleParent(id) { return exists(/databases/$(database)/documents/posts/$(id)) && visiblePost(get(/databases/$(database)/documents/posts/$(id)).data); }
+    function validNotification(d) { return d.keys().hasAll(['type','is_read','created_at']) && d.type is string && d.is_read is bool && d.created_at is timestamp; }
+    function validProgress(d,uid) {
+      return d.keys().hasAll(['uid','current_km','pace_sec','updated_at'])
+        && d.keys().hasOnly(['uid','display_name','profile_image','current_km','pace_sec','state','joined_at','updated_at'])
+        && d.uid == uid && d.current_km is number && d.current_km >= 0 && d.current_km <= 100
+        && d.pace_sec is number && d.pace_sec >= 0 && d.pace_sec <= 86400
+        && d.get('state','active') in ['active','paused'] && d.updated_at == request.time;
+    }
     match /users/{uid} {
-      allow create: if isCreatingSelf(uid);
-      allow get, list: if isOwner(uid);
-      allow update: if isOwner(uid) && userClientEditableKeysOnly();
+      allow read: if isOwner(uid);
+      allow create: if isOwner(uid) && validUser(request.resource.data) && request.resource.data.uid == uid
+        && request.resource.data.total_km == 0 && request.resource.data.total_exp == 0
+        && request.resource.data.is_frozen == false && request.resource.data.follower_count == 0
+        && request.resource.data.following_count == 0 && request.resource.data.influencer_tier == 'none';
+      allow update: if isOwner(uid) && validUser(request.resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['display_name','profile_image','website','height_cm','weight_kg','gender','region','dialect','fcm_token','updated_at']);
       allow delete: if false;
-
-      match /character/{characterId} {
+      match /character/{id} {
         allow read: if isOwner(uid);
-        allow create: if isOwner(uid)
-          && characterId == uid
-          && request.resource.data.uid == uid
-          && request.resource.data.exp == 0
-          && request.resource.data.stat_stamina == 0
-          && request.resource.data.stat_speed == 0
-          && request.resource.data.stat_endurance == 0;
+        allow create: if isOwner(uid) && id == uid && request.resource.data.uid == uid && validCharacter(request.resource.data);
         allow update, delete: if false;
       }
-
-      match /feed/{postId} {
+      match /feed/{id} { allow read: if isOwner(uid); allow write: if false; }
+      match /notifications/{id} {
         allow read: if isOwner(uid);
-        allow write: if false;
-      }
-
-      match /notifications/{notificationId} {
-        allow read: if isOwner(uid);
-        allow update: if isOwner(uid)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['is_read']);
+        allow update: if isOwner(uid) && validNotification(request.resource.data) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['is_read']);
         allow create, delete: if false;
       }
+      match /inventory/{id} { allow read: if isOwner(uid); allow write: if false; }
+      match /room/{id} { allow read: if isOwner(uid); allow write: if false; }
+      match /room_invites/{id} { allow read: if isOwner(uid); allow write: if false; }
     }
-
-    match /runs/{runId} {
-      allow create: if runBelongsToRequester();
+    match /runs/{id} {
+      allow create: if signedIn() && validRun(request.resource.data,id);
       allow read: if signedIn() && resource.data.uid == request.auth.uid;
       allow update, delete: if false;
     }
-
-    match /posts/{postId} {
-      allow read: if signedIn() && resource.data.visibility in ['public', 'followers'];
-      allow create: if signedIn()
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.like_count == 0
-        && request.resource.data.comment_count == 0
-        && request.resource.data.author_tier == 'none'
-        && request.resource.data.text is string
-        && request.resource.data.text.size() <= 2000;
-      allow update, delete: if signedIn() && resource.data.uid == request.auth.uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'text',
-          'image_url',
-          'visibility'
-        ]);
-
-      match /likes/{uid} {
-        allow read: if signedIn();
-        allow create: if isOwner(uid) && request.resource.data.uid == request.auth.uid;
-        allow delete: if isOwner(uid);
-        allow update: if false;
-      }
-
-      match /comments/{commentId} {
-        allow read: if signedIn();
-        allow create: if signedIn()
-          && request.resource.data.uid == request.auth.uid
-          && request.resource.data.text is string
-          && request.resource.data.text.size() <= 1000;
-        allow update, delete: if signedIn() && resource.data.uid == request.auth.uid;
-      }
+    match /posts/{id} {
+      allow read: if visiblePost(resource.data); allow write: if false;
+      match /likes/{uid} { allow read: if visibleParent(id); allow write: if false; }
+      match /comments/{commentId} { allow read: if visibleParent(id); allow write: if false; }
     }
-
-    match /follows/{followId} {
-      allow read: if signedIn();
-      allow create: if signedIn()
-        && followId == request.auth.uid + '_' + request.resource.data.following_id
-        && request.resource.data.follower_id == request.auth.uid
-        && request.resource.data.following_id is string
-        && request.resource.data.following_id != request.auth.uid;
-      allow delete: if signedIn() && resource.data.follower_id == request.auth.uid;
-      allow update: if false;
-    }
-
-    match /bookmarks/{bookmarkId} {
-      allow read: if signedIn() && resource.data.uid == request.auth.uid;
-      allow create: if signedIn()
-        && bookmarkId == request.auth.uid + '_' + request.resource.data.post_id
-        && request.resource.data.uid == request.auth.uid;
-      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
-      allow update: if false;
-    }
-
-    match /together_rooms/{roomId} {
-      allow read: if signedIn();
-      allow create: if signedIn()
-        && request.resource.data.host_uid == request.auth.uid
-        && request.resource.data.status == 'waiting';
-      allow update: if signedIn() && resource.data.host_uid == request.auth.uid;
-      allow delete: if false;
-
-      match /members/{uid} {
-        allow read: if signedIn();
-        allow create, update: if isOwner(uid)
-          && request.resource.data.uid == request.auth.uid
-          && request.resource.data.current_km is number
-          && request.resource.data.current_km >= 0
-          && request.resource.data.current_km <= 100;
-        allow delete: if isOwner(uid);
-      }
-    }
-
-    match /parks/{parkId} {
-      allow read: if signedIn();
+    match /follows/{id} { allow read: if signedIn(); allow write: if false; }
+    match /bookmarks/{id} { allow read: if signedIn() && resource.data.uid == request.auth.uid; allow write: if false; }
+    match /together_rooms/{id} {
+      // 방장과 요청받은 친구만 방을 볼 수 있다
+      allow read: if signedIn() && request.auth.uid in resource.data.get('participants', []);
       allow write: if false;
-
-      match /courses/{courseId} {
-        allow read: if signedIn();
-        allow write: if false;
+      match /members/{uid} {
+        allow read: if signedIn() && request.auth.uid in get(/databases/$(database)/documents/together_rooms/$(id)).data.get('participants', []);
+        allow update: if isOwner(uid) && validProgress(request.resource.data,uid)
+          && resource.data.get('state','active') in ['active','paused']
+          && request.resource.data.current_km >= resource.data.current_km
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['current_km','pace_sec','state','updated_at'])
+          && get(/databases/$(database)/documents/together_rooms/$(id)).data.status == 'running';
+        allow create, delete: if false;
       }
     }
+    match /parks/{id} { allow read: if signedIn(); allow write: if false;
+      match /courses/{courseId} { allow read: if signedIn(); allow write: if false; }
+    }
+    match /items/{id} { allow read: if signedIn(); allow write: if false; }
+    match /room_catalog/{id} { allow read: if signedIn(); allow write: if false; }
   }
 }

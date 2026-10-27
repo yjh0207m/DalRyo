@@ -51,7 +51,7 @@ export async function fetchCharacterRiveUrl(type: CharacterType) {
   }
 }
 
-export async function createInitialCharacter({
+export function buildInitialCharacter({
   uid,
   petName,
   characterType,
@@ -75,7 +75,11 @@ export async function createInitialCharacter({
     updated_at: now,
   };
 
-  await db().collection('users').doc(uid).collection('character').doc(uid).set(character);
+  return character;
+}
 
+export async function createInitialCharacter(input: {uid: string; petName: string; characterType: CharacterType}) {
+  const character = buildInitialCharacter(input);
+  await db().collection('users').doc(input.uid).collection('character').doc(input.uid).set(character);
   return character;
 }

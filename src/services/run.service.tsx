@@ -30,7 +30,8 @@ export async function saveRunRecord({
     throw new Error('달리기 기록을 저장하려면 로그인이 필요해요.');
   }
 
-  const runRef = db().collection('runs').doc();
+  // A timed-out write may already have committed. Reuse the session identity.
+  const runRef = db().collection('runs').doc(`${user.uid}_${startedAt.getTime()}`);
   const run: RunDocument = {
     run_id: runRef.id,
     uid: user.uid,
@@ -50,7 +51,15 @@ export async function saveRunRecord({
     created_at: firestore.FieldValue.serverTimestamp(),
   };
 
-  await runRef.set(run);
+  try {
+    await runRef.set(run);
+  } catch (error) {
+    try {
+      const existing = await runRef.get({source:'server'});
+      if (existing.exists() && existing.get('uid') === user.uid) return existing.data() as RunDocument;
+    } catch { /* Preserve the original save error for retry. */ }
+    throw error;
+  }
 
   return run;
 }
@@ -70,6 +79,13 @@ export async function fetchRunsBetween(start: Date, end: Date) {
     .orderBy('started_at', 'desc')
     .get();
 
+  return snap.docs.map(doc => doc.data() as RunDocument);
+}
+
+export async function fetchRecentRuns() {
+  const uid = auth().currentUser?.uid;
+  if (!uid) throw new Error('로그인이 필요해요.');
+  const snap = await db().collection('runs').where('uid', '==', uid).orderBy('started_at', 'desc').limit(20).get();
   return snap.docs.map(doc => doc.data() as RunDocument);
 }
 

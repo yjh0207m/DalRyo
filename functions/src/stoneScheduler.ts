@@ -84,7 +84,8 @@ export const stoneScheduler = onSchedule(
       });
 
       const body = MESSAGES[notice][toDialectGroup(user.dialect)];
-      if (typeof user.fcm_token === 'string' && user.fcm_token) {
+      if (typeof user.fcm_token === 'string' && user.fcm_token &&
+        user.notification_settings?.push === true && user.notification_settings?.stone !== false) {
         pushes.push(
           getMessaging()
             .send({

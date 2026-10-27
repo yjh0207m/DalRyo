@@ -88,3 +88,7 @@ dalryo-current.png
 
 # Cloud Functions build output
 functions/lib/
+.build-tmp/
+firestore-debug.log
+firebase-debug.log
+ui-debug.log

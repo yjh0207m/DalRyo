@@ -1,9 +1,15 @@
 import React, {useState} from 'react';
-import {ActivityIndicator, Alert, StatusBar, StyleSheet, View} from 'react-native';
+import {ActivityIndicator, Alert, Pressable, StatusBar, StyleSheet, View} from 'react-native';
 import {CommunityScreen} from '../community/CommunityScreen';
+import {TogetherScreen} from '../together/TogetherScreen';
 import {GrowthScreen} from '../growth/GrowthScreen';
 import {HomeScreen} from '../home/HomeScreen';
 import {MyPageScreen} from '../profile/MyPageScreen';
+import {CharacterPreviewScreen} from '../dev/CharacterPreviewScreen';
+import {SettingsScreen} from '../profile/SettingsScreen';
+import {NotificationsScreen} from '../profile/NotificationsScreen';
+import {useUnreadNotifications} from '../../hooks/useNotifications';
+import {usePushNotifications} from '../../hooks/usePushNotifications';
 import {GoalValueScreen} from '../run/GoalValueScreen';
 import {RecordScreen} from '../run/RecordScreen';
 import {RunCompleteScreen} from '../run/RunCompleteScreen';
@@ -42,6 +48,14 @@ export function MainAppScreen({user, character}: Props) {
   const [activeTab, setActiveTab] = useState<MainTab>('home');
   const [runFlow, setRunFlow] = useState<RunFlow | null>(null);
   const [runSheetOpen, setRunSheetOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [characterPreviewOpen, setCharacterPreviewOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [communitySubpage, setCommunitySubpage] = useState(false);
+  const [together, setTogether] = useState<{friendUid?: string} | null>(null);
+  const [recordSubpage,setRecordSubpage]=useState(false);
+  const hasUnread = useUnreadNotifications(user?.uid);
+  const push = usePushNotifications(user?.uid, user?.notification_settings?.push ?? false, () => setNotificationsOpen(true));
 
   const openRunSheet = () => setRunSheetOpen(true);
 
@@ -152,7 +166,22 @@ export function MainAppScreen({user, character}: Props) {
     );
   }
 
-  const header = {onNotificationPress: () => undefined, onSettingsPress: () => setActiveTab('my')};
+  if (__DEV__ && characterPreviewOpen) return <CharacterPreviewScreen onBack={() => setCharacterPreviewOpen(false)} />;
+  if (settingsOpen && user) return <SettingsScreen user={user} onBack={() => setSettingsOpen(false)} />;
+  if (notificationsOpen)
+    return (
+      <NotificationsScreen
+        onBack={() => setNotificationsOpen(false)}
+        onOpenTogether={() => {
+          setNotificationsOpen(false);
+          setTogether({});
+        }}
+      />
+    );
+  if (together && user && character)
+    return <TogetherScreen user={user} character={character} initialFriendUid={together.friendUid} onBack={() => setTogether(null)} />;
+
+  const header = {onNotificationPress: () => setNotificationsOpen(true), onSettingsPress: () => setActiveTab('my'), hasUnread};
 
   return (
     <View style={styles.screen}>
@@ -160,12 +189,15 @@ export function MainAppScreen({user, character}: Props) {
       <View style={styles.body}>
         {activeTab === 'home' && <HomeScreen user={user} character={character} onRunPress={openRunSheet} {...header} />}
         {activeTab === 'growth' && <GrowthScreen user={user} character={character} {...header} />}
-        {activeTab === 'community' && <CommunityScreen />}
-        {activeTab === 'records' && <RecordScreen />}
-        {activeTab === 'my' && <MyPageScreen user={user} character={character} onBack={() => setActiveTab('home')} />}
+        {activeTab === 'community' && <CommunityScreen {...header} onSubpageChange={setCommunitySubpage} onTogetherPress={friendUid => setTogether({friendUid})}/>}
+        {activeTab === 'records' && <RecordScreen {...header} character={character} onSubpageChange={setRecordSubpage}/>}
+        {activeTab === 'my' && <MyPageScreen user={user} character={character} onBack={() => setActiveTab('home')} onOpenSettings={() => setSettingsOpen(true)} onPreviewCharacter={() => setCharacterPreviewOpen(true)} />}
       </View>
-      <BottomTabBar activeTab={activeTab} onChange={tab => (tab === 'run' ? openRunSheet() : setActiveTab(tab))} />
+      {!(activeTab === 'community' && communitySubpage) && !(activeTab === 'records' && recordSubpage) && <BottomTabBar activeTab={activeTab} onChange={tab => (tab === 'run' ? openRunSheet() : setActiveTab(tab))} />}
       <RunStartSheet visible={runSheetOpen} onClose={() => setRunSheetOpen(false)} onSelect={selectGoal} />
+      {push.notice && <Pressable accessibilityRole="button" onPress={() => {push.dismiss(); setNotificationsOpen(true);}} style={styles.pushBanner}>
+        <AppText variant="subheading">{push.notice.title}</AppText><AppText variant="caption">{push.notice.body}</AppText>
+      </Pressable>}
     </View>
   );
 }
@@ -175,4 +207,5 @@ const styles = StyleSheet.create({
   body: {flex: 1},
   savingScreen: {flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center'},
   savingText: {marginTop: 16},
+  pushBanner: {position: 'absolute', top: 56, left: 20, right: 20, padding: 16, backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.primary},
 });

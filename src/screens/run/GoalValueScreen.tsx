@@ -1,3 +1,4 @@
+import {useDialect} from '../../locales/DialectProvider';
 import React, {useState} from 'react';
 import {Pressable, StatusBar, StyleSheet, View} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
@@ -64,6 +65,7 @@ const CONFIG: Record<GoalSetting, GoalConfig> = {
 // 목표 값 하나만 크게 보여 주고 ± 와 자주 쓰는 값으로 고른다 (Figma: "한눈에 봐도 간단하게")
 export function GoalValueScreen({goalType, onBack, onStart}: Props) {
   const insets = useSafeAreaInsets();
+  const t = useDialect();
   const config = CONFIG[goalType];
   const [value, setValue] = useState(config.initial);
 
@@ -106,7 +108,8 @@ export function GoalValueScreen({goalType, onBack, onStart}: Props) {
               accessibilityRole="button"
               accessibilityState={{selected: active}}
               onPress={() => setValue(preset)}
-              style={[styles.preset, active && styles.presetActive]}>
+              style={[styles.preset, active && styles.presetActive]}
+            >
               <AppText variant="subheading" color={active ? colors.textOnPrimary : colors.text}>
                 {formatValue(preset)}
                 {config.unit}
@@ -116,7 +119,7 @@ export function GoalValueScreen({goalType, onBack, onStart}: Props) {
         })}
       </View>
 
-      <Button label="이 목표로 시작" icon={Footprints} onPress={() => onStart(value)} />
+      <Button label={t('run.goalStart')} icon={Footprints} onPress={() => onStart(value)} />
     </View>
   );
 }
@@ -129,7 +132,8 @@ function StepButton({icon, disabled, onPress}: {icon: 'minus' | 'plus'; disabled
       accessibilityLabel={icon === 'minus' ? '줄이기' : '늘리기'}
       disabled={disabled}
       onPress={onPress}
-      style={({pressed}) => [styles.step, pressed && styles.stepPressed, disabled && styles.stepDisabled]}>
+      style={({pressed}) => [styles.step, pressed && styles.stepPressed, disabled && styles.stepDisabled]}
+    >
       <Icon color={colors.primaryInk} size={26} strokeWidth={2.4} />
     </Pressable>
   );

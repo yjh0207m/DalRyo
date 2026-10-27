@@ -2,6 +2,18 @@ import {auth, firestore as db} from '../lib/firebase';
 import type {CharacterDocument} from '../types/character.types';
 import type {UserDocument} from '../types/user.types';
 import {normalizeCharacterStage} from '../utils/exp';
+import {validateProfile, type ProfileForm} from '../utils/profile';
+import firestore from '@react-native-firebase/firestore';
+
+export async function updateMyProfile(form: ProfileForm) {
+  const currentUser = auth().currentUser;
+  if (!currentUser) throw new Error('로그인이 필요해요. 다시 로그인해 주세요.');
+  const changes = validateProfile(form);
+  await db().collection('users').doc(currentUser.uid).update({
+    ...changes,
+    updated_at: firestore.FieldValue.serverTimestamp(),
+  });
+}
 
 export type UserProfileBundle = {
   user: UserDocument;

@@ -1,11 +1,15 @@
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {useMemo} from 'react';
+import {useDialect} from '../../locales/DialectProvider';
+import type {Translate} from '../../locales/translate';
 import {ScrollView, StyleSheet, View} from 'react-native';
-import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {SafeAreaView, useSafeAreaInsets} from 'react-native-safe-area-context';
 import {Bell, Check, Flame, Footprints, Mountain, Route, Settings, Snowflake, Timer, type LucideIcon} from 'lucide-react-native';
 import {WanderingCharacter} from '../../components/character/WanderingCharacter';
 import {ExpBar, LevelBadge, StreakChip} from '../../components/game/Hud';
 import {RunningWorld} from '../../components/scene/RunningWorld';
 import {AppText, Badge, Button, Card, IconButton} from '../../components/ui';
+import {RunRecordsStatus} from '../../components/ui/RunRecordsStatus';
+import {useRunRecords} from '../../hooks/useRunRecords';
 import {TAB_BAR_HEIGHT} from '../../navigation/BottomTabBar';
 import {fetchThisWeekRuns, getRunStartedAtDate} from '../../services/run.service';
 import {colors, radius, shadow, spacing} from '../../theme';
@@ -18,6 +22,7 @@ type Props = {
   user: UserDocument | null;
   character: CharacterDocument | null;
   onRunPress: () => void;
+  hasUnread?: boolean;
   onNotificationPress: () => void;
   onSettingsPress: () => void;
 };
@@ -35,110 +40,125 @@ const STAGE_TITLES: Record<CharacterStage, string> = {
   runner: '베테랑 러너',
 };
 
-const TAP_LINES = ['간지러워요!', '오늘 몇 km 달릴까요?', '같이 달리면 쑥쑥 자라요', '헤헤, 좋아요!', '준비 운동 완료!'];
-
-const STONE_MESSAGES: Record<Exclude<StoneLevel, 'none'>, {title: string; body: string}> = {
-  warn3: {title: '달료가 뻣뻣해졌어요', body: '3일째 쉬는 중이에요. 오늘 가볍게 달려 볼까요?'},
-  warn5: {title: '달료 몸이 회색이 되고 있어요', body: '이틀 안에 달리지 않으면 돌이 돼요.'},
-  stone: {title: '달료가 돌이 됐어요', body: '오늘 달리면 바로 녹아요.'},
-};
+function getStoneMessages(t: Translate): Record<Exclude<StoneLevel, 'none'>, {title: string; body: string}> {
+  return {
+    warn3: {title: t('char.warn3'), body: t('char.warn3Body')},
+    warn5: {title: t('char.warn5'), body: t('char.warn5Body')},
+    stone: {title: t('char.stone'), body: t('char.stoneBody')},
+  };
+}
 
 // 홈 = 게임 로비. 위쪽은 캐릭터가 돌아다니는 월드 + 상태(HUD), 아래 패널에 출발 버튼과 오늘 기록
-export function HomeScreen({user, character, onRunPress, onNotificationPress, onSettingsPress}: Props) {
+export function HomeScreen({user, character, onRunPress, onNotificationPress, onSettingsPress, hasUnread}: Props) {
   const insets = useSafeAreaInsets();
+  const t = useDialect();
+  const stoneMessages = getStoneMessages(t);
+  const tapLines = [t('home.tap1'), t('home.tap2'), t('home.tap3'), t('home.tap4'), t('home.tap5')];
   const lastRunAtMs = user?.last_run_at?.toMillis() ?? null;
-  const weekRuns = useWeekRuns(lastRunAtMs);
+  const {runs: weekRuns, status, retry} = useRunRecords(fetchThisWeekRuns, lastRunAtMs);
   const totalKm = user?.total_km ?? 0;
   const stoneLevel: StoneLevel = user?.is_frozen ? 'stone' : getStoneLevel(getDaysSinceRun(lastRunAtMs));
   const {today, ranDays} = useMemo(() => summarizeWeek(weekRuns), [weekRuns]);
   const todayIndex = (new Date().getDay() + 6) % 7;
   const streak = getWeekStreak(ranDays, todayIndex);
-  const worldHeight = WORLD_HEIGHT + insets.top;
+  const worldHeight = WORLD_HEIGHT;
 
   return (
-    <ScrollView
-      style={styles.screen}
-      showsVerticalScrollIndicator={false}
-      contentContainerStyle={{paddingBottom: TAB_BAR_HEIGHT + insets.bottom + spacing.xxxl}}>
-      <View style={{height: worldHeight}}>
-        <RunningWorld speedKmh={0} height={worldHeight} groundTop={GROUND_TOP} cloudsTop={0.3}>
-          {character && (
-            <View style={styles.actorOnGround}>
-              <WanderingCharacter
-                type={character.character_type}
-                stage={character.stage}
-                size={CHARACTER_SIZE}
-                areaWidth={340}
-                frozen={stoneLevel === 'stone'}
-                speech={getSpeech({stage: character.stage, stoneLevel, ranToday: today.distanceKm > 0})}
-                tapLines={stoneLevel === 'stone' || character.stage === 'egg' ? [] : TAP_LINES}
-              />
+    <SafeAreaView style={styles.screen} edges={['top']}>
+      <ScrollView
+        style={styles.screen}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{paddingBottom: TAB_BAR_HEIGHT + insets.bottom + spacing.xxxl}}
+      >
+        <View style={{height: worldHeight}}>
+          <RunningWorld speedKmh={0} height={worldHeight} groundTop={GROUND_TOP} cloudsTop={0.3}>
+            {character && (
+              <View style={styles.actorOnGround}>
+                <WanderingCharacter
+                  type={character.character_type}
+                  stage={character.stage}
+                  size={CHARACTER_SIZE}
+                  areaWidth={340}
+                  frozen={stoneLevel === 'stone'}
+                  speech={getSpeech({stage: character.stage, stoneLevel, ranToday: today.distanceKm > 0}, t)}
+                  tapLines={stoneLevel === 'stone' || character.stage === 'egg' ? [] : tapLines}
+                />
+              </View>
+            )}
+          </RunningWorld>
+
+          <View style={[styles.hud, {paddingTop: spacing.sm}]}>
+            {character && <PlayerCard character={character} totalKm={totalKm} />}
+            <View style={styles.hudActions}>
+              <IconButton icon={Bell} dot={hasUnread} accessibilityLabel={hasUnread ? '알림, 안 읽은 알림 있음' : '알림'} size={40} onPress={onNotificationPress} />
+              <IconButton icon={Settings} accessibilityLabel="설정" size={40} onPress={onSettingsPress} />
             </View>
+          </View>
+          <View style={styles.hudChips}>{status === 'success' && <StreakChip days={streak} />}</View>
+        </View>
+
+        <View style={styles.panel}>
+          <Button label={t('run.startAction')} icon={Footprints} onPress={onRunPress} />
+
+          {stoneLevel !== 'none' && (
+            <Card tone={stoneLevel === 'stone' ? 'stone' : 'warm'} style={styles.notice}>
+              {stoneLevel === 'stone' ? <Mountain color={colors.textMuted} size={22} /> : <Snowflake color={colors.accentInk} size={22} />}
+              <View style={styles.noticeText}>
+                <AppText variant="subheading">{stoneMessages[stoneLevel].title}</AppText>
+                <AppText variant="caption" color={colors.textMuted}>
+                  {stoneMessages[stoneLevel].body}
+                </AppText>
+              </View>
+            </Card>
           )}
-        </RunningWorld>
 
-        <View style={[styles.hud, {paddingTop: insets.top + spacing.sm}]}>
-          {character && <PlayerCard character={character} totalKm={totalKm} />}
-          <View style={styles.hudActions}>
-            <IconButton icon={Bell} accessibilityLabel="알림" size={40} onPress={onNotificationPress} />
-            <IconButton icon={Settings} accessibilityLabel="설정" size={40} onPress={onSettingsPress} />
-          </View>
-        </View>
-        <View style={[styles.hudChips, {top: insets.top + 96}]}>
-          <StreakChip days={streak} />
-        </View>
-      </View>
-
-      <View style={styles.panel}>
-        <Button label="달리기 시작" icon={Footprints} onPress={onRunPress} />
-
-        {stoneLevel !== 'none' && (
-          <Card tone={stoneLevel === 'stone' ? 'stone' : 'warm'} style={styles.notice}>
-            {stoneLevel === 'stone' ? <Mountain color={colors.textMuted} size={22} /> : <Snowflake color={colors.accentInk} size={22} />}
-            <View style={styles.noticeText}>
-              <AppText variant="subheading">{STONE_MESSAGES[stoneLevel].title}</AppText>
-              <AppText variant="caption" color={colors.textMuted}>
-                {STONE_MESSAGES[stoneLevel].body}
-              </AppText>
-            </View>
-          </Card>
-        )}
-
-        <Card style={styles.section}>
-          <AppText variant="subheading">나의 오늘 기록</AppText>
-          <View style={styles.statsRow}>
-            <Stat icon={Route} value={today.distanceKm.toFixed(2)} unit="km" />
-            <View style={styles.divider} />
-            <Stat icon={Timer} value={String(Math.round(today.durationSec / 60))} unit="분" />
-            <View style={styles.divider} />
-            <Stat icon={Flame} value={String(today.calories)} unit="kcal" />
-          </View>
-        </Card>
-
-        <Card style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <AppText variant="subheading">이번 주 활동</AppText>
-            <Badge label={`${Math.min(ranDays.size, WEEKLY_GOAL_DAYS)} / ${WEEKLY_GOAL_DAYS}일 목표`} tone={ranDays.size >= WEEKLY_GOAL_DAYS ? 'brand' : 'neutral'} />
-          </View>
-          <View style={styles.weekRow}>
-            {WEEK_LABELS.map((day, index) => {
-              const done = ranDays.has(index);
-              const isToday = index === todayIndex;
-              return (
-                <View key={day} style={styles.weekDay}>
-                  <AppText variant="label" color={isToday ? colors.primaryInk : colors.textSubtle}>
-                    {day}
-                  </AppText>
-                  <View style={[styles.weekDot, done && styles.weekDotDone, !done && isToday && styles.weekDotToday]}>
-                    {done && <Check color={colors.textOnPrimary} size={16} strokeWidth={3} />}
-                  </View>
+          {status !== 'success' ? (
+            <Card style={styles.section}>
+              <RunRecordsStatus status={status} onRetry={retry} />
+            </Card>
+          ) : (
+            <>
+              <Card style={styles.section}>
+                <AppText variant="subheading">나의 오늘 기록</AppText>
+                <View style={styles.statsRow}>
+                  <Stat icon={Route} value={today.distanceKm.toFixed(2)} unit="km" />
+                  <View style={styles.divider} />
+                  <Stat icon={Timer} value={String(Math.round(today.durationSec / 60))} unit="분" />
+                  <View style={styles.divider} />
+                  <Stat icon={Flame} value={String(today.calories)} unit="kcal" />
                 </View>
-              );
-            })}
-          </View>
-        </Card>
-      </View>
-    </ScrollView>
+              </Card>
+
+              <Card style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <AppText variant="subheading">이번 주 활동</AppText>
+                  <Badge
+                    label={`${Math.min(ranDays.size, WEEKLY_GOAL_DAYS)} / ${WEEKLY_GOAL_DAYS}일 목표`}
+                    tone={ranDays.size >= WEEKLY_GOAL_DAYS ? 'brand' : 'neutral'}
+                  />
+                </View>
+                <View style={styles.weekRow}>
+                  {WEEK_LABELS.map((day, index) => {
+                    const done = ranDays.has(index);
+                    const isToday = index === todayIndex;
+                    return (
+                      <View key={day} style={styles.weekDay}>
+                        <AppText variant="label" color={isToday ? colors.primaryInk : colors.textSubtle}>
+                          {day}
+                        </AppText>
+                        <View style={[styles.weekDot, done && styles.weekDotDone, !done && isToday && styles.weekDotToday]}>
+                          {done && <Check color={colors.textOnPrimary} size={16} strokeWidth={3} />}
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              </Card>
+            </>
+          )}
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -164,8 +184,8 @@ function PlayerCard({character, totalKm}: {character: CharacterDocument; totalKm
           {character.stage === 'egg'
             ? '첫 달리기를 하면 부화해요'
             : next
-              ? `${STAGE_LABELS[next.next]}까지 ${next.remainingKm.toFixed(1)}km`
-              : `최종 단계 · 누적 ${totalKm.toFixed(1)}km`}
+            ? `${STAGE_LABELS[next.next]}까지 ${next.remainingKm.toFixed(1)}km`
+            : `최종 단계 · 누적 ${totalKm.toFixed(1)}km`}
         </AppText>
       </View>
     </View>
@@ -173,12 +193,12 @@ function PlayerCard({character, totalKm}: {character: CharacterDocument; totalKm
 }
 
 // 상황에 따라 캐릭터가 건네는 말 (사투리 시스템이 붙으면 i18n 키로 바꾼다)
-function getSpeech({stage, stoneLevel, ranToday}: {stage: CharacterStage; stoneLevel: StoneLevel; ranToday: boolean}) {
-  if (stoneLevel === 'stone') return '몸이 굳었어요… 같이 달려줘요';
-  if (stoneLevel !== 'none') return '슬슬 몸이 근질근질해요!';
-  if (stage === 'egg') return '톡톡… 밖이 궁금해요';
-  if (ranToday) return '오늘 정말 잘 달렸어요!';
-  return '오늘도 같이 달려요!';
+function getSpeech({stage, stoneLevel, ranToday}: {stage: CharacterStage; stoneLevel: StoneLevel; ranToday: boolean}, t: Translate) {
+  if (stoneLevel === 'stone') return t('home.stone');
+  if (stoneLevel !== 'none') return t('home.warning');
+  if (stage === 'egg') return t('home.egg');
+  if (ranToday) return t('home.ranToday');
+  return t('home.hello');
 }
 
 // 이번 주 안에서 오늘(오늘 안 달렸으면 어제)부터 거슬러 올라간 연속 달린 날 수
@@ -190,26 +210,6 @@ function getWeekStreak(ranDays: Set<number>, todayIndex: number) {
     day -= 1;
   }
   return streak;
-}
-
-// 마지막 달리기 시각이 바뀌면(새 기록 저장) 다시 불러온다
-function useWeekRuns(lastRunAtMs: number | null) {
-  const [runs, setRuns] = useState<RunDocument[]>([]);
-
-  useEffect(() => {
-    let mounted = true;
-    fetchThisWeekRuns()
-      .then(result => {
-        if (mounted) setRuns(result);
-      })
-      .catch(() => undefined);
-
-    return () => {
-      mounted = false;
-    };
-  }, [lastRunAtMs]);
-
-  return runs;
 }
 
 function summarizeWeek(runs: RunDocument[]) {
@@ -249,9 +249,18 @@ const styles = StyleSheet.create({
   screen: {flex: 1, backgroundColor: colors.sky},
   // 캐릭터 PNG의 발 위치(약 82%)가 땅 윗면에 오도록 끌어올린다
   actorOnGround: {marginTop: -CHARACTER_SIZE * 0.82},
-  hud: {position: 'absolute', left: 0, right: 0, top: 0, flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, paddingHorizontal: spacing.lg},
+  hud: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+  },
   hudActions: {gap: spacing.sm},
-  hudChips: {position: 'absolute', left: spacing.lg, flexDirection: 'row', gap: spacing.sm},
+  hudChips: {position: 'absolute', top: 96, left: spacing.lg, flexDirection: 'row', gap: spacing.sm},
   playerCard: {
     flex: 1,
     flexDirection: 'row',

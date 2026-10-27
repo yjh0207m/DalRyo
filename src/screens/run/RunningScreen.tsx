@@ -1,5 +1,6 @@
-import React, {useEffect, useState} from 'react';
-import {Alert, Pressable, StatusBar, StyleSheet, View} from 'react-native';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
+import {useDialect} from '../../locales/DialectProvider';
+import {Alert, BackHandler, Pressable, StatusBar, StyleSheet, View} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {MapPinOff, Pause, Play, Square, X, type LucideIcon} from 'lucide-react-native';
 import {CharacterView} from '../../components/character/CharacterView';
@@ -20,6 +21,9 @@ type Props = {
   weightKg: number | null;
   onFinish: (result: RunResult) => void;
   onCancel: () => void;
+  onProgress?: (km:number,pace:number,paused:boolean)=>void;
+  livePanel?: React.ReactNode;
+  cancelMessage?: string;
 };
 
 const COUNTDOWN_FROM = 3;
@@ -27,8 +31,9 @@ const CHARACTER_SIZE = 180;
 // 땅 아래쪽에 조작 버튼(원형 버튼 + 이름)이 들어갈 높이
 const CONTROLS_AREA = 170;
 
-export function RunningScreen({goalType, goalValue, characterType, characterStage, weightKg, onFinish, onCancel}: Props) {
+export function RunningScreen({goalType, goalValue, characterType, characterStage, weightKg, onFinish, onCancel,onProgress,livePanel,cancelMessage}: Props) {
   const insets = useSafeAreaInsets();
+  const t = useDialect();
   const session = useRunSession({weightKg});
   const [countdown, setCountdown] = useState(COUNTDOWN_FROM);
   const [worldHeight, setWorldHeight] = useState(0);
@@ -48,19 +53,31 @@ export function RunningScreen({goalType, goalValue, characterType, characterStag
   const progress = getGoalProgress(goalType, goalValue, session);
   const motion = session.phase === 'running' ? getMotion(session.speedKmh) : 'rest';
   const paused = session.phase === 'paused';
+  const latestProgress=useRef({onProgress,km:session.distanceKm,pace:paceSec,paused,phase:session.phase});
+  latestProgress.current={onProgress,km:session.distanceKm,pace:paceSec,paused,phase:session.phase};
+  const hasProgress=!!onProgress;
+  useEffect(()=>{
+    if(!hasProgress)return;
+    const timer=setInterval(()=>{const p=latestProgress.current;if(p.phase==='running'||p.phase==='paused')p.onProgress?.(p.km,p.pace,p.paused);},5000);
+    return ()=>clearInterval(timer);
+  },[hasProgress]);
 
-  const confirmCancel = () => {
-    Alert.alert('달리기를 그만둘까요?', '지금까지 기록은 저장되지 않아요.', [
+  const confirmCancel = useCallback(() => {
+    Alert.alert('달리기를 그만둘까요?', cancelMessage ?? '지금까지 기록은 저장되지 않아요.', [
       {text: '계속 달리기', style: 'cancel'},
       {text: '나가기', style: 'destructive', onPress: onCancel},
     ]);
-  };
+  },[cancelMessage,onCancel]);
+  useEffect(()=>{const sub=BackHandler.addEventListener('hardwareBackPress',()=>{confirmCancel();return true;});return ()=>sub.remove();},[confirmCancel]);
 
   const finish = () => onFinish(session.finish());
 
   return (
     <View style={[styles.screen, {paddingTop: insets.top + spacing.sm}]}>
-      <StatusBar barStyle={countdown > 0 ? 'light-content' : 'dark-content'} backgroundColor={countdown > 0 ? colors.primary : colors.background} />
+      <StatusBar
+        barStyle={countdown > 0 ? 'light-content' : 'dark-content'}
+        backgroundColor={countdown > 0 ? colors.primary : colors.background}
+      />
       <View style={styles.header}>
         <Badge label={getGoalLabel(goalType, goalValue)} tone={paused ? 'warm' : 'brand'} />
         <IconButton icon={X} variant="plain" accessibilityLabel="달리기 그만두기" onPress={confirmCancel} />
@@ -82,6 +99,7 @@ export function RunningScreen({goalType, goalValue, characterType, characterStag
         <View style={styles.divider} />
         <Stat label="칼로리" value={String(session.calories)} unit="kcal" />
       </Card>
+      {livePanel}
 
       {progress !== null && (
         <View style={styles.progress}>
@@ -100,7 +118,8 @@ export function RunningScreen({goalType, goalValue, characterType, characterStag
             speedKmh={session.phase === 'running' ? session.speedKmh : 0}
             height={worldHeight}
             groundTop={Math.max(0.4, 1 - (CONTROLS_AREA + insets.bottom) / worldHeight)}
-            style={StyleSheet.absoluteFill}>
+            style={StyleSheet.absoluteFill}
+          >
             <CharacterView
               type={characterType}
               stage={characterStage}
@@ -123,10 +142,17 @@ export function RunningScreen({goalType, goalValue, characterType, characterStag
           {paused ? (
             <>
               <RoundControl icon={Square} label="종료" tone="dark" onPress={finish} />
-              <RoundControl icon={Play} label="달료!" tone="primary" onPress={session.resume} />
+              <RoundControl icon={Play} label={t('run.start')} tone="primary" onPress={session.resume} />
             </>
           ) : (
-            <RoundControl icon={Pause} label="멈쵸!" tone="primary" large disabled={session.phase !== 'running'} onPress={session.pause} />
+            <RoundControl
+              icon={Pause}
+              label={t('run.stop')}
+              tone="primary"
+              large
+              disabled={session.phase !== 'running'}
+              onPress={session.pause}
+            />
           )}
         </View>
       </View>
@@ -137,7 +163,7 @@ export function RunningScreen({goalType, goalValue, characterType, characterStag
             {countdown}
           </AppText>
           <AppText variant="subheading" color={colors.textOnPrimary} align="center">
-            곧 출발해요
+            {t('run.countdown')}
           </AppText>
         </View>
       )}
@@ -175,7 +201,8 @@ function RoundControl({
           tone === 'primary' ? styles.controlPrimary : styles.controlDark,
           pressed && styles.controlPressed,
           disabled && styles.controlDisabled,
-        ]}>
+        ]}
+      >
         <Icon color={colors.textOnPrimary} size={large ? 34 : 28} fill={colors.textOnPrimary} strokeWidth={1.5} />
       </Pressable>
       <AppText variant="subheading" color={colors.text}>
@@ -237,6 +264,12 @@ const styles = StyleSheet.create({
   controlDark: {backgroundColor: colors.text},
   controlPressed: {transform: [{scale: 0.95}], opacity: 0.9},
   controlDisabled: {opacity: 0.4},
-  countdownOverlay: {...StyleSheet.absoluteFill, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', gap: spacing.sm},
+  countdownOverlay: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+  },
   countdownText: {...typography.display, fontSize: 160, lineHeight: 176},
 });

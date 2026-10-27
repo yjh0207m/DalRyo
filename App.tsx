@@ -1,15 +1,16 @@
 import React, {useCallback, useEffect, useState} from 'react';
-import {ActivityIndicator, LogBox, StatusBar, StyleSheet, Text, View} from 'react-native';
+import {ActivityIndicator, LogBox, Pressable, StatusBar, StyleSheet, Text, View} from 'react-native';
 import {SafeAreaProvider, SafeAreaView} from 'react-native-safe-area-context';
 import auth, {type FirebaseAuthTypes} from '@react-native-firebase/auth';
 import {AuthStartScreen} from './src/screens/auth/SplashScreen';
 import {PhoneLoginScreen} from './src/screens/auth/LoginScreen';
 import {OnboardingScreen} from './src/screens/auth/OnboardingScreen';
 import {MainAppScreen} from './src/screens/main/MainAppScreen';
+import {DialectProvider} from './src/locales/DialectProvider';
 import {fetchCurrentUserDocument} from './src/services/user.service';
 import {fetchMyProfile, subscribeMyProfile, type UserProfileBundle} from './src/services/profile.service';
 
-type Route = 'loading' | 'start' | 'phone' | 'onboarding' | 'main';
+type Route = 'loading' | 'error' | 'start' | 'phone' | 'onboarding' | 'main';
 
 LogBox.ignoreLogs([
   'This method is deprecated (as well as all React Native Firebase namespaced API)',
@@ -41,9 +42,12 @@ function AppRoutes() {
     }
 
     const existingUser = await fetchCurrentUserDocument();
+    if (auth().currentUser?.uid !== user.uid) return;
 
     if (existingUser) {
       const bundle = await fetchMyProfile();
+      if (auth().currentUser?.uid !== user.uid) return;
+      if (!bundle) throw new Error('프로필을 불러오지 못했어요.');
       setProfile(bundle);
       setRoute('main');
       return;
@@ -57,7 +61,7 @@ function AppRoutes() {
     const unsubscribe = auth().onAuthStateChanged(user => {
       resolveRouteForUser(user).catch(() => {
         setProfile(null);
-        setRoute(user ? 'onboarding' : 'start');
+        if (auth().currentUser?.uid === user?.uid) setRoute(user ? 'error' : 'start');
       });
     });
 
@@ -78,11 +82,22 @@ function AppRoutes() {
       return;
     }
 
-    await resolveRouteForUser(firebaseUser);
+    setRoute('loading');
+    await resolveRouteForUser(firebaseUser).catch(() => setRoute('error'));
   };
 
   if (route === 'loading') {
     return <LoadingScreen />;
+  }
+  if (route === 'error') {
+    return <SafeAreaView style={styles.loadingScreen}>
+      <Text style={styles.loadingText}>계정 정보를 불러오지 못했어요.</Text>
+      <Text>네트워크를 확인하고 다시 시도해 주세요.</Text>
+      <Pressable accessibilityRole="button" onPress={() => {
+        setRoute('loading');
+        resolveRouteForUser(auth().currentUser).catch(() => setRoute('error'));
+      }} style={styles.retry}><Text>다시 시도</Text></Pressable>
+    </SafeAreaView>;
   }
 
   if (route === 'phone') {
@@ -91,7 +106,7 @@ function AppRoutes() {
         onBack={() => setRoute('start')}
         onVerified={() => {
           setRoute('loading');
-          resolveRouteForUser(auth().currentUser).catch(() => setRoute('onboarding'));
+          resolveRouteForUser(auth().currentUser).catch(() => setRoute('error'));
         }}
       />
     );
@@ -107,14 +122,14 @@ function AppRoutes() {
               setProfile(nextProfile);
               setRoute('main');
             })
-            .catch(() => setRoute('main'));
+            .catch(() => setRoute('error'));
         }}
       />
     );
   }
 
   if (route === 'main') {
-    return <MainAppScreen user={profile?.user ?? null} character={profile?.character ?? null} />;
+    return <DialectProvider dialect={profile?.user.dialect}><MainAppScreen user={profile?.user ?? null} character={profile?.character ?? null} /></DialectProvider>;
   }
 
   return <AuthStartScreen onStart={goToStartOrMain} />;
@@ -133,6 +148,7 @@ function LoadingScreen() {
 }
 
 const styles = StyleSheet.create({
+  retry: {padding:20},
   loadingScreen: {flex: 1, backgroundColor: '#F6FEFF', alignItems: 'center', justifyContent: 'center', padding: 28},
   loadingCard: {minWidth: 190, minHeight: 150, borderRadius: 24, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', shadowColor: '#A7D7C4', shadowOpacity: 0.18, shadowRadius: 16, shadowOffset: {width: 0, height: 8}, elevation: 6},
   loadingText: {color: '#151515', fontSize: 17, fontWeight: '900', marginTop: 18},

@@ -1,3 +1,5 @@
+import {useDialect} from '../../locales/DialectProvider';
+import type {Translate} from '../../locales/translate';
 import React, {useEffect, useRef, useState} from 'react';
 import {Animated, Image, StatusBar, StyleSheet, View} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
@@ -51,6 +53,7 @@ export function RunCompleteScreen({
   onClose,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const t = useDialect();
   const shouldHatch = stageBeforeRun === 'egg' && distanceKm > 0;
   const grewUp = !shouldHatch && stageAfterRun !== stageBeforeRun;
   const [hatched, setHatched] = useState(!shouldHatch);
@@ -105,6 +108,7 @@ export function RunCompleteScreen({
     grewUp,
     wasFrozen,
     petName,
+    t,
   });
 
   // 하단(기록 카드 + 버튼 + 안전 영역) 높이만큼 풀밭 색을 이어 칠해 초원이 화면 아래까지 이어지게 한다.
@@ -195,12 +199,14 @@ function getHeadline({
   grewUp,
   wasFrozen,
   petName,
+  t,
 }: {
   shouldHatch: boolean;
   hatched: boolean;
   grewUp: boolean;
   wasFrozen: boolean;
   petName: string;
+  t: Translate;
 }) {
   if (shouldHatch && !hatched) {
     return {
@@ -226,7 +232,7 @@ function getHeadline({
       subtitle: '꾸준히 달린 덕분에 한 단계 자랐어요',
     };
   }
-  return {title: '잘 달렸어요', subtitle: `${petName}도 한 뼘 더 자랐어요`};
+  return {title: t('run.complete'), subtitle: t('run.completeBody', {name: petName})};
 }
 
 function Stat({label, value, unit}: {label: string; value: string; unit: string}) {

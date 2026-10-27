@@ -139,7 +139,7 @@ stage·exp·스탯은 Cloud Function `onRunCreate`만 갱신 (클라이언트 �
 ```js
 {
   type:       'follow' | 'like' | 'comment' | 'level_up'
-            | 'stone_warning' | 'tier_up' | 'together_invite',
+            | 'stone_warning' | 'tier_up' | 'room_invite',
   actor_uid:  string,        // 알림을 발생시킨 유저
   actor_name: string,        // 복사 (표시용)
   target_id:  string | null, // post_id 또는 room_id
@@ -269,17 +269,34 @@ stage·exp·스탯은 Cloud Function `onRunCreate`만 갱신 (클라이언트 �
 
 ## together_rooms/{roomId}
 
+친구(서로 팔로우)에게 요청을 보내 만드는 비공개 방. 쓰기는 서버 함수 `roomAction`만 한다.
+읽기는 `participants`에 든 사람(방장 + 요청받은 친구)만 가능하다.
+
 ```js
 {
-  room_id:    string,
-  host_uid:   string,
-  host_name:  string,   // 복사 (표시용)
-  goal_type:  string,
-  goal_value: number | null,
-  status:     'waiting' | 'running' | 'finished',
-  started_at: Timestamp | null,
-  created_at: Timestamp
+  room_id:       string,
+  title:         string,
+  host_uid:      string,
+  host_name:     string,   // 복사 (표시용)
+  goal_km:       number,
+  capacity:      number,   // 방장 + 요청한 친구 수 (최대 20)
+  member_count:  number,
+  invited:       string[], // 아직 응답하지 않은 친구 uid (시작하면 비움)
+  invited_names: { [uid]: string },
+  participants:  string[], // 방장 + 지금까지 요청받은 모든 친구 (읽기 권한)
+  status:        'waiting' | 'running' | 'finished' | 'cancelled',
+  started_at?:   Timestamp,
+  expires_at:    Timestamp, // 대기 12시간, 시작 후 24시간
+  created_at:    Timestamp
 }
+```
+
+## users/{uid}/room_invites/{roomId}
+
+받은 같이 달리기 요청. 서버만 쓰고 본인만 읽는다. 수락·거절·방 시작·방 취소 시 삭제.
+
+```js
+{ room_id, host_uid, host_name, title, goal_km, created_at }
 ```
 
 ---
@@ -351,7 +368,6 @@ posts:        uid ASC, created_at DESC
 posts:        category ASC, created_at DESC
 follows:      follower_id ASC, created_at DESC
 follows:      following_id ASC, created_at DESC
-together_rooms: status ASC, created_at DESC
 notifications: uid ASC, created_at DESC  (서브컬렉션)
 ```
 
