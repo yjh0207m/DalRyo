@@ -1,4 +1,4 @@
-import {auth} from '../lib/firebase';
+import {auth, firestore, messaging} from '../lib/firebase';
 import type {AuthResult, PhoneConfirmation} from '../types/auth.types';
 
 function normalizeKoreanPhoneNumber(phoneNumber: string) {
@@ -44,5 +44,11 @@ export async function signInWithKakao() {
 }
 
 export async function signOut() {
+  const uid = auth().currentUser?.uid;
+  if (uid) {
+    // Unlink this device before the next account can sign in.
+    await firestore().collection('users').doc(uid).update({fcm_token: null});
+    await messaging().deleteToken().catch(() => undefined);
+  }
   await auth().signOut();
 }

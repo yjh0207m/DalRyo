@@ -11,6 +11,12 @@
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
+		DA1F0B022E6A4C1100D41A01 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = DA1F0B012E6A4C1100D41A01 /* GoogleService-Info.plist */; };
+		DA2F0C0022E6A4C1100D41A0 /* Pretendard-Regular.otf in Resources */ = {isa = PBXBuildFile; fileRef = DA2F0C0012E6A4C1100D41A0 /* Pretendard-Regular.otf */; };
+		DA2F0C0122E6A4C1100D41A0 /* Pretendard-Medium.otf in Resources */ = {isa = PBXBuildFile; fileRef = DA2F0C0112E6A4C1100D41A0 /* Pretendard-Medium.otf */; };
+		DA2F0C0222E6A4C1100D41A0 /* Pretendard-SemiBold.otf in Resources */ = {isa = PBXBuildFile; fileRef = DA2F0C0212E6A4C1100D41A0 /* Pretendard-SemiBold.otf */; };
+		DA2F0C0322E6A4C1100D41A0 /* Pretendard-Bold.otf in Resources */ = {isa = PBXBuildFile; fileRef = DA2F0C0312E6A4C1100D41A0 /* Pretendard-Bold.otf */; };
+		DA2F0C0422E6A4C1100D41A0 /* Pretendard-ExtraBold.otf in Resources */ = {isa = PBXBuildFile; fileRef = DA2F0C0412E6A4C1100D41A0 /* Pretendard-ExtraBold.otf */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -23,7 +29,13 @@
 		5DCACB8F33CDC322A6C60F78 /* libPods-DalRyoTemp.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-DalRyoTemp.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		761780EC2CA45674006654EE /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = DalRyoTemp/AppDelegate.swift; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = DalRyoTemp/LaunchScreen.storyboard; sourceTree = "<group>"; };
+		DA1F0B012E6A4C1100D41A01 /* GoogleService-Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = "GoogleService-Info.plist"; path = "DalRyoTemp/GoogleService-Info.plist"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
+		DA2F0C0012E6A4C1100D41A0 /* Pretendard-Regular.otf */ = {isa = PBXFileReference; lastKnownFileType = file; name = Pretendard-Regular.otf; path = DalRyoTemp/Fonts/Pretendard-Regular.otf; sourceTree = "<group>"; };
+		DA2F0C0112E6A4C1100D41A0 /* Pretendard-Medium.otf */ = {isa = PBXFileReference; lastKnownFileType = file; name = Pretendard-Medium.otf; path = DalRyoTemp/Fonts/Pretendard-Medium.otf; sourceTree = "<group>"; };
+		DA2F0C0212E6A4C1100D41A0 /* Pretendard-SemiBold.otf */ = {isa = PBXFileReference; lastKnownFileType = file; name = Pretendard-SemiBold.otf; path = DalRyoTemp/Fonts/Pretendard-SemiBold.otf; sourceTree = "<group>"; };
+		DA2F0C0312E6A4C1100D41A0 /* Pretendard-Bold.otf */ = {isa = PBXFileReference; lastKnownFileType = file; name = Pretendard-Bold.otf; path = DalRyoTemp/Fonts/Pretendard-Bold.otf; sourceTree = "<group>"; };
+		DA2F0C0412E6A4C1100D41A0 /* Pretendard-ExtraBold.otf */ = {isa = PBXFileReference; lastKnownFileType = file; name = Pretendard-ExtraBold.otf; path = DalRyoTemp/Fonts/Pretendard-ExtraBold.otf; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -46,6 +58,12 @@
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
 				13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */,
+				DA1F0B012E6A4C1100D41A01 /* GoogleService-Info.plist */,
+				DA2F0C0012E6A4C1100D41A0 /* Pretendard-Regular.otf */,
+				DA2F0C0112E6A4C1100D41A0 /* Pretendard-Medium.otf */,
+				DA2F0C0212E6A4C1100D41A0 /* Pretendard-SemiBold.otf */,
+				DA2F0C0312E6A4C1100D41A0 /* Pretendard-Bold.otf */,
+				DA2F0C0412E6A4C1100D41A0 /* Pretendard-ExtraBold.otf */,
 			);
 			name = DalRyoTemp;
 			sourceTree = "<group>";
@@ -159,6 +177,12 @@
 			files = (
 				81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
+				DA1F0B022E6A4C1100D41A01 /* GoogleService-Info.plist in Resources */,
+				DA2F0C0022E6A4C1100D41A0 /* Pretendard-Regular.otf in Resources */,
+				DA2F0C0122E6A4C1100D41A0 /* Pretendard-Medium.otf in Resources */,
+				DA2F0C0222E6A4C1100D41A0 /* Pretendard-SemiBold.otf in Resources */,
+				DA2F0C0322E6A4C1100D41A0 /* Pretendard-Bold.otf in Resources */,
+				DA2F0C0422E6A4C1100D41A0 /* Pretendard-ExtraBold.otf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -271,7 +295,7 @@
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "org.reactjs.native.example.$(PRODUCT_NAME:rfc1034identifier)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.dalryo.app;
 				PRODUCT_NAME = DalRyoTemp;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -300,7 +324,7 @@
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "org.reactjs.native.example.$(PRODUCT_NAME:rfc1034identifier)";
+				PRODUCT_BUNDLE_IDENTIFIER = com.dalryo.app;
 				PRODUCT_NAME = DalRyoTemp;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_VERSION = 5.0;

@@ -85,6 +85,15 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
+        // CMake uses an 8.3 alias for clang++.exe on Windows paths with spaces.
+        // Preserve C++ driver mode so the generated native modules link libc++.
+        if (System.getProperty("os.name").toLowerCase().contains("windows")) {
+            externalNativeBuild {
+                cmake {
+                    arguments "-DCMAKE_CXX_FLAGS=--driver-mode=g++"
+                }
+            }
+        }
     }
     signingConfigs {
         debug {

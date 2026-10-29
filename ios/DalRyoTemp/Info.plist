@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>DalRyoTemp</string>
+	<string>달료</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -35,7 +35,21 @@
 		<true/>
 	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>현재 위치를 기반으로 일출·일몰 시간을 계산해 배경 화면을 설정합니다.</string>
+	<string>달리는 동안 거리·페이스·경로를 기록하고, 일출·일몰 시간에 맞춰 배경 화면을 설정합니다.</string>
+	<key>UIBackgroundModes</key>
+	<array><string>location</string></array>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>프로필 사진과 달리기 인증 사진을 선택합니다.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>달리기 인증 사진을 촬영합니다.</string>
+	<key>UIAppFonts</key>
+	<array>
+		<string>Pretendard-Regular.otf</string>
+		<string>Pretendard-Medium.otf</string>
+		<string>Pretendard-SemiBold.otf</string>
+		<string>Pretendard-Bold.otf</string>
+		<string>Pretendard-ExtraBold.otf</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIRequiredDeviceCapabilities</key>
