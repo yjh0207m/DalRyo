@@ -615,6 +615,16 @@ export function ConversationView({
           <Failure error={error} retry={() => setRevision(v => v + 1)} />
         ) : loading ? (
           <ActivityIndicator style={s.loader} color={colors.primary} />
+        ) : messages.length === 0 ? (
+          <View style={[s.grow, s.empty]}>
+            <Avatar profile={profile} />
+            <AppText variant="subheading">
+              {profile?.display_name}님과의 대화
+            </AppText>
+            <AppText color={colors.textMuted}>
+              러닝 이야기로 인사를 나눠 보세요.
+            </AppText>
+          </View>
         ) : (
           <FlatList
             ref={list}
@@ -628,17 +638,6 @@ export function ConversationView({
             contentContainerStyle={s.messageList}
             keyboardShouldPersistTaps="handled"
             maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
-            ListEmptyComponent={
-              <View style={[s.empty, s.uninvert]}>
-                <Avatar profile={profile} />
-                <AppText variant="subheading">
-                  {profile?.display_name}님과의 대화
-                </AppText>
-                <AppText color={colors.textMuted}>
-                  러닝 이야기로 인사를 나눠 보세요.
-                </AppText>
-              </View>
-            }
             ListFooterComponent={
               more ? (
                 <Button
@@ -886,5 +885,4 @@ const s = StyleSheet.create({
   },
   disabled: { opacity: 0.4 },
   notice: { padding: 12, fontSize: 12 },
-  uninvert: { transform: [{ scaleY: -1 }] },
 });
