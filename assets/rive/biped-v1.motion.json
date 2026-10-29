@@ -1,0 +1,5 @@
+{
+  "walk": {"frames": 48, "duty": 0.64, "stride": 34, "lift": 14, "bob": 1.5, "lean": -0.045, "arm": 0.48, "elbow": -0.48},
+  "run": {"frames": 32, "duty": 0.42, "stride": 52, "lift": 32, "bob": 4, "lean": -0.14, "arm": 0.92, "elbow": -1.15},
+  "sprint": {"frames": 24, "duty": 0.34, "stride": 64, "lift": 44, "bob": 5, "lean": -0.23, "arm": 1.12, "elbow": -1.4}
+}

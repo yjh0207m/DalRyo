@@ -1,6 +1,8 @@
 import type {FirebaseFirestoreTypes} from '@react-native-firebase/firestore';
 
 export type Gender = 'female' | 'male' | null;
+export type NotificationPreferences = {push: boolean; growth: boolean; social: boolean; stone: boolean};
+export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {push: false, growth: true, social: true, stone: true};
 
 export type Dialect = 'std' | 'seoul' | 'gyeonggi' | 'gangwon' | 'chung' | 'jeon' | 'gyeong' | 'jeju';
 
@@ -37,6 +39,7 @@ export type UserDocument = {
   following_count: number;
   dialect: Dialect;
   fcm_token: string | null;
+  notification_settings?: NotificationPreferences;
   created_at: FirebaseFirestoreTypes.FieldValue;
   updated_at: FirebaseFirestoreTypes.FieldValue;
 };

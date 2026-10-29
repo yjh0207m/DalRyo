@@ -1,97 +1,265 @@
-import React, {useState} from 'react';
-import {Alert, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
-import auth from '@react-native-firebase/auth';
-import type {UserDocument} from '../../types/user.types';
+import React from 'react';
+import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  ChevronLeft,
+  ChevronRight,
+  DoorOpen,
+  Package,
+  Shirt,
+  SlidersHorizontal,
+  type LucideIcon,
+} from 'lucide-react-native';
+import { CharacterView } from '../../components/character/CharacterView';
+import { AppText, Card, IconButton } from '../../components/ui';
+import { TAB_BAR_HEIGHT } from '../../navigation/BottomTabBar';
+import { colors, radius, spacing } from '../../theme';
+import type { CharacterDocument } from '../../types/character.types';
+import type { UserDocument } from '../../types/user.types';
 
-const images = {
-  avatar: require('../../assets/images/dalryo-avatar.png'),
+type Props = {
+  user: UserDocument | null;
+  character: CharacterDocument | null;
+  onBack: () => void;
+  onOpenSettings: () => void;
+  onPreviewCharacter?: () => void;
+  onOpenInventory?: (mode: 'owned' | 'all') => void;
 };
 
-const MINT = '#58CFA6';
-const TEXT = '#151515';
+const MENU: Array<{ icon: LucideIcon; title: string; detail: string }> = [
+  { icon: Shirt, title: '꾸미기', detail: '아이템 미리보기와 장착·해제' },
+  {
+    icon: DoorOpen,
+    title: '마이룸',
+    detail: '방 꾸미기와 친구 방문 · 준비 중',
+  },
+  { icon: Package, title: '아이템', detail: '보유 아이템과 달리기 거리 보상' },
+  {
+    icon: SlidersHorizontal,
+    title: '설정',
+    detail: '프로필, 지역, 말투, 로그아웃',
+  },
+];
 
-export function MyPageScreen({user}: {user: UserDocument | null}) {
-  const [loggingOut, setLoggingOut] = useState(false);
-
-  const handleLogout = () => {
-    Alert.alert('로그아웃', '정말 로그아웃할까요?', [
-      {text: '취소', style: 'cancel'},
-      {
-        text: '로그아웃',
-        style: 'destructive',
-        onPress: async () => {
-          setLoggingOut(true);
-          try {
-            await auth().signOut();
-          } finally {
-            setLoggingOut(false);
-          }
-        },
-      },
-    ]);
-  };
+// 헤더의 설정 버튼으로 들어오는 화면 (Figma: 마이 페이지 > 룸)
+export function MyPageScreen({
+  user,
+  character,
+  onBack,
+  onOpenSettings,
+  onPreviewCharacter,
+  onOpenInventory,
+}: Props) {
+  const insets = useSafeAreaInsets();
+  const frozen = user?.is_frozen ?? false;
 
   return (
-    <View style={styles.screen}>
+    <ScrollView
+      style={styles.screen}
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={[
+        styles.content,
+        {
+          paddingTop: insets.top + spacing.sm,
+          paddingBottom: TAB_BAR_HEIGHT + insets.bottom + spacing.xxxl,
+        },
+      ]}
+    >
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>마이페이지</Text>
-        <View style={styles.headerActions}>
-          <Text style={styles.headerIcon}>⌕</Text>
-          <Text style={styles.headerIcon}>⚙</Text>
-        </View>
+        <IconButton
+          icon={ChevronLeft}
+          variant="plain"
+          accessibilityLabel="뒤로"
+          onPress={onBack}
+        />
+        <AppText variant="title">마이</AppText>
+        <View style={styles.headerSpacer} />
       </View>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
-        <View style={styles.profileCard}>
-          <Image source={images.avatar} resizeMode="contain" style={styles.profileImage} />
+
+      <Card style={styles.profile}>
+        <View style={styles.profileTop}>
+          <View style={styles.avatar}>
+            {user?.profile_image ? (
+              <Image
+                source={{ uri: user.profile_image }}
+                style={styles.profilePhoto}
+              />
+            ) : (
+              character && (
+                <CharacterView
+                  type={character.character_type}
+                  stage={character.stage}
+                  motion={frozen ? 'stone' : 'idle'}
+                  size={64}
+                  grounded={false}
+                  equipped={character.equipped}
+                />
+              )
+            )}
+          </View>
           <View style={styles.profileText}>
-            <Text style={styles.profileName}>{user?.display_name ?? '달리너'}</Text>
-            <Text style={styles.profileDetail}>{user?.region ?? '지역 미설정'} · {user?.total_km?.toFixed(1) ?? '0.0'}km</Text>
+            <AppText variant="heading" color={colors.text}>
+              {user?.display_name ?? '달리너'}
+            </AppText>
+            <AppText variant="caption" color={colors.textMuted}>
+              {user?.region ?? '지역 미설정'} ·{' '}
+              {character?.pet_name ?? '달리너'}의 러닝 메이트
+            </AppText>
           </View>
         </View>
-        <InfoCard title="마이룸" detail="캐릭터 방 꾸미기와 방문 기능이 들어갈 자리예요." />
-        <InfoCard title="캐릭터 성장 관리" detail="스탯, 단계, EXP, 돌 변신 상태를 보여줄 예정이에요." />
-        <InfoCard title="아이템" detail="성장 아이템 판매와 보유함을 연결할 화면이에요." />
-        <InfoCard title="설정" detail="프로필 편집, 사투리 변경, 알림 설정, 로그아웃을 묶을 예정이에요." />
-        <TouchableOpacity
-          style={styles.logoutButton}
-          onPress={handleLogout}
-          disabled={loggingOut}
-          activeOpacity={0.75}>
-          <Text style={styles.logoutText}>{loggingOut ? '로그아웃 중...' : '로그아웃'}</Text>
-        </TouchableOpacity>
-      </ScrollView>
-    </View>
+        <View style={styles.profileBottom}>
+          <AppText variant="caption" color={colors.textMuted}>
+            함께 달려온 거리
+          </AppText>
+          <View style={styles.totalRow}>
+            <AppText variant="display" color={colors.primaryInk} style={styles.total}>
+              {(user?.total_km ?? 0).toFixed(1)}
+            </AppText>
+            <AppText variant="caption" color={colors.textMuted}>
+              km
+            </AppText>
+          </View>
+        </View>
+      </Card>
+
+      <Card style={styles.section} padded={false}>
+        {MENU.map((item, index) => (
+          <MenuRow
+            key={item.title}
+            {...item}
+            last={index === MENU.length - 1}
+            onPress={
+              item.title === '설정' && user
+                ? onOpenSettings
+                : character &&
+                  onOpenInventory &&
+                  ['꾸미기', '아이템'].includes(item.title)
+                ? () =>
+                    onOpenInventory(item.title === '꾸미기' ? 'owned' : 'all')
+                : undefined
+            }
+          />
+        ))}
+      </Card>
+      {__DEV__ && onPreviewCharacter && (
+        <Card style={styles.section} padded={false}>
+          <MenuRow
+            icon={Shirt}
+            title="캐릭터 미리보기"
+            detail="개발용 · 토끼 동작과 성장 단계 확인"
+            last
+            onPress={onPreviewCharacter}
+          />
+        </Card>
+      )}
+    </ScrollView>
   );
 }
 
-function InfoCard({title, detail}: {title: string; detail: string}) {
+function MenuRow({
+  icon: Icon,
+  title,
+  detail,
+  last,
+  onPress,
+}: {
+  icon: LucideIcon;
+  title: string;
+  detail: string;
+  last: boolean;
+  onPress?: () => void;
+}) {
   return (
-    <View style={styles.infoCard}>
-      <View>
-        <Text style={styles.infoTitle}>{title}</Text>
-        <Text style={styles.infoDetail}>{detail}</Text>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ disabled: !onPress }}
+      disabled={!onPress}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.menuRow,
+        !last && styles.menuDivider,
+        pressed && styles.menuPressed,
+      ]}
+    >
+      <View style={styles.menuIcon}>
+        <Icon color={colors.text} size={20} strokeWidth={1.9} />
       </View>
-      <Text style={styles.infoArrow}>›</Text>
-    </View>
+      <View style={styles.menuText}>
+        <AppText variant="subheading">{title}</AppText>
+        <AppText variant="caption" color={colors.textMuted}>
+          {detail}
+        </AppText>
+      </View>
+      {onPress ? (
+        <ChevronRight color={colors.textSubtle} size={18} />
+      ) : (
+        <AppText variant="label" color={colors.textMuted}>
+          예정
+        </AppText>
+      )}
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {flex: 1, backgroundColor: '#F6FEFF'},
-  header: {minHeight: 104, paddingHorizontal: 30, paddingTop: 18, paddingBottom: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'},
-  headerTitle: {color: TEXT, fontSize: 32, fontWeight: '900'},
-  headerActions: {flexDirection: 'row', gap: 12},
-  headerIcon: {width: 42, height: 42, borderRadius: 21, backgroundColor: '#FFFFFF', color: '#555555', fontSize: 22, fontWeight: '900', textAlign: 'center', lineHeight: 42},
-  content: {paddingHorizontal: 24, paddingBottom: 128},
-  profileCard: {borderRadius: 26, backgroundColor: '#FFFFFF', padding: 20, flexDirection: 'row', alignItems: 'center', marginBottom: 4, borderWidth: 1, borderColor: '#E4ECE9'},
-  profileImage: {width: 72, height: 72, borderRadius: 20},
-  profileText: {marginLeft: 16},
-  profileName: {color: TEXT, fontSize: 22, fontWeight: '900'},
-  profileDetail: {color: '#777777', fontSize: 14, fontWeight: '800', marginTop: 6},
-  infoCard: {minHeight: 92, borderRadius: 22, backgroundColor: '#FFFFFF', padding: 20, marginTop: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: 'rgba(88,207,166,0.16)'},
-  infoTitle: {color: TEXT, fontSize: 19, fontWeight: '900'},
-  infoDetail: {color: '#787878', fontSize: 13, fontWeight: '700', marginTop: 8, maxWidth: 250},
-  infoArrow: {color: MINT, fontSize: 38, fontWeight: '700'},
-  logoutButton: {marginTop: 32, marginHorizontal: 4, borderRadius: 18, paddingVertical: 18, alignItems: 'center', backgroundColor: '#FFF0F0', borderWidth: 1, borderColor: '#FFCFCF'},
-  logoutText: {color: '#E05555', fontSize: 17, fontWeight: '900'},
+  screen: { flex: 1, backgroundColor: colors.background },
+  content: { paddingHorizontal: spacing.xl },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    height: 48,
+    marginHorizontal: -spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  headerSpacer: { width: 44 },
+  profile: {
+    backgroundColor: colors.primarySoft,
+    borderColor: colors.primarySoft,
+    padding: 22,
+  },
+  profileTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg },
+  profileBottom: {
+    marginTop: 22,
+    paddingTop: 18,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.primaryBorder,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  totalRow: { flexDirection: 'row', gap: 5, alignItems: 'baseline' },
+  total: { fontSize: 32, lineHeight: 40 },
+  avatar: {
+    width: 72,
+    height: 72,
+    borderRadius: radius.pill,
+    backgroundColor: colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileText: { flex: 1, gap: 2 },
+  profilePhoto: { width: 72, height: 72, borderRadius: 36 },
+  section: { marginTop: spacing.xl },
+  menuRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.lg,
+  },
+  menuDivider: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  menuPressed: { backgroundColor: colors.surfaceMuted },
+  menuIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surfaceMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuText: { flex: 1, gap: 2 },
 });

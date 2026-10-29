@@ -1,0 +1,31 @@
+{
+  "name": "rabbit-baby-layered", "family": "biped-v1", "stage": "baby",
+  "atlas": {"file": "images/rabbit-parts.webp", "width": 1254, "height": 1254},
+  "blink": {"file": "images/rabbit-blink.webp", "width": 1254, "height": 1254},
+  "stone": {"file": "images/rabbit-stone.webp", "width": 1254, "height": 1254},
+  "rig": {
+    "centerX": 250, "hipY": 322, "restHipY": 310, "groundY": 410, "sole": 11,
+    "upperLeg": 46, "lowerLeg": 45, "upperArm": 29, "lowerArm": 28,
+    "hips": {"near": 14, "far": -14},
+    "head": [10, -116], "earNear": [-28, -53], "earFar": [21, -55],
+    "shoulders": {"near": [32, -63], "far": [-26, -65]}
+  },
+  "parts": {
+    "head": {"rect": [27,41,314,272], "size": [145,126]},
+    "torso": {"rect": [368,75,275,222], "size": [82,75]},
+    "pelvis": {"rect": [702,137,288,160], "size": [73,37]},
+    "upperArmNear": {"rect": [1053,59,144,255], "width": 26},
+    "lowerArmNear": {"rect": [110,377,149,229], "width": 24},
+    "upperArmFar": {"rect": [424,376,163,244], "width": 24},
+    "lowerArmFar": {"rect": [754,385,126,230], "width": 22},
+    "upperLegNear": {"rect": [1022,387,175,230], "width": 30},
+    "lowerLegNear": {"rect": [108,674,135,229], "width": 25},
+    "footNear": {"rect": [377,735,248,145], "size": [43,25]},
+    "upperLegFar": {"rect": [718,676,178,227], "width": 28},
+    "lowerLegFar": {"rect": [1041,674,140,225], "width": 23},
+    "footFar": {"rect": [64,1047,248,145], "size": [41,24]},
+    "earNear": {"rect": [410,932,179,291], "size": [34,83]},
+    "earFar": {"rect": [733,960,160,257], "size": [30,76]},
+    "tail": {"rect": [1035,1009,170,166], "size": [29,29]}
+  }
+}

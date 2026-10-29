@@ -1,14 +1,36 @@
 import type {FirebaseFirestoreTypes} from '@react-native-firebase/firestore';
 
-export type CharacterType = 'penguin' | 'rabbit' | 'duck';
+// Firebase Storage characters/{type}/ 폴더 이름과 1:1 대응
+export const CHARACTER_TYPES = [
+  'bear', 'capybara', 'cat', 'cheetah', 'chick', 'chicken', 'cow', 'crocodile',
+  'deer', 'dog', 'duck', 'eagle', 'elephant', 'fox', 'frog', 'giraffe',
+  'goldpig', 'gorilla', 'hamster', 'hippo', 'horse', 'koala', 'lion', 'monkey',
+  'ostrich', 'otter', 'penguin', 'pig', 'platypus', 'quokka', 'rabbit', 'raccoon',
+  'sheep', 'sparrow', 'squirrel', 'tiger', 'zebra',
+] as const;
 
-export type CharacterStage = 'egg' | 'sprout' | 'baby' | 'runner' | 'champion';
+export type CharacterType = (typeof CHARACTER_TYPES)[number];
+
+// egg는 로컬 egg.png, baby/child/runner는 Storage의 {type}_S/M/L.png
+export type CharacterStage = 'egg' | 'baby' | 'child' | 'runner';
+
+export const CHARACTER_STAGE_ORDER: readonly CharacterStage[] = ['egg', 'baby', 'child', 'runner'];
+
+// 속도 연동 모션 (F-CHAR-03). 'stone'은 돌 변신(users.is_frozen) 상태
+export type CharacterMotion = 'idle' | 'rest' | 'slow' | 'run' | 'sprint' | 'stone';
+
+// 꾸미기 슬롯. 그리는 순서는 CharacterView의 OUTFIT_LAYER_ORDER가 정한다
+export type OutfitSlot = 'back' | 'bottom' | 'top' | 'shoes' | 'hat' | 'accessory';
+
+// 슬롯별 장착 아이템 id (users/{uid}/inventory/{itemId}). 비어 있으면 기본 옷
+export type EquippedOutfit = Partial<Record<OutfitSlot, string>>;
 
 export type CharacterDocument = {
   uid: string;
   stage: CharacterStage;
   character_type: CharacterType;
   pet_name: string;
+  equipped?: EquippedOutfit;
   exp: number;
   stat_stamina: number;
   stat_speed: number;

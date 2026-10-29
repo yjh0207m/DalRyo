@@ -1,4 +1,5 @@
 import UIKit
+import FirebaseCore
 import React
 import React_RCTAppDelegate
 import ReactAppDependencyProvider
@@ -14,6 +15,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
+    // GoogleService-Info.plist로 Firebase 초기화 (React Native 시작 전에 호출해야 함)
+    FirebaseApp.configure()
+
     let delegate = ReactNativeDelegate()
     let factory = RCTReactNativeFactory(delegate: delegate)
     delegate.dependencyProvider = RCTAppDependencyProvider()

@@ -21,10 +21,12 @@
 | 실시간 | Firestore onSnapshot |
 | 푸시 알림 | FCM (Firebase Cloud Messaging) |
 | 지도 | react-native-maps |
-| GPS | react-native-geolocation-service |
+| GPS | @react-native-community/geolocation (New Architecture 지원) |
 | 카메라 | react-native-vision-camera |
 | 사투리 | i18next + react-i18next |
 | 인앱결제 | react-native-iap |
+| 폰트 | Pretendard (SIL OFL, `android/app/src/main/assets/fonts`, `ios/DalRyoTemp/Fonts`) |
+| 아이콘 | lucide-react-native + react-native-svg |
 | iOS 빌드 | GitHub Actions Mac Runner |
 
 ---
@@ -104,7 +106,7 @@ export const storage = getStorage(app)
 ### F-AUTH-01 · 시작 화면
 
 - 달료 로고 + 서브타이틀 "함께 달리는 즐거움!"
-- 캐릭터(펭귄+토끼) 달리기 애니메이션
+- 캐릭터(오리+토끼) 달리기 배경 (`bg-day.png` / `bg-dusk.png`, 시간대별 전환)
 - "시작하기" 버튼 → F-AUTH-02
 
 ### F-AUTH-02 · 로그인 화면
@@ -137,7 +139,7 @@ await createUserWithEmailAndPassword(auth, email, password)
 STEP 1/4  반가워요! → 닉네임 입력
 STEP 2/4  신체 정보 → 키(cm) / 몸무게(kg) / 성별
 STEP 3/4  내 지역 → 사투리 선택
-STEP 4/4  달이 탄생! → 캐릭터 알 증정 연출 → F-CHAR-01
+STEP 4/4  알 받기 → 알이 떨어져 통통 튀는 증정 연출 → F-CHAR-01 (부화는 F-CHAR-02)
 ```
 
 ```ts
@@ -231,26 +233,25 @@ await setDoc(runRef, {
   avg_speed_kmh,
   avg_heart_rate: null,
   calories,
-  route: gpsPoints,   // GeoPoint 배열
+  route: gpsPoints,   // {lat, lng, timestamp} 배열, 5m 이상 이동 시에만 추가
   park_id: null,
-  exp_earned,
+  exp_earned: 0,      // 클라이언트는 항상 0 (Security Rules 강제)
   created_at: serverTimestamp(),
 })
-
-// users 업데이트
-await updateDoc(doc(db, 'users', uid), {
-  total_km: increment(distance_km),
-  total_exp: increment(exp_earned),
-  last_run_at: serverTimestamp(),
-  is_frozen: false,
-})
 ```
+
+- 클라이언트는 `runs`만 생성한다. `users.total_km/total_exp/last_run_at/is_frozen`과
+  캐릭터 EXP·스탯·단계는 **Cloud Function `onRunCreate`가 서버에서 반영** (F-CHAR-04)
+- 거리 측정: 정확도 25m 초과 위치는 버리고, 45km/h 넘게 튄 위치는 GPS 오차로 무시.
+  일시정지 중 이동 거리는 합산하지 않음 (`src/hooks/useRunSession.tsx`)
+- 칼로리 근사: 체중(kg, 없으면 60) × 거리(km) × 1.036
 
 ### F-RUN-04 · 운동 완료 화면
 
 ```
 총 거리 | 평균 페이스 | 소요 시간 | 칼로리
 달료 완주 리액션 애니메이션 + t('run.complete') 사투리
+  (달리기 전 stage가 'egg'면 알 부화 연출로 대체 → F-CHAR-02)
 [달료랑 사진 찍기] → F-CAM-01
 [운동 기록 보기]
 ```
@@ -359,11 +360,33 @@ const unsubscribe = onSnapshot(
 
 ## CHAR — 캐릭터 시스템
 
+### 캐릭터 에셋
+
+Firebase Storage `characters/{type}/{type}_{S|M|L}.png` — 37종 × 3단계
+
+```
+bear capybara cat cheetah chick chicken cow crocodile deer dog duck eagle
+elephant fox frog giraffe goldpig gorilla hamster hippo horse koala lion
+monkey ostrich otter penguin pig platypus quokka rabbit raccoon sheep
+sparrow squirrel tiger zebra
+```
+
+| 단계 | 이미지 | 조건 (total_km) |
+|------|--------|-----------------|
+| `egg` | 로컬 `egg.png` (부화 시 `broken_egg.png`) | 0 (첫 달리기 전) |
+| `baby` | `{type}_S.png` — 아기, 기어가기 | 첫 달리기 완료 (> 0) |
+| `child` | `{type}_M.png` — 어린이, 깡충 뛰기 | 50 이상 |
+| `runner` | `{type}_L.png` — 러너, 전력 질주 | 200 이상 |
+
+- `goldpig`는 특별 캐릭터 → 가입 시 지급 대상에서 제외 (뽑기·보상용)
+- Storage 규칙: 로그인 유저 읽기만 허용, 업로드는 콘솔에서만
+
 ### F-CHAR-01 · 알 지급 (온보딩)
 
 ```ts
-const types = ['penguin', 'rabbit', 'bear', 'fox']
-const type = types[Math.floor(Math.random() * types.length)]
+// CHARACTER_TYPES(37종)에서 goldpig 제외 후 랜덤
+const starters = CHARACTER_TYPES.filter(t => t !== 'goldpig')
+const type = starters[Math.floor(Math.random() * starters.length)]
 
 await setDoc(doc(db, 'users', uid, 'character', uid), {
   stage: 'egg',
@@ -378,8 +401,10 @@ await setDoc(doc(db, 'users', uid, 'character', uid), {
 
 ### F-CHAR-02 · 부화 연출
 
-- 첫 달리기 완료 후 Lottie 알 깨지는 애니메이션
-- `character.stage = 'sprout'` 업데이트
+- 위치: 운동 완료 화면 (`src/screens/run/RunCompleteScreen.tsx`), 온보딩에서는 알만 증정
+- 조건: 달리기 전 `stage === 'egg'` 이고 이번 거리 > 0
+- 연출: 알 흔들림 → `broken_egg.png` + `{type}_S.png` 튀어나옴 (부화 끝나야 버튼 활성)
+- `character.stage = 'baby'` 업데이트는 서버(Cloud Function)에서 처리 — 클라이언트는 character 수정 불가(Security Rules)
 - 캐릭터 타입 공개 + 이름 짓기 (선택)
 
 ### F-CHAR-03 · 속도 연동 모션
@@ -405,52 +430,125 @@ const itemMultiplier = userItem?.multiplier ?? 1.0
 const streakBonus = getStreakBonus(consecutiveDays)  // 최대 1.5
 const expEarned = Math.floor(baseExp * itemMultiplier * streakBonus)
 
-// 성장 단계 (total_km 기준)
-function getStage(totalKm: number) {
-  if (totalKm >= 500) return 'champion'
-  if (totalKm >= 200) return 'runner'
-  if (totalKm >= 50)  return 'baby'
-  if (totalKm >= 10)  return 'sprout'
+// 성장 단계 (total_km 기준) — src/utils/exp.tsx
+function getStage(totalKm: number): CharacterStage {
+  if (totalKm >= 200) return 'runner'  // _L
+  if (totalKm >= 50)  return 'child'   // _M
+  if (totalKm > 0)    return 'baby'    // _S (첫 달리기에서 부화)
   return 'egg'
 }
 
-// 스탯 업데이트
-await updateDoc(doc(db, 'users', uid, 'character', uid), {
-  stage: newStage,
-  exp: increment(expEarned),
-  stat_stamina:   increment(Math.floor(distanceKm * 0.5)),
-  stat_speed:     increment(Math.floor(avgSpeedKmh * 0.3)),
-  stat_endurance: increment(Math.floor(durationSec / 60 * 0.2)),
-  last_active_at: serverTimestamp(),
-})
+// 스탯 증가량 (각 스탯 최대 100)
+stat_stamina   += Math.floor(distanceKm * 0.5)
+stat_speed     += Math.floor(avgSpeedKmh * 0.3)
+stat_endurance += Math.floor(durationSec / 60 * 0.2)
 ```
+
+**서버 반영 — `functions/src/onRunCreate.ts`** (runs 생성 트리거, 리전 asia-northeast3)
+
+- 트랜잭션으로 run·user·character를 함께 갱신, `runs.growth_applied`로 중복 반영 방지
+- 단계는 되돌아가지 않음, 단계가 오르면 `notifications`에 `level_up` 생성
+- 평균 속도 25km/h 초과 기록은 `flagged: true`, 거리·EXP·스탯 미반영 (차량 이동 방지)
+- 성장 규칙은 `functions/src/growth.ts`와 `src/utils/exp.tsx`가 같아야 함
+  (앱은 완료 화면 미리보기용, 최종 값은 서버)
+
+### F-CHAR-06 · 캐릭터 렌더링 & 꾸미기 구조
+
+캐릭터는 반드시 `src/components/character/CharacterView.tsx` 하나로만 그린다.
+
+```tsx
+<CharacterView
+  type="duck" stage="baby"
+  motion="run"                 // idle | rest | slow | run | sprint | stone
+  outfitLayers={{hat, top}}    // 슬롯별 이미지 (옵션)
+  size={220}
+/>
+```
+
+- **원칙: 최소한의 움직임.** 입체 일러스트 한 장을 늘리거나 접으면 고무처럼 보이므로(부위 변형·2D 리그 시도 모두 검수 탈락),
+  그림은 '스티커'처럼 통째로만 움직이고 생동감은 주변 효과·연출로 낸다 (`CharacterView`)
+  - 대기: 느린 숨쉬기(1.5% 이내), 알은 가끔 좌우로 흔들림
+  - 달리기: 살짝 앞으로 기울인 채 걸음 박자에 맞춘 아주 작은 들썩임 + 흙먼지(`dust`)
+  - 효과(`CharacterEffects`): 달리기·질주 땀방울, 질주 속도선 (작은 아바타에서는 끔)
+  - `facing`(좌우 방향), `jumpKey`(값이 바뀔 때 톡 튀었다 돌아오기)
+- **홈 로비** (`LobbyCharacter`): 제자리에서 숨쉬기. 8~12초마다 뒤돌아보기(카드 뒤집듯) 또는 머리 위 ♪/반짝임.
+  탭하면 톡 튀기 + 하트 + 대사 변경(`SpeechBubble`). 알·돌 상태는 혼자 행동하지 않음
+- **달리기 응원**: 1km마다, 목표를 처음 달성했을 때 머리 위 말풍선 3.5초 (지역 말투 반영)
+- **달리기 완료 연출** (`CharacterReveal`, `components/celebrate/`): 캐릭터 등장 → 기록 카운트업 → 경험치 막대 → '완주!' 도장 → 버튼 활성화
+  - 완주: 톡 등장 + 반짝임 / 부화: 알이 점점 세게 흔들림 → 번쩍 → 깨진 껍데기에서 등장 + 빛줄기 + 색종이
+  - 성장: 이전 모습 → 하얀 실루엣으로 이전·다음 모습이 점점 빠르게 교차 → 번쩍 → 새 모습 + 빛줄기 + 색종이
+  - 해동: 돌 상태로 부르르 → 조각이 튀며 원래 색으로 / 우선순위 규칙은 `utils/reveal.ts`
+  - 개발 빌드: 마이 → 캐릭터 미리보기 → '달리기 완료 연출'에서 네 가지를 저장 없이 재생
+- **달리기 월드** (`RunningWorld`): 구름·먼 언덕·가까운 땅이 다른 속도로 흐르는 횡스크롤(패럴랙스).
+  흐르는 속도 = 실제 달리기 속도(km/h, 1km/h 단위), 멈추면 월드도 멈춘다
+- **Rive 애니메이션** (`RiveCharacter`, 앱 연결 완료 · 동물별 `.riv` 파일 제작 대기):
+  - Storage `characters/{type}/{type}.riv`가 있으면 그 동물은 Rive로, 없으면 위 PNG 애니메이션으로 그린다
+  - 아트보드 `baby`·`child`·`runner`, 상태 머신 `Character`, 입력 `speed`·`running`·`stone`·`jump`
+  - 파일·아트보드·상태 머신 오류면 PNG로 자동 대체, 그 외 경고는 무시
+  - 걷기 이동·방향·먼지·월드·화면 코드는 그대로 쓰고 몸의 움직임만 Rive가 맡는다
+  - 제작 규격: `docs/rive-character-spec.md`
+- **꾸미기 슬롯**: `back`(몸 뒤) → 몸 → `bottom` → `top` → `shoes` → `hat` → `accessory`
+- **PNG 레이어 규칙**: 옷 이미지는 각 동물·단계의 몸 이미지와 같은 캔버스 크기·기준점으로 제작
+  (동물 37종 × 3단계마다 체형이 달라 공용 옷 1장으로는 맞지 않음 → Rive에서는 슬롯별 교체 이미지 에셋으로 해결)
+- **데이터**: `character.equipped = {hat: itemId, ...}`,
+  보유 아이템은 `users/{uid}/inventory/{itemId}` (서버만 쓰기) — firestore_schema 참고
+- **디자인 토큰**: 색·간격·모서리·글자 크기는 `src/theme/index.ts`에서만 정의.
+  새 화면은 토큰을 쓰고, 리디자인은 토큰부터 바꾼다
+- **캐릭터 연출**: 발밑 그림자(`grounded`, 뛰면 작아짐), 화면별로 연한 초록 원·카드 배경 위에 둔다
+
+### 디자인 시스템
+
+| 항목 | 규칙 |
+|---|---|
+| 색 | 배경 중성 오프화이트(`background`), 브랜드 초록(`primary`)은 누를 수 있는 것·진행 상태에만. 따뜻한 색(`accent`)은 경고·일시정지 같은 감정 신호에만 |
+| 글자 | Pretendard. `AppText`의 variant로만 지정 (display·title·heading·subheading·body·caption·label·number). 커스텀 폰트에 `fontWeight`를 같이 주지 않는다 |
+| 아이콘 | lucide 선 아이콘만 사용. 유니코드 기호(⌂ ✧ ⌕ 등)·이모지로 아이콘을 대신하지 않는다 |
+| 깊이 | 그림자는 최소(`shadow.card`), 영역은 얇은 선으로 나눈다 |
+| 공용 컴포넌트 | `src/components/ui` — `AppText`, `Button`(primary/secondary/ghost), `IconButton`, `Card`(surface/soft/warm/stone), `Badge`, `ProgressBar` |
+| 하단 탭 | `src/navigation/BottomTabBar.tsx` — 가운데 달리기 버튼은 탭이 아니라 행동이라 크게 띄우고 내 캐릭터를 보여 준다 |
+| 무드 | "런닝 + 게임". 맑은 하늘 + 민트 + 초원 월드. 장면은 `src/components/scene` (`RunningWorld` 횡스크롤 월드, `MeadowScene` 초원, `IslandScene` 풀밭 섬) |
+| 게임 UI | 입체 버튼(아래 턱이 있고 누르면 눌림) — `Button`, 탭바 가운데 달리기 버튼. HUD — `src/components/game/Hud.tsx` (레벨 배지, 두꺼운 경험치 바, 연속 기록 칩) |
+
+### 화면 구성 (Figma "달료 UI 구성" 반영)
+
+Figma는 구조·기능 참고용이고, 시각 디자인은 위 디자인 시스템으로 다듬어 적용한다.
+
+| 영역 | 구성 |
+|---|---|
+| 하단 탭 | 홈 · 성장 · (달리기) · 커뮤니티 · 기록 |
+| 헤더 | `ScreenHeader` — 왼쪽은 페이지마다(홈은 로고, 나머지는 제목), 오른쪽 알림·설정 고정. 설정 → 마이 페이지 |
+| 홈 (게임 로비) | 위: 캐릭터가 돌아다니는 월드 + HUD(플레이어 카드: 레벨 배지·이름·경험치 바, 알림·설정, 연속 기록 칩). 아래 패널: 달리기 시작(입체 버튼) → 오늘 기록 → 이번 주 활동 |
+| 달리기 시작 | 탭바 가운데 버튼·홈 버튼 → 하단 시트(`RunStartSheet`) 2×2: 자유 달리기는 바로 시작, 시간·거리·칼로리는 목표 값 화면(`GoalValueScreen`: 큰 숫자 + ± + 자주 쓰는 값) |
+| 달리기 | 민트 타이머 → 기록 카드 → 목표 진행 → 실제 속도로 흐르는 횡스크롤 월드 위를 달리는 캐릭터(흙먼지) + 원형 조작 버튼 |
+| 운동 완료 | 같은 초원에서 부화·완주 리액션, 기록 카드가 풀밭 위에 놓임 |
+| 성장 | 누적·최근 7일·EXP 요약 → 최근 7일 거리 막대그래프 → 캐릭터 스탯 → AI 코치(준비 중) |
+| 마이 | 프로필 + 꾸미기·마이룸·아이템·설정 메뉴 |
+
+리디자인 적용 완료: 하단 탭, 헤더, 홈, 달리기 시작 시트, 목표 값, 달리기, 운동 완료, 성장, 마이.
+아직 예전 스타일: 시작(Splash), 로그인, 온보딩, 기록, 커뮤니티
 
 ### F-CHAR-05 · 돌 변신 스케줄러 (Cloud Function)
 
-```ts
-// functions/src/stoneScheduler.ts
-export const stoneScheduler = onSchedule('every day 00:00', async () => {
-  const now = Date.now()
-  const usersSnap = await db.collection('users')
-    .where('is_frozen', '==', false)
-    .get()
+**`functions/src/stoneScheduler.ts`** — 매일 00:00 KST, 리전 asia-northeast3
 
-  for (const userDoc of usersSnap.docs) {
-    const user = userDoc.data()
-    if (!user.last_run_at) continue
-    const daysSince = (now - user.last_run_at.toMillis()) / 86400000
+| 마지막 달리기 후 | 처리 |
+|---|---|
+| 3일째 | 경고 알림 (`warn3`) |
+| 5일째 | 경고 알림 (`warn5`) |
+| 7일 이상 | `users.is_frozen = true` + 돌 변신 알림 (`stone`) |
 
-    if (daysSince >= 7) {
-      await userDoc.ref.update({ is_frozen: true })
-      await sendFCM(user.fcm_token, getMsg(user.dialect, 'stoneFull'))
-    } else if (daysSince >= 5) {
-      await sendFCM(user.fcm_token, getMsg(user.dialect, 'stoneWarning5'))
-    } else if (daysSince >= 3) {
-      await sendFCM(user.fcm_token, getMsg(user.dialect, 'stoneWarning3'))
-    }
-  }
-})
-```
+- 경고는 **정확히 3일·5일째에만** 보낸다 (매일 반복 발송 방지). 돌이 되면 이후엔 대상에서 빠진다
+- `users.last_run_at <= 3일 전` 단일 필드 쿼리 (복합 인덱스 불필요), `is_frozen`은 코드에서 거름
+- FCM 푸시 + `notifications`에 `stone_warning`(level) 생성. 문구는 README 5-8 사투리 표 사용
+  (서울·경기·강원은 표준어, 5일 경고는 아직 표준어만)
+- 해동: 달리기 기록이 저장되면 `onRunCreate`가 `is_frozen = false`
+- 규칙(`getStoneLevel`, `getStoneNotice`)은 `functions/src/growth.ts`, 앱은 `src/utils/exp.tsx`
+
+**앱 표시**
+
+- 홈: 3일·5일 경고 배너, 7일 이상(또는 `is_frozen`)이면 캐릭터 `motion="stone"` + 돌 배너
+- 마이페이지: "돌 변신 중 🪨"
+- 운동 완료: 돌 상태에서 달렸으면 "해동 완료!" 문구
 
 ---
 
@@ -598,7 +696,7 @@ const runsSnap = await getDocs(query(
 </Camera>
 ```
 
-성장 단계별 이펙트: 새싹~아기 기본 / 러너 바람선 / 챔피언 파티클
+성장 단계별 이펙트: 아기~어린이 기본 / 러너 바람선
 
 ### F-CAM-02 · 외부 공유
 
@@ -758,6 +856,7 @@ const postsSnap = await getDocs(query(
 
 | 함수 | 트리거 | 역할 |
 |------|--------|------|
+| `onRunCreate` ✅ | runs 생성 | EXP·누적 거리·스탯·성장 단계 반영, 돌 변신 해제, 성장 알림 |
 | `onPostCreate` | posts 생성 | 팔로워 feed에 Fan-out 복사 |
 | `onPostDelete` | posts 삭제 | 팔로워 feed에서 제거 |
 | `onLikeCreate` | likes 생성 | like_count +1, 작성자 알림 |
@@ -765,7 +864,7 @@ const postsSnap = await getDocs(query(
 | `onCommentCreate` | comments 생성 | comment_count +1, 작성자 알림 |
 | `onFollowCreate` | follows 생성 | 카운트 +1, Fan-out 시작, 알림 |
 | `onFollowDelete` | follows 삭제 | 카운트 -1, 피드 정리 |
-| `stoneScheduler` | 매일 자정 | 돌 변신 처리 + FCM 알림 |
+| `stoneScheduler` ✅ | 매일 자정 (KST) | 3·5일 경고, 7일 돌 변신 + FCM 알림 |
 | `tierCalculator` | 매일 자정 | 인플루언서 등급 업데이트 |
 
 ---

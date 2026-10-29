@@ -1,812 +1,1732 @@
-import React, {useEffect, useRef, useState} from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Animated,
-  Dimensions,
-  FlatList,
-  ScrollView,
+  ActivityIndicator,
+  Alert,
+  BackHandler,
   Image,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  Share,
   StatusBar,
   StyleSheet,
-  Text,
   TextInput,
-  TouchableOpacity,
   View,
 } from 'react-native';
-
-const SCREEN_W = Dimensions.get('window').width;
-const GRID_CELL = (SCREEN_W - 32 - 4) / 3; // 32 = horizontal padding, 4 = 2 gaps
-import {SafeAreaView} from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import {
-  subscribeMyFeed,
-  subscribePublicPosts,
-  subscribeMyPosts,
-  getPostInteractions,
-  toggleLike,
-  toggleJoin,
-  toggleSave,
-  type FeedPost,
-} from '../../services/feed.service';
-import {WritePostScreen} from './WritePostScreen';
-import {CommentModal} from './CommentModal';
-import {NotificationModal} from './NotificationModal';
-import {ChatModal} from './ChatModal';
-import {UserProfileModal} from './UserProfileModal';
-import type {UserDocument} from '../../types/user.types';
+  Bell,
+  Footprints,
+  MoreHorizontal,
+  Plus,
+  Settings,
+  Bookmark,
+  ChevronLeft,
+  MessageSquare,
+  MessageCircle,
+  Pencil,
+  Search,
+  Share2,
+  Trash2,
+  Trophy,
+  UserRound,
+  Users,
+  X,
+} from 'lucide-react-native';
+import { AppText, Button, Card, IconButton } from '../../components/ui';
+import { RunningShoeIcon } from '../../components/ui/RunningShoeIcon';
+import { ChatScreen } from './ChatScreen';
+import { hasUnread, watchConversations } from '../../services/chat.service';
+import { TAB_BAR_HEIGHT } from '../../navigation/BottomTabBar';
+import { colors, fonts, radius, spacing } from '../../theme';
+import { useSocialFeed } from '../../hooks/useSocialFeed';
+import { useComments } from '../../hooks/useComments';
+import { choosePhoto, uploadPhoto } from '../../services/media.service';
+import { fetchRecentRuns } from '../../services/run.service';
+import {
+  myUid,
+  newSocialId,
+  savedPosts,
+  socialError,
+  socialRequest,
+  watchPost,
+  watchPostFlags,
+  type FeedScope,
+  type PublicProfile,
+  type SocialComment,
+  type SocialPost,
+} from '../../services/social.service';
+import { formatDuration, formatPace } from '../../utils/pace';
+import type { Asset } from 'react-native-image-picker';
+import type { RunDocument } from '../../types/run.types';
 
-const images = {avatar: require('../../assets/images/dalryo-avatar.png')};
+type Props = {
+  hasUnread?: boolean;
+  onNotificationPress: () => void;
+  onSettingsPress: () => void;
+  // friendUid가 있으면 그 친구를 골라 둔 채로 같이 달리기 화면을 연다
+  onTogetherPress?: (friendUid?: string) => void;
+  onSubpageChange?: (open: boolean) => void;
+};
+type Route =
+  | { page: 'feed' }
+  | { page: 'compose'; post?: SocialPost }
+  | { page: 'post'; id: string }
+  | { page: 'profile'; uid: string }
+  | { page: 'search' }
+  | { page: 'rankings' }
+  | { page: 'saved' }
+  | { page: 'chat'; peer?: string };
+const VISIBILITY = {
+  public: '전체 공개',
+  followers: '팔로워 공개',
+  private: '나만 보기',
+};
 
-const MINT = '#58CFA6';
-const MINT_DEEP = '#2BAF85';
-const TEXT = '#1A1A1A';
-const MUTED = '#9A9A9A';
-const CARD_BG = '#FFFFFF';
-const CREAM = '#F4FAF7';
-
-type Tab = '오늘' | '팔로잉' | '탐색' | '프로필';
-const TABS: Tab[] = ['오늘', '팔로잉', '탐색', '프로필'];
-
-type Props = {user: UserDocument | null};
-
-export function CommunityScreen({user}: Props) {
-  const [activeTab, setActiveTab] = useState<Tab>('오늘');
-  const [showWrite, setShowWrite] = useState(false);
-  const [showNotifications, setShowNotifications] = useState(false);
-  const [showMessages, setShowMessages] = useState(false);
-  const [exploreQuery, setExploreQuery] = useState('');
-  const [profileTarget, setProfileTarget] = useState<{uid: string; name: string} | null>(null);
-  const indicatorAnim = useRef(new Animated.Value(0)).current;
-
-  const handleProfilePress = (uid: string, name: string) => {
-    if (uid === user?.uid) {
-      handleTabChange('프로필');
-    } else {
-      setProfileTarget({uid, name});
-    }
+export function CommunityScreen(props: Props) {
+  const [unreadChat, setUnreadChat] = useState(false);
+  useEffect(
+    () =>
+      watchConversations(
+        page =>
+          setUnreadChat(page.items.some(room => hasUnread(room, myUid()))),
+        () => setUnreadChat(false),
+      ),
+    [],
+  );
+  const [scope, setScope] = useState<FeedScope>('public');
+  const [stack, setStack] = useState<Route[]>([{ page: 'feed' }]);
+  const onSubpageChange = props.onSubpageChange;
+  useEffect(() => {
+    onSubpageChange?.(stack.length > 1);
+    return () => onSubpageChange?.(false);
+  }, [stack.length, onSubpageChange]);
+  const feed = useSocialFeed(scope);
+  const route = stack[stack.length - 1];
+  const authors = [
+    ...new Map(feed.posts.map(post => [post.uid, post])).values(),
+  ].slice(0, 8);
+  const push = (next: Route) => setStack(old => [...old, next]);
+  const back = () => setStack(old => (old.length > 1 ? old.slice(0, -1) : old));
+  const showPost = (id: string) => push({ page: 'post', id });
+  const showProfile = (uid: string) => push({ page: 'profile', uid });
+  const changed = () => {
+    feed.refresh();
   };
-
-  const handleHashtagPress = (tag: string) => {
-    setExploreQuery(tag);
-    handleTabChange('탐색');
-  };
-
-  const handleTabChange = (tab: Tab) => {
-    Animated.spring(indicatorAnim, {
-      toValue: TABS.indexOf(tab),
-      useNativeDriver: false,
-      tension: 90,
-      friction: 14,
-    }).start();
-    setActiveTab(tab);
-  };
-
-  if (showWrite) {
+  if (route.page === 'chat')
+    return <ChatScreen initialPeer={route.peer} onBack={back} />;
+  if (route.page === 'compose')
     return (
-      <WritePostScreen
-        user={user}
-        onClose={() => setShowWrite(false)}
-        onPosted={() => setShowWrite(false)}
+      <Composer
+        post={route.post}
+        onBack={back}
+        onSaved={() => {
+          setScope('mine');
+          setStack([{ page: 'feed' }]);
+          feed.refresh();
+        }}
       />
     );
-  }
-
-  const indicatorLeft = indicatorAnim.interpolate({
-    inputRange: TABS.map((_, i) => i),
-    outputRange: TABS.map((_, i) => `${i * 25}%`),
-  });
-
+  if (route.page === 'post')
+    return (
+      <PostDetail
+        id={route.id}
+        onBack={back}
+        onProfile={showProfile}
+        onEdit={post => push({ page: 'compose', post })}
+        onDeleted={() => {
+          back();
+          changed();
+        }}
+      />
+    );
+  if (route.page === 'profile')
+    return (
+      <ProfilePage
+        uid={route.uid}
+        onBack={back}
+        onPost={showPost}
+        onTogether={props.onTogetherPress}
+        onMessage={uid => push({ page: 'chat', peer: uid })}
+      />
+    );
+  if (route.page === 'search' || route.page === 'rankings')
+    return (
+      <PeoplePage
+        ranking={route.page === 'rankings'}
+        onBack={back}
+        onProfile={showProfile}
+      />
+    );
+  if (route.page === 'saved')
+    return (
+      <SavedPage onBack={back} onPost={showPost} onProfile={showProfile} />
+    );
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor={CREAM} />
-
-      {/* 헤더 */}
-      <View style={styles.header}>
+    <Page title="커뮤니티" feed>
+      <View style={styles.feedHeader}>
         <View>
-          <Text style={styles.headerLogo}>달료</Text>
-          <Text style={styles.headerSub}>오늘도 함께 달려요 🏃</Text>
+          <AppText style={styles.feedWordmark}>달료 클럽</AppText>
+          <AppText style={styles.feedEyebrow} color={colors.primaryInk}>
+            YOUR DAILY RUN, SHARED.
+          </AppText>
         </View>
-        <View style={styles.headerRight}>
-          <TouchableOpacity activeOpacity={0.75} style={styles.iconBtn} onPress={() => setShowNotifications(true)}>
-            <Text style={styles.iconBtnText}>🔔</Text>
-          </TouchableOpacity>
-          <TouchableOpacity activeOpacity={0.75} style={styles.iconBtn} onPress={() => setShowMessages(true)}>
-            <Text style={styles.iconBtnText}>💬</Text>
-          </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <IconButton
+            icon={Search}
+            size={40}
+            variant="plain"
+            accessibilityLabel="러너 검색"
+            onPress={() => push({ page: 'search' })}
+          />
+          <IconButton
+            icon={MessageSquare}
+            dot={unreadChat}
+            size={40}
+            variant="plain"
+            accessibilityLabel="메시지"
+            onPress={() => push({ page: 'chat' })}
+          />
+          <IconButton
+            icon={Bell}
+            size={40}
+            variant="plain"
+            dot={props.hasUnread}
+            accessibilityLabel="알림"
+            onPress={props.onNotificationPress}
+          />
+          <IconButton
+            icon={Settings}
+            size={40}
+            variant="plain"
+            accessibilityLabel="설정"
+            onPress={props.onSettingsPress}
+          />
         </View>
       </View>
-
-      {/* 탭바 */}
-      <View style={styles.tabBar}>
-        {TABS.map(tab => (
-          <TouchableOpacity
-            key={tab}
-            activeOpacity={0.8}
-            onPress={() => handleTabChange(tab)}
-            style={styles.tabItem}>
-            <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
-              {tab}
-            </Text>
-          </TouchableOpacity>
+      <View style={styles.tabs}>
+        {(
+          [
+            ['public', '전체'],
+            ['following', '팔로잉'],
+            ['mine', '내 게시물'],
+          ] as Array<[FeedScope, string]>
+        ).map(([value, label]) => (
+          <Tab
+            key={value}
+            label={label}
+            selected={scope === value}
+            onPress={() => setScope(value)}
+          />
         ))}
-        <Animated.View style={[styles.tabIndicator, {left: indicatorLeft}]} />
       </View>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.feedContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={feed.status === 'loading'}
+            onRefresh={feed.refresh}
+            tintColor={colors.primary}
+          />
+        }
+      >
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.runnersRow}
+        >
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="내 러닝 이야기 작성"
+            onPress={() => push({ page: 'compose' })}
+            style={styles.runner}
+          >
+            <View style={styles.addRunner}>
+              <Plus color={colors.primaryInk} size={25} />
+            </View>
+            <AppText variant="label" color={colors.textMuted}>
+              내 러닝 공유
+            </AppText>
+          </Pressable>
+          {authors.map(author => (
+            <Pressable
+              key={author.uid}
+              accessibilityRole="button"
+              accessibilityLabel={`${author.author_name} 프로필`}
+              onPress={() => showProfile(author.uid)}
+              style={styles.runner}
+            >
+              <View style={styles.runnerRing}>
+                <Avatar uri={author.author_image} size={54} />
+              </View>
+              <AppText
+                variant="label"
+                numberOfLines={1}
+                style={styles.runnerName}
+              >
+                {author.author_name}
+              </AppText>
+            </Pressable>
+          ))}
+        </ScrollView>
+        <View style={styles.discoveryRow}>
+          {props.onTogetherPress && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="같이 달리기"
+              onPress={() => props.onTogetherPress?.()}
+              style={styles.discovery}
+            >
+              <Users size={15} color={colors.primaryInk} />
+              <AppText variant="label" color={colors.primaryInk}>
+                같이 달리기
+              </AppText>
+            </Pressable>
+          )}
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => push({ page: 'rankings' })}
+            style={styles.discovery}
+          >
+            <Trophy size={15} color={colors.textMuted} />
+            <AppText variant="label">러너 랭킹</AppText>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => push({ page: 'saved' })}
+            style={styles.discovery}
+          >
+            <Bookmark size={15} color={colors.textMuted} />
+            <AppText variant="label">저장함</AppText>
+          </Pressable>
+        </View>
+        {feed.status === 'loading' ? (
+          <Loading />
+        ) : feed.status === 'error' ? (
+          <Failure retry={feed.refresh} />
+        ) : feed.posts.length === 0 ? (
+          <Empty
+            title={
+              scope === 'following'
+                ? '팔로잉 피드가 비어 있어요'
+                : '아직 게시물이 없어요'
+            }
+            detail={
+              scope === 'following'
+                ? '러너를 검색해 팔로우해 보세요.'
+                : '오늘의 달리기를 기록과 함께 나눠 보세요.'
+            }
+          />
+        ) : (
+          feed.posts.map(post => (
+            <PostCard
+              key={post.post_id}
+              post={post}
+              onOpen={() => showPost(post.post_id)}
+              onProfile={() => showProfile(post.uid)}
+            />
+          ))
+        )}
+        {feed.moreError && (
+          <AppText color={colors.danger}>
+            이전 글을 불러오지 못했어요. 다시 시도해 주세요.
+          </AppText>
+        )}
+        {feed.more && (
+          <Button
+            label={feed.loadingMore ? '불러오는 중…' : '이전 글 더 보기'}
+            variant="secondary"
+            disabled={feed.loadingMore}
+            onPress={feed.loadMore}
+          />
+        )}
+      </ScrollView>
+    </Page>
+  );
+}
 
-      {activeTab === '오늘' && <TodayTab user={user} onWrite={() => setShowWrite(true)} onProfilePress={handleProfilePress} onHashtagPress={handleHashtagPress} />}
-      {activeTab === '팔로잉' && <CrewTab user={user} onWrite={() => setShowWrite(true)} onProfilePress={handleProfilePress} onHashtagPress={handleHashtagPress} />}
-      {activeTab === '탐색' && <ExploreTab user={user} externalQuery={exploreQuery} onExternalQueryConsumed={() => setExploreQuery('')} onProfilePress={handleProfilePress} onHashtagPress={handleHashtagPress} />}
-      {activeTab === '프로필' && <MeTab user={user} onWrite={() => setShowWrite(true)} onProfilePress={handleProfilePress} onHashtagPress={handleHashtagPress} />}
-
-      {activeTab !== '프로필' && (
-        <TouchableOpacity activeOpacity={0.86} onPress={() => setShowWrite(true)} style={styles.fab}>
-          <Text style={[styles.fabText, {transform: [{scaleX: -1}]}]}>✏️</Text>
-        </TouchableOpacity>
+function Page({
+  title,
+  onBack,
+  children,
+  feed = false,
+}: {
+  feed?: boolean;
+  title: string;
+  onBack?: () => void;
+  children: React.ReactNode;
+}) {
+  useEffect(() => {
+    if (!onBack) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      onBack();
+      return true;
+    });
+    return () => sub.remove();
+  }, [onBack]);
+  return (
+    <SafeAreaView
+      style={[styles.screen, feed && styles.feedScreen]}
+      edges={['top']}
+    >
+      <StatusBar barStyle="dark-content" />
+      {onBack && (
+        <View style={styles.header}>
+          <IconButton
+            icon={ChevronLeft}
+            variant="plain"
+            accessibilityLabel={`${title}에서 뒤로`}
+            onPress={onBack}
+          />
+          <AppText variant="heading">{title}</AppText>
+        </View>
       )}
-
-      <NotificationModal
-        visible={showNotifications}
-        onClose={() => setShowNotifications(false)}
-      />
-      <ChatModal
-        visible={showMessages}
-        onClose={() => setShowMessages(false)}
-        myName={user?.display_name ?? '나'}
-      />
-      {profileTarget && (
-        <UserProfileModal
-          visible={!!profileTarget}
-          uid={profileTarget.uid}
-          name={profileTarget.name}
-          onClose={() => setProfileTarget(null)}
-        />
-      )}
+      {children}
     </SafeAreaView>
   );
 }
-
-// ─────────────────────────────────────────────────────────────
-// 오늘 탭: 오늘 날짜 기준 게시물 + 챌린지 배너
-// ─────────────────────────────────────────────────────────────
-type SharedCardCallbacks = {
-  onProfilePress: (uid: string, name: string) => void;
-  onHashtagPress: (tag: string) => void;
-};
-
-function TodayTab({user, onWrite, onProfilePress, onHashtagPress}: {user: UserDocument | null; onWrite: () => void} & SharedCardCallbacks) {
-  const [posts, setPosts] = useState<FeedPost[]>([]);
-
-  useEffect(() => {
-    return subscribePublicPosts(all => {
-      const todayStart = new Date();
-      todayStart.setHours(0, 0, 0, 0);
-      setPosts(all.filter(p => {
-        const t = (p.created_at as any)?.toDate?.();
-        return t ? t >= todayStart : false;
-      }));
-    });
-  }, []);
-
-  const today = new Date();
-  const dateLabel = `${today.getMonth() + 1}월 ${today.getDate()}일 ${['일', '월', '화', '수', '목', '금', '토'][today.getDay()]}요일`;
-
-  return (
-    <FlatList
-      data={posts}
-      keyExtractor={item => item.post_id}
-      showsVerticalScrollIndicator={false}
-      contentContainerStyle={styles.listContent}
-      ListHeaderComponent={
-        <>
-          <View style={styles.todayBanner}>
-            <Text style={styles.todayDate}>{dateLabel}</Text>
-            <Text style={styles.todayTitle}>오늘 달린 사람들의{'\n'}이야기를 들어볼까요? 🌿</Text>
-          </View>
-          <ChallengePill />
-        </>
-      }
-      ListEmptyComponent={
-        <EmptyDiary
-          emoji="☀️"
-          title="오늘 첫 러닝 일지를 써볼까요?"
-          sub="오늘 달린 이야기를 달료 친구들과 나눠요"
-          onWrite={onWrite}
-        />
-      }
-      renderItem={({item}) => <DiaryCard post={item} user={user} onProfilePress={onProfilePress} onHashtagPress={onHashtagPress} />}
-      ItemSeparatorComponent={() => <View style={{height: 12}} />}
+function Avatar({ uri, size = 44 }: { uri: string | null; size?: number }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [uri]);
+  return uri && !failed ? (
+    <Image
+      source={{ uri }}
+      onError={() => setFailed(true)}
+      style={{ width: size, height: size, borderRadius: size / 2 }}
     />
-  );
-}
-
-// ─────────────────────────────────────────────────────────────
-// 크루 탭: 팔로잉 피드
-// ─────────────────────────────────────────────────────────────
-function CrewTab({user, onWrite, onProfilePress, onHashtagPress}: {user: UserDocument | null; onWrite: () => void} & SharedCardCallbacks) {
-  const [posts, setPosts] = useState<FeedPost[]>([]);
-
-  useEffect(() => subscribeMyFeed(setPosts), []);
-
-  return (
-    <FlatList
-      data={posts}
-      keyExtractor={item => item.post_id}
-      showsVerticalScrollIndicator={false}
-      contentContainerStyle={styles.listContent}
-      ListHeaderComponent={
-        <View style={styles.sectionLabel}>
-          <Text style={styles.sectionLabelText}>👥 내 팔로우의 러닝 일지</Text>
-        </View>
-      }
-      ListEmptyComponent={
-        <EmptyDiary
-          emoji="👟"
-          title="팔로우를 모아볼까요?"
-          sub={'친구를 팔로우하면\n여기서 일지를 볼 수 있어요'}
-          onWrite={onWrite}
-        />
-      }
-      renderItem={({item}) => <DiaryCard post={item} user={user} onProfilePress={onProfilePress} onHashtagPress={onHashtagPress} />}
-      ItemSeparatorComponent={() => <View style={{height: 12}} />}
-    />
-  );
-}
-
-// ─────────────────────────────────────────────────────────────
-// 탐색 탭
-// ─────────────────────────────────────────────────────────────
-function ExploreTab({user, externalQuery, onExternalQueryConsumed, onProfilePress, onHashtagPress}: {user: UserDocument | null; externalQuery: string; onExternalQueryConsumed: () => void} & SharedCardCallbacks) {
-  const [posts, setPosts] = useState<FeedPost[]>([]);
-  const [query, setQuery] = useState('');
-  const [focused, setFocused] = useState(false);
-
-  useEffect(() => subscribePublicPosts(setPosts), []);
-
-  useEffect(() => {
-    if (externalQuery) {
-      setQuery(externalQuery);
-      onExternalQueryConsumed();
-    }
-  }, [externalQuery]);
-
-  const myUid = user?.uid;
-  const others = posts.filter(p => p.uid !== myUid);
-  const filtered = query.trim()
-    ? others.filter(p =>
-        p.text.toLowerCase().includes(query.toLowerCase()) ||
-        p.author_name.toLowerCase().includes(query.toLowerCase()) ||
-        p.hashtags.some(h => h.toLowerCase().includes(query.toLowerCase())),
-      )
-    : others;
-
-  return (
-    <View style={{flex: 1}}>
-      <View style={styles.searchWrap}>
-        <View style={[styles.searchBar, focused && styles.searchBarFocused]}>
-          <Text style={{fontSize: 16}}>🔍</Text>
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
-            placeholder="이름, 태그, 기록으로 탐색해요"
-            placeholderTextColor="#B8B8B8"
-            style={styles.searchInput}
-            returnKeyType="search"
-          />
-          {query.length > 0 && (
-            <TouchableOpacity onPress={() => setQuery('')}>
-              <Text style={styles.clearBtn}>✕</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
-
-      {!query && (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tagScroll} contentContainerStyle={styles.tagScrollContent}>
-          {['#오운완', '#러닝팁', '#코스추천', '#같이달리기', '#새벽런', '#마라톤'].map(tag => (
-            <TouchableOpacity key={tag} onPress={() => setQuery(tag.slice(1))} style={styles.tagChip}>
-              <Text style={styles.tagChipText}>{tag}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      )}
-
-      <FlatList
-        data={filtered}
-        keyExtractor={item => item.post_id}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.listContent}
-        ListEmptyComponent={
-          <EmptyDiary
-            emoji="🔍"
-            title={query ? '검색 결과가 없어요' : '아직 게시물이 없어요'}
-            sub={query ? `"${query}" 에 맞는 일지가 없어요` : '탐색 피드가 곧 채워질 거예요!'}
-          />
-        }
-        renderItem={({item}) => <DiaryCard post={item} user={user} onProfilePress={onProfilePress} onHashtagPress={onHashtagPress} />}
-        ItemSeparatorComponent={() => <View style={{height: 10}} />}
-      />
+  ) : (
+    <View
+      style={[
+        styles.avatar,
+        { width: size, height: size, borderRadius: size / 2 },
+      ]}
+    >
+      <UserRound size={size * 0.48} color={colors.primaryInk} />
     </View>
   );
 }
-
-// ─────────────────────────────────────────────────────────────
-// 나 탭: 아테리트 프로필 스타일
-// ─────────────────────────────────────────────────────────────
-type ViewMode = 'grid' | 'list';
-
-function MeTab({user, onWrite, onProfilePress, onHashtagPress}: {user: UserDocument | null; onWrite: () => void} & SharedCardCallbacks) {
-  const [myPosts, setMyPosts] = useState<FeedPost[]>([]);
-  const [viewMode, setViewMode] = useState<ViewMode>('grid');
-
-  useEffect(() => subscribeMyPosts(setMyPosts), []);
-
-  const totalKm = myPosts.reduce((acc, p) => acc + (p.distance_km ?? 0), 0);
-
-  return (
-    <FlatList
-      key={viewMode}
-      data={myPosts}
-      keyExtractor={item => item.post_id}
-      numColumns={viewMode === 'grid' ? 3 : 1}
-      showsVerticalScrollIndicator={false}
-      contentContainerStyle={styles.listContent}
-      columnWrapperStyle={viewMode === 'grid' ? styles.gridRow : undefined}
-      ListHeaderComponent={
-        <AthleteHeader
-          user={user}
-          postCount={myPosts.length}
-          totalKm={totalKm}
-          viewMode={viewMode}
-          onToggleView={setViewMode}
-          onWrite={onWrite}
-        />
-      }
-      ListEmptyComponent={
-        <View style={styles.meEmptyWrap}>
-          <Text style={styles.meEmptyText}>아직 러닝 일지가 없어요</Text>
-          <TouchableOpacity activeOpacity={0.85} onPress={onWrite} style={styles.emptyBtn}>
-            <Text style={styles.emptyBtnText}>첫 일지 쓰기</Text>
-          </TouchableOpacity>
-        </View>
-      }
-      renderItem={({item}) =>
-        viewMode === 'grid'
-          ? <GridPostItem post={item} />
-          : <DiaryCard post={item} user={user} onProfilePress={onProfilePress} onHashtagPress={onHashtagPress} />
-      }
-      ItemSeparatorComponent={viewMode === 'list' ? () => <View style={{height: 12}} /> : undefined}
-    />
-  );
-}
-
-function AthleteHeader({user, postCount, totalKm, viewMode, onToggleView, onWrite}: {
-  user: UserDocument | null;
-  postCount: number;
-  totalKm: number;
-  viewMode: ViewMode;
-  onToggleView: (mode: ViewMode) => void;
-  onWrite: () => void;
+function Tab({
+  label,
+  selected,
+  onPress,
+}: {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
 }) {
   return (
-    <View style={styles.athleteHeader}>
-      {/* 프로필 상단 */}
-      <View style={styles.athleteTop}>
-        <Image source={images.avatar} resizeMode="cover" style={styles.athleteAvatar} />
-        <View style={styles.athleteInfo}>
-          <Text style={styles.athleteName}>{user?.display_name ?? '달리너'}</Text>
-          {!!user?.region && <Text style={styles.athleteRegion}>📍 {user.region}</Text>}
-          <View style={styles.followRow}>
-            <TouchableOpacity activeOpacity={0.8}>
-              <Text style={styles.followStat}><Text style={styles.followNum}>{user?.follower_count ?? 0}</Text> 팔로워</Text>
-            </TouchableOpacity>
-            <Text style={styles.followDot}>·</Text>
-            <TouchableOpacity activeOpacity={0.8}>
-              <Text style={styles.followStat}><Text style={styles.followNum}>{user?.following_count ?? 0}</Text> 팔로잉</Text>
-            </TouchableOpacity>
+    <Pressable
+      accessibilityRole="tab"
+      accessibilityState={{ selected }}
+      onPress={onPress}
+      style={[styles.tab, selected && styles.selectedTab]}
+    >
+      <AppText
+        variant="caption"
+        color={selected ? colors.primaryInk : colors.textMuted}
+      >
+        {label}
+      </AppText>
+    </Pressable>
+  );
+}
+function Loading() {
+  return <ActivityIndicator style={styles.loading} color={colors.primary} />;
+}
+function Empty({ title, detail }: { title: string; detail: string }) {
+  return (
+    <Card style={styles.empty}>
+      <AppText variant="subheading">{title}</AppText>
+      <AppText color={colors.textMuted} align="center">
+        {detail}
+      </AppText>
+    </Card>
+  );
+}
+function Failure({ retry }: { retry: () => void }) {
+  return (
+    <Card style={styles.empty}>
+      <AppText color={colors.danger}>불러오지 못했어요.</AppText>
+      <Button size="md" label="다시 시도" variant="secondary" onPress={retry} />
+    </Card>
+  );
+}
+function Field(props: React.ComponentProps<typeof TextInput>) {
+  return (
+    <TextInput
+      {...props}
+      autoCorrect={false}
+      placeholderTextColor={colors.textSubtle}
+      style={[styles.input, props.style]}
+    />
+  );
+}
+function errorAlert(error: unknown) {
+  Alert.alert('잠시만요', socialError(error));
+}
+
+export function PostCard({
+  post,
+  onOpen,
+  onProfile,
+  onEdit,
+  onDeleted,
+  detail = false,
+}: {
+  post: SocialPost;
+  onOpen: () => void;
+  onProfile: () => void;
+  onEdit?: () => void;
+  onDeleted?: () => void;
+  detail?: boolean;
+}) {
+  const [flags, setFlags] = useState({ liked: false, saved: false });
+  const [busy, setBusy] = useState<string | null>(null);
+  useEffect(
+    () =>
+      watchPostFlags(post.post_id, patch =>
+        setFlags(old => ({ ...old, ...patch })),
+      ),
+    [post.post_id],
+  );
+  const toggle = async (kind: 'like' | 'bookmark') => {
+    if (busy) return;
+    setBusy(kind);
+    const active = kind === 'like' ? !flags.liked : !flags.saved;
+    try {
+      await socialRequest(kind, { postId: post.post_id, active });
+      setFlags(old => ({
+        ...old,
+        [kind === 'like' ? 'liked' : 'saved']: active,
+      }));
+    } catch (error) {
+      errorAlert(error);
+    } finally {
+      setBusy(null);
+    }
+  };
+  const remove = () =>
+    Alert.alert('게시물을 삭제할까요?', '삭제한 게시물은 피드에서 사라져요.', [
+      { text: '취소', style: 'cancel' },
+      {
+        text: '삭제',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            setBusy('delete');
+            await socialRequest('deletePost', { postId: post.post_id });
+            onDeleted?.();
+          } catch (error) {
+            errorAlert(error);
+          } finally {
+            setBusy(null);
+          }
+        },
+      },
+    ]);
+  const own = post.uid === myUid();
+  const sharePost = () =>
+    Share.share({
+      message: `달료 · ${post.author_name}\n${post.text}${
+        post.run_id ? `\n${post.distance_km?.toFixed(2)}km` : ''
+      }`,
+    }).catch(errorAlert);
+  const menu = () =>
+    Alert.alert('게시물', post.author_name, [
+      { text: '게시물 보기', onPress: onOpen },
+      { text: '프로필 보기', onPress: onProfile },
+      { text: '취소', style: 'cancel' },
+    ]);
+  const postedDate = post.createdAtMs
+    ? new Date(post.createdAtMs).toLocaleDateString('ko-KR', {
+        month: 'long',
+        day: 'numeric',
+      })
+    : '';
+  const hasMedia = !!post.image_url || !!post.run_id;
+  return (
+    <View style={[styles.post, detail && styles.detailPost]}>
+      <View style={styles.postHeader}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${post.author_name} 프로필`}
+          onPress={onProfile}
+          style={styles.author}
+        >
+          <Avatar uri={post.author_image} size={36} />
+          <View style={styles.grow}>
+            <AppText variant="subheading" numberOfLines={1}>
+              {post.author_name}
+            </AppText>
+            <AppText variant="label" color={colors.textMuted}>
+              {post.run_id ? '오늘의 러닝 기록' : VISIBILITY[post.visibility]}
+            </AppText>
           </View>
-          <TouchableOpacity activeOpacity={0.8} style={styles.editBtn}>
-            <Text style={styles.editBtnText}>프로필 편집</Text>
-          </TouchableOpacity>
-        </View>
+        </Pressable>
+        {detail && own && onEdit && (
+          <IconButton
+            icon={Pencil}
+            variant="plain"
+            accessibilityLabel="게시물 수정"
+            onPress={onEdit}
+          />
+        )}
+        {detail && own && (
+          <IconButton
+            icon={Trash2}
+            variant="plain"
+            accessibilityLabel="게시물 삭제"
+            disabled={!!busy}
+            onPress={remove}
+          />
+        )}
+        {!detail && (
+          <IconButton
+            icon={MoreHorizontal}
+            variant="plain"
+            accessibilityLabel="게시물 메뉴"
+            onPress={menu}
+          />
+        )}
       </View>
-
-      {/* 기록 스탯 카드 */}
-      <View style={styles.athleteStats}>
-        <AthleteStat label="러닝 일지" value={String(postCount)} unit="개" />
-        <View style={styles.athleteStatDivider} />
-        <AthleteStat label="누적 거리" value={totalKm.toFixed(1)} unit="km" />
-        <View style={styles.athleteStatDivider} />
-        <AthleteStat label="연속 달리기" value={user?.total_km != null ? '—' : '0'} unit="일" />
-      </View>
-
-      {/* 뱃지 행 */}
-      <View style={styles.badgeRow}>
-        <Text style={styles.badgeRowLabel}>획득한 뱃지</Text>
-        <View style={styles.badgeList}>
-          {['🏅', '⚡', '🌅'].map((b, i) => (
-            <View key={i} style={styles.badge}>
-              <Text style={styles.badgeEmoji}>{b}</Text>
+      <Pressable
+        accessibilityRole={detail ? undefined : 'button'}
+        accessibilityLabel="게시물 상세 보기"
+        disabled={detail}
+        onPress={onOpen}
+      >
+        {post.image_url ? (
+          <Image
+            source={{ uri: post.image_url }}
+            resizeMode="cover"
+            style={styles.feedPhoto}
+          />
+        ) : post.run_id ? (
+          <View style={styles.runTile}>
+            <View style={styles.runTileTop}>
+              <Footprints size={20} color={colors.primaryInk} />
+              <AppText variant="label" color={colors.primaryInk}>
+                MY RUNNING LOG
+              </AppText>
             </View>
-          ))}
-          <View style={[styles.badge, styles.badgeLocked]}>
-            <Text style={styles.badgeEmoji}>🔒</Text>
+            <View style={styles.runTileDistance}>
+              <AppText style={styles.runTileNumber}>
+                {(post.distance_km ?? 0).toFixed(2)}
+              </AppText>
+              <AppText variant="heading" color={colors.primaryInk}>
+                km
+              </AppText>
+            </View>
+            <AppText color={colors.primaryInk}>
+              나의 속도로 채운 오늘의 한 걸음.
+            </AppText>
+            <AppText variant="caption" color={colors.primaryInk}>
+              {formatPace(post.avg_pace_sec ?? 0)} /km · {post.calories ?? 0}{' '}
+              kcal
+            </AppText>
           </View>
-        </View>
+        ) : (
+          <View style={styles.textPost}>
+            <AppText
+              style={styles.textPostBody}
+              numberOfLines={detail ? undefined : 5}
+            >
+              {post.text}
+            </AppText>
+          </View>
+        )}
+        {!!post.image_url && !!post.run_id && (
+          <View style={styles.attachedRun}>
+            <Footprints color={colors.primaryInk} size={16} />
+            <AppText variant="caption" color={colors.primaryInk}>
+              {(post.distance_km ?? 0).toFixed(2)} km ·{' '}
+              {formatPace(post.avg_pace_sec ?? 0)} /km
+            </AppText>
+          </View>
+        )}
+      </Pressable>
+      <View style={styles.postActions}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="응원"
+          accessibilityState={{ selected: flags.liked, disabled: !!busy }}
+          disabled={!!busy}
+          onPress={() => toggle('like')}
+          style={styles.socialIcon}
+        >
+          <RunningShoeIcon
+            size={28}
+            color={flags.liked ? colors.primary : colors.text}
+            active={flags.liked}
+          />
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="댓글 보기"
+          onPress={onOpen}
+          style={styles.socialIcon}
+        >
+          <MessageCircle size={25} color={colors.text} strokeWidth={1.8} />
+        </Pressable>
+        {post.visibility === 'public' && (
+          <IconButton
+            icon={Share2}
+            variant="plain"
+            accessibilityLabel="게시물 공유"
+            onPress={sharePost}
+          />
+        )}
+        <View style={styles.grow} />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={flags.saved ? '저장 취소' : '게시물 저장'}
+          accessibilityState={{ selected: flags.saved, disabled: !!busy }}
+          disabled={!!busy}
+          onPress={() => toggle('bookmark')}
+          style={styles.socialIcon}
+        >
+          <Bookmark
+            size={25}
+            color={flags.saved ? colors.primaryInk : colors.text}
+            fill={flags.saved ? colors.primarySoft : 'none'}
+            strokeWidth={1.8}
+          />
+        </Pressable>
       </View>
-
-      <TouchableOpacity activeOpacity={0.85} onPress={onWrite} style={styles.writeBtn}>
-        <Text style={styles.writeBtnText}>✏️ 오늘의 러닝 일지 쓰기</Text>
-      </TouchableOpacity>
-
-      <View style={styles.myPostsLabel}>
-        <Text style={styles.myPostsLabelText}>내 러닝 일지 {postCount}개</Text>
-        <View style={styles.viewToggleRow}>
-          <TouchableOpacity activeOpacity={0.75} onPress={() => onToggleView('grid')} style={[styles.viewToggleBtn, viewMode === 'grid' && styles.viewToggleBtnActive]}>
-            <Text style={[styles.viewToggleIcon, viewMode === 'grid' && styles.viewToggleIconActive]}>⊞</Text>
-          </TouchableOpacity>
-          <TouchableOpacity activeOpacity={0.75} onPress={() => onToggleView('list')} style={[styles.viewToggleBtn, viewMode === 'list' && styles.viewToggleBtnActive]}>
-            <Text style={[styles.viewToggleIcon, viewMode === 'list' && styles.viewToggleIconActive]}>☰</Text>
-          </TouchableOpacity>
-        </View>
+      <View style={styles.postCaption}>
+        <AppText variant="label">
+          {post.like_count > 0
+            ? `응원 ${post.like_count}개`
+            : '첫 응원을 보내보세요'}
+        </AppText>
+        {hasMedia && !!post.text && (
+          <Pressable
+            accessibilityRole={detail ? undefined : 'button'}
+            disabled={detail}
+            onPress={onOpen}
+          >
+            <AppText
+              style={styles.captionText}
+              numberOfLines={detail ? undefined : 3}
+              selectable={detail}
+            >
+              <AppText variant="subheading">{post.author_name} </AppText>
+              {post.text}
+            </AppText>
+          </Pressable>
+        )}
+        <Pressable accessibilityRole="button" onPress={onOpen}>
+          <AppText variant="caption" color={colors.textMuted}>
+            {post.comment_count > 0
+              ? `댓글 ${post.comment_count}개 모두 보기`
+              : '댓글로 응원을 남겨 보세요'}
+          </AppText>
+        </Pressable>
+        <AppText style={styles.postDate} color={colors.textMuted}>
+          {postedDate}
+          {post.visibility !== 'public'
+            ? ` · ${VISIBILITY[post.visibility]}`
+            : ''}
+        </AppText>
       </View>
     </View>
   );
 }
 
-function GridPostItem({post}: {post: FeedPost}) {
-  return (
-    <View style={styles.gridItem}>
-      {post.image_url ? (
-        <Image source={{uri: post.image_url}} style={styles.gridImage} resizeMode="cover" />
-      ) : (
-        <View style={styles.gridPlaceholder}>
-          <Text style={styles.gridPlaceholderEmoji}>🏃</Text>
-          <Text style={styles.gridPlaceholderText} numberOfLines={3}>{post.text}</Text>
-        </View>
-      )}
-    </View>
+function Composer({
+  post,
+  onBack,
+  onSaved,
+}: {
+  post?: SocialPost;
+  onBack: () => void;
+  onSaved: () => void;
+}) {
+  const [body, setBody] = useState(post?.text ?? '');
+  const [visibility, setVisibility] = useState<SocialPost['visibility']>(
+    post?.visibility ?? 'public',
   );
-}
-
-function AthleteStat({label, value, unit}: {label: string; value: string; unit: string}) {
-  return (
-    <View style={styles.athleteStatItem}>
-      <View style={{flexDirection: 'row', alignItems: 'baseline', gap: 2}}>
-        <Text style={styles.athleteStatValue}>{value}</Text>
-        <Text style={styles.athleteStatUnit}>{unit}</Text>
-      </View>
-      <Text style={styles.athleteStatLabel}>{label}</Text>
-    </View>
+  const [photo, setPhoto] = useState<Asset | null>(null);
+  const [runs, setRuns] = useState<RunDocument[]>([]);
+  const [runsStatus, setRunsStatus] = useState<'loading' | 'success' | 'error'>(
+    'loading',
   );
-}
-
-// ─────────────────────────────────────────────────────────────
-// 핵심: 일지 카드
-// ─────────────────────────────────────────────────────────────
-function DiaryCard({post, user, compact = false, onProfilePress, onHashtagPress}: {post: FeedPost; user: UserDocument | null; compact?: boolean} & Partial<SharedCardCallbacks>) {
-  const [cheered, setCheered] = useState(false);
-  const [joinReq, setJoinReq] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [showComments, setShowComments] = useState(false);
-  const [likeCount, setLikeCount] = useState(post.like_count);
-  const [joinCount, setJoinCount] = useState(post.comment_count);
-  const date = (post.created_at as any)?.toDate?.() ?? new Date();
-  const dateStr = `${date.getMonth() + 1}.${date.getDate()} ${['일', '월', '화', '수', '목', '금', '토'][date.getDay()]}`;
-  const weatherEmoji = ['☀️', '⛅', '🌥️', '🌧️'][date.getDate() % 4];
-
+  const [runId, setRunId] = useState<string | null>(post?.run_id ?? null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [percent, setPercent] = useState(0);
+  const [postId] = useState(() => post?.post_id ?? newSocialId());
+  const mounted = useRef(true);
+  useEffect(
+    () => () => {
+      mounted.current = false;
+    },
+    [],
+  );
+  const loadRuns = useCallback(() => {
+    setRunsStatus('loading');
+    fetchRecentRuns()
+      .then(items => {
+        if (mounted.current) {
+          setRuns(items);
+          setRunsStatus('success');
+        }
+      })
+      .catch(() => {
+        if (mounted.current) setRunsStatus('error');
+      });
+  }, []);
   useEffect(() => {
-    getPostInteractions(post.post_id).then(s => {
-      setCheered(s.liked);
-      setJoinReq(s.joined);
-      setSaved(s.saved);
-    }).catch(() => {});
-  }, [post.post_id]);
-
-  const handleCheer = async () => {
-    const prev = cheered;
-    setCheered(!prev);
-    setLikeCount(c => c + (prev ? -1 : 1));
-    try { await toggleLike(post.post_id); }
-    catch { setCheered(prev); setLikeCount(c => c + (prev ? 1 : -1)); }
+    if (!post) loadRuns();
+  }, [post, loadRuns]);
+  const dirty =
+    body !== (post?.text ?? '') ||
+    visibility !== (post?.visibility ?? 'public') ||
+    !!photo ||
+    runId !== (post?.run_id ?? null);
+  const leave = () => {
+    if (busy) return;
+    if (!dirty) {
+      onBack();
+      return;
+    }
+    Alert.alert('작성 중인 내용이 있어요', '저장하지 않고 나갈까요?', [
+      { text: '계속 작성', style: 'cancel' },
+      { text: '나가기', style: 'destructive', onPress: onBack },
+    ]);
   };
-
-  const handleJoin = async () => {
-    const prev = joinReq;
-    setJoinReq(!prev);
-    setJoinCount(c => c + (prev ? -1 : 1));
-    try { await toggleJoin(post.post_id); }
-    catch { setJoinReq(prev); setJoinCount(c => c + (prev ? 1 : -1)); }
+  const selectPhoto = async (camera: boolean) => {
+    if (busy) return;
+    try {
+      const selected = await choosePhoto(camera);
+      if (selected) setPhoto(selected);
+    } catch (failure) {
+      setError(socialError(failure));
+    }
   };
-
-  const handleSave = async () => {
-    const prev = saved;
-    setSaved(!prev);
-    try { await toggleSave(post.post_id); }
-    catch { setSaved(prev); }
+  const submit = async () => {
+    if (busy) return;
+    if (!body.trim() && !photo && !runId && !post?.image_url) {
+      setError('내용이나 사진, 달리기 기록을 추가해 주세요.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      if (post)
+        await socialRequest('editPost', {
+          postId,
+          text: body.trim(),
+          visibility,
+        });
+      else {
+        const uploaded = photo
+          ? await uploadPhoto(photo, 'posts', setPercent)
+          : null;
+        await socialRequest('createPost', {
+          postId,
+          text: body.trim(),
+          visibility,
+          imageUrl: uploaded?.url ?? null,
+          runId,
+        });
+      }
+      onSaved();
+    } catch (failure) {
+      setError(socialError(failure));
+    } finally {
+      if (mounted.current) setBusy(false);
+    }
   };
-
   return (
-    <View style={styles.diaryCard}>
-      {/* 일지 헤더: 작성자(좌) + 날짜/날씨(우) */}
-      <View style={styles.diaryTop}>
-        <TouchableOpacity
-          activeOpacity={0.75}
-          style={styles.diaryAuthorWrap}
-          onPress={() => onProfilePress?.(post.uid, post.author_name)}>
-          <Image source={images.avatar} resizeMode="cover" style={styles.diaryAvatar} />
-          <Text style={styles.diaryAuthor}>{post.author_name}</Text>
-        </TouchableOpacity>
-        <View style={styles.diaryDateWrap}>
-          <Text style={styles.diaryDate}>{dateStr}</Text>
-          <Text style={styles.diaryWeather}>{weatherEmoji}</Text>
-        </View>
-      </View>
-
-      {/* 러닝 스탯 — 거리가 히어로 */}
-      {post.distance_km != null && (
-        <View style={styles.diaryStats}>
-          <View style={styles.diaryDistanceBlock}>
-            <Text style={styles.diaryDistanceNum}>{post.distance_km.toFixed(2)}</Text>
-            <Text style={styles.diaryDistanceUnit}>km</Text>
-          </View>
-          <View style={styles.diaryStatRight}>
-            {post.avg_pace_sec != null && (
-              <View style={styles.diaryStatRow}>
-                <Text style={styles.diaryStatIcon}>⏱</Text>
-                <Text style={styles.diaryStatVal}>{formatTime(post.avg_pace_sec)}</Text>
-              </View>
+    <Page title={post ? '게시물 수정' : '오늘의 달리기'} onBack={leave}>
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={styles.content}
+      >
+        <Field
+          accessibilityLabel="게시물 내용"
+          placeholder="오늘 달리기는 어땠나요? #오운완"
+          value={body}
+          onChangeText={setBody}
+          multiline
+          maxLength={2000}
+          editable={!busy}
+          style={styles.composer}
+        />
+        <AppText variant="label" color={colors.textSubtle} align="right">
+          {body.length}/2000
+        </AppText>
+        {(photo?.uri || post?.image_url) && (
+          <Image
+            source={{ uri: photo?.uri ?? post!.image_url! }}
+            style={styles.postImage}
+          />
+        )}
+        {!post && (
+          <>
+            <View style={styles.tabs}>
+              <Button
+                label="사진 선택"
+                size="md"
+                variant="secondary"
+                disabled={busy}
+                onPress={() => selectPhoto(false)}
+                style={styles.grow}
+              />
+              <Button
+                label="사진 촬영"
+                size="md"
+                variant="secondary"
+                disabled={busy}
+                onPress={() => selectPhoto(true)}
+                style={styles.grow}
+              />
+              {photo && (
+                <IconButton
+                  icon={X}
+                  accessibilityLabel="첨부 사진 제거"
+                  disabled={busy}
+                  onPress={() => setPhoto(null)}
+                />
+              )}
+            </View>
+            <AppText variant="subheading">달리기 기록 첨부</AppText>
+            {runsStatus === 'loading' ? (
+              <Loading />
+            ) : runsStatus === 'error' ? (
+              <Failure retry={loadRuns} />
+            ) : runs.length === 0 ? (
+              <AppText color={colors.textMuted}>
+                저장한 달리기 기록이 없어요.
+              </AppText>
+            ) : (
+              runs.map(run => (
+                <Pressable
+                  key={run.run_id}
+                  accessibilityRole="radio"
+                  accessibilityState={{
+                    selected: runId === run.run_id,
+                    disabled: busy,
+                  }}
+                  disabled={busy}
+                  onPress={() =>
+                    setRunId(old => (old === run.run_id ? null : run.run_id))
+                  }
+                  style={[
+                    styles.runChoice,
+                    runId === run.run_id && styles.selectedTab,
+                  ]}
+                >
+                  <AppText>
+                    {run.distance_km.toFixed(2)}km ·{' '}
+                    {formatDuration(run.duration_sec)}
+                  </AppText>
+                </Pressable>
+              ))
             )}
-            {post.calories != null && (
-              <View style={styles.diaryStatRow}>
-                <Text style={styles.diaryStatIcon}>🔥</Text>
-                <Text style={styles.diaryStatVal}>{post.calories} kcal</Text>
-              </View>
-            )}
-          </View>
-        </View>
-      )}
-
-      {/* 이미지 */}
-      {!!post.image_url && !compact && (
-        <Image source={{uri: post.image_url}} resizeMode="cover" style={styles.diaryImage} />
-      )}
-
-      {/* 일지 텍스트 */}
-      {!!post.text && (
-        <View style={styles.diaryTextWrap}>
-          <Text style={styles.diaryText} numberOfLines={compact ? 2 : undefined}>
-            {post.text}
-          </Text>
-        </View>
-      )}
-
-      {/* 해시태그 칩 */}
-      {post.hashtags.length > 0 && (
-        <View style={styles.hashtagRow}>
-          {post.hashtags.map(tag => (
-            <TouchableOpacity
-              key={tag}
-              activeOpacity={0.75}
-              style={styles.hashtagChip}
-              onPress={() => onHashtagPress?.(tag)}>
-              <Text style={styles.hashtagChipText}>#{tag}</Text>
-            </TouchableOpacity>
+          </>
+        )}
+        <AppText variant="subheading">공개 범위</AppText>
+        <View style={styles.tabs}>
+          {(
+            Object.entries(VISIBILITY) as Array<
+              [SocialPost['visibility'], string]
+            >
+          ).map(([value, label]) => (
+            <Tab
+              key={value}
+              label={label}
+              selected={visibility === value}
+              onPress={() => {
+                if (!busy) setVisibility(value);
+              }}
+            />
           ))}
         </View>
-      )}
-
-      {/* 반응 버튼 */}
-      <View style={styles.diaryReactions}>
-        <View style={styles.reactionLeft}>
-          <TouchableOpacity activeOpacity={0.78} onPress={handleCheer} style={styles.reactionIconBtn}>
-            <Text style={styles.reactionIcon}>🔥</Text>
-            <Text style={[styles.reactionCount, cheered && styles.reactionCountActive]}>{likeCount}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity activeOpacity={0.78} onPress={handleJoin} style={styles.reactionIconBtn}>
-            <Text style={styles.reactionIcon}>👟</Text>
-            <Text style={[styles.reactionCount, joinReq && styles.reactionCountJoin]}>{joinCount}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity activeOpacity={0.78} onPress={() => setShowComments(true)} style={styles.reactionIconBtn}>
-            <Text style={styles.reactionIcon}>💬</Text>
-            <Text style={styles.reactionCount}>{post.chat_count ?? 0}</Text>
-          </TouchableOpacity>
-        </View>
-        <TouchableOpacity activeOpacity={0.78} onPress={handleSave} style={styles.reactionIconBtn}>
-          <Text style={[styles.reactionIcon, {opacity: saved ? 1 : 0.4}]}>🔖</Text>
-        </TouchableOpacity>
-      </View>
-
-      <CommentModal
-        postId={post.post_id}
-        user={user}
-        visible={showComments}
-        onClose={() => setShowComments(false)}
-      />
-    </View>
+        {error && (
+          <AppText color={colors.danger} accessibilityRole="alert">
+            {error}
+          </AppText>
+        )}
+        {busy && photo && (
+          <AppText variant="caption">사진 업로드 {percent}%</AppText>
+        )}
+        <Button
+          label={busy ? '저장 중…' : post ? '수정 저장' : '게시물 올리기'}
+          disabled={busy}
+          onPress={submit}
+        />
+      </ScrollView>
+    </Page>
   );
 }
 
-// ─────────────────────────────────────────────────────────────
-// 공통 서브 컴포넌트
-// ─────────────────────────────────────────────────────────────
-function ChallengePill() {
+function PostDetail({
+  id,
+  onBack,
+  onProfile,
+  onEdit,
+  onDeleted,
+}: {
+  id: string;
+  onBack: () => void;
+  onProfile: (uid: string) => void;
+  onEdit: (post: SocialPost) => void;
+  onDeleted: () => void;
+}) {
+  const [post, setPost] = useState<SocialPost | null>(null);
+  const [status, setStatus] = useState<'loading' | 'success' | 'error'>(
+    'loading',
+  );
+  const [body, setBody] = useState('');
+  const [reply, setReply] = useState<SocialComment | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [revision, setRevision] = useState(0);
+  const commentFeed = useComments(id, revision);
+  const { comments } = commentFeed;
+  const commentId = useRef(newSocialId());
+  const detailScroll = useRef<ScrollView>(null);
+  const commentTop = useRef(0);
+  useEffect(() => {
+    setStatus('loading');
+    const stop = watchPost(
+      id,
+      p => {
+        setPost(p);
+        setStatus('success');
+      },
+      () => setStatus('error'),
+    );
+    return stop;
+  }, [id, revision]);
+  const send = async () => {
+    if (busy || !body.trim()) return;
+    setBusy(true);
+    try {
+      await socialRequest('comment', {
+        postId: id,
+        commentId: commentId.current,
+        text: body.trim(),
+        parentId: reply?.comment_id ?? null,
+      });
+      setBody('');
+      setReply(null);
+      commentId.current = newSocialId();
+    } catch (error) {
+      errorAlert(error);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const remove = (comment: SocialComment) =>
+    Alert.alert('댓글을 삭제할까요?', '답글이 있으면 삭제 표시가 남아요.', [
+      { text: '취소', style: 'cancel' },
+      {
+        text: '삭제',
+        style: 'destructive',
+        onPress: () => {
+          socialRequest('deleteComment', {
+            postId: id,
+            commentId: comment.comment_id,
+          }).catch(errorAlert);
+        },
+      },
+    ]);
   return (
-    <TouchableOpacity activeOpacity={0.85} style={styles.challengePill}>
-      <Text style={styles.challengePillEmoji}>🏅</Text>
-      <View style={styles.challengePillText}>
-        <Text style={styles.challengePillTitle}>이번 주 챌린지 · 5km 완주하고 배지 받기</Text>
-        <Text style={styles.challengePillSub}>5.12 (월) ~ 5.18 (일) · 참여하기 →</Text>
-      </View>
-    </TouchableOpacity>
+    <Page title="게시물" onBack={onBack}>
+      <ScrollView
+        ref={detailScroll}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={styles.content}
+      >
+        {status === 'loading' ? (
+          <Loading />
+        ) : status === 'error' ? (
+          <Failure retry={() => setRevision(v => v + 1)} />
+        ) : !post ? (
+          <Empty
+            title="게시물을 볼 수 없어요"
+            detail="삭제됐거나 공개 범위가 변경됐을 수 있어요."
+          />
+        ) : (
+          <>
+            <PostCard
+              post={post}
+              detail
+              onOpen={() =>
+                detailScroll.current?.scrollTo({
+                  y: commentTop.current,
+                  animated: true,
+                })
+              }
+              onProfile={() => onProfile(post.uid)}
+              onEdit={() => onEdit(post)}
+              onDeleted={onDeleted}
+            />
+            <View
+              onLayout={event => {
+                commentTop.current = event.nativeEvent.layout.y;
+              }}
+            >
+              <AppText variant="subheading">댓글 {post.comment_count}</AppText>
+            </View>
+            {commentFeed.status === 'loading' ? (
+              <Loading />
+            ) : commentFeed.status === 'error' ? (
+              <Failure retry={() => setRevision(v => v + 1)} />
+            ) : comments.length === 0 ? (
+              <AppText color={colors.textMuted}>
+                첫 응원을 댓글로 남겨 보세요.
+              </AppText>
+            ) : (
+              comments.map(comment => (
+                <View
+                  key={comment.comment_id}
+                  style={[styles.comment, comment.parent_id && styles.reply]}
+                >
+                  <View style={styles.authorRow}>
+                    <Pressable
+                      onPress={() => onProfile(comment.uid)}
+                      disabled={comment.deleted}
+                      style={styles.author}
+                    >
+                      <Avatar uri={comment.author_image} size={30} />
+                      <AppText variant="caption">
+                        {comment.deleted ? '삭제된 댓글' : comment.author_name}
+                      </AppText>
+                    </Pressable>
+                    {!comment.deleted &&
+                      (comment.uid === myUid() || post.uid === myUid()) && (
+                        <IconButton
+                          icon={Trash2}
+                          variant="plain"
+                          accessibilityLabel="댓글 삭제"
+                          onPress={() => remove(comment)}
+                        />
+                      )}
+                  </View>
+                  <AppText
+                    color={comment.deleted ? colors.textSubtle : colors.text}
+                  >
+                    {comment.deleted
+                      ? '삭제된 댓글입니다.'
+                      : `${comment.parent_id ? '↳ ' : ''}${comment.text}`}
+                  </AppText>
+                  {!comment.deleted && (
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => setReply(comment)}
+                    >
+                      <AppText variant="label" color={colors.primaryInk}>
+                        답글 쓰기
+                      </AppText>
+                    </Pressable>
+                  )}
+                </View>
+              ))
+            )}
+            {commentFeed.more && (
+              <Button
+                size="md"
+                variant="secondary"
+                disabled={commentFeed.pending}
+                label={
+                  commentFeed.pending
+                    ? '불러오는 중…'
+                    : commentFeed.error
+                    ? '이전 댓글 다시 불러오기'
+                    : '이전 댓글 더 보기'
+                }
+                onPress={commentFeed.loadMore}
+              />
+            )}
+            {reply && (
+              <View style={styles.authorRow}>
+                <AppText variant="caption">
+                  {reply.author_name}님에게 답글
+                </AppText>
+                <IconButton
+                  icon={X}
+                  variant="plain"
+                  accessibilityLabel="답글 취소"
+                  onPress={() => setReply(null)}
+                />
+              </View>
+            )}
+            <Field
+              accessibilityLabel="댓글 내용"
+              placeholder="응원의 한마디"
+              value={body}
+              onChangeText={setBody}
+              maxLength={1000}
+              multiline
+              editable={!busy}
+            />
+            <Button
+              label={busy ? '보내는 중…' : '댓글 남기기'}
+              size="md"
+              disabled={busy || !body.trim()}
+              onPress={send}
+            />
+          </>
+        )}
+      </ScrollView>
+    </Page>
   );
 }
 
-function EmptyDiary({emoji, title, sub, onWrite}: {emoji: string; title: string; sub: string; onWrite?: () => void}) {
+function PeoplePage({
+  ranking,
+  onBack,
+  onProfile,
+}: {
+  ranking: boolean;
+  onBack: () => void;
+  onProfile: (uid: string) => void;
+}) {
+  const [name, setName] = useState('');
+  const [users, setUsers] = useState<PublicProfile[]>([]);
+  const [status, setStatus] = useState<
+    'idle' | 'loading' | 'success' | 'error'
+  >('idle');
+  const epoch = useRef(0);
+  useEffect(
+    () => () => {
+      epoch.current++;
+    },
+    [],
+  );
+  const load = useCallback(async () => {
+    const key = ++epoch.current;
+    setStatus('loading');
+    try {
+      const result = await socialRequest<{ users: PublicProfile[] }>(
+        ranking ? 'rankings' : 'search',
+        { query: name.trim() },
+      );
+      if (key === epoch.current) {
+        setUsers(result.users);
+        setStatus('success');
+      }
+    } catch {
+      if (key === epoch.current) setStatus('error');
+    }
+  }, [name, ranking]);
+  useEffect(() => {
+    if (ranking) load();
+  }, [ranking, load]);
   return (
-    <View style={styles.emptyWrap}>
-      <Text style={styles.emptyEmoji}>{emoji}</Text>
-      <Text style={styles.emptyTitle}>{title}</Text>
-      <Text style={styles.emptySubText}>{sub}</Text>
-      {onWrite && (
-        <TouchableOpacity activeOpacity={0.85} onPress={onWrite} style={styles.emptyBtn}>
-          <Text style={styles.emptyBtnText}>일지 쓰기</Text>
-        </TouchableOpacity>
-      )}
-    </View>
+    <Page title={ranking ? '누적 거리 TOP 50' : '러너 검색'} onBack={onBack}>
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={styles.content}
+      >
+        {!ranking && (
+          <>
+            <Field
+              accessibilityLabel="러너 닉네임 검색"
+              placeholder="닉네임 앞부분으로 검색"
+              value={name}
+              onChangeText={setName}
+              maxLength={20}
+            />
+            <Button
+              label="검색"
+              size="md"
+              disabled={!name.trim() || status === 'loading'}
+              onPress={load}
+            />
+          </>
+        )}
+        {status === 'loading' ? (
+          <Loading />
+        ) : status === 'error' ? (
+          <Failure retry={load} />
+        ) : status === 'success' && users.length === 0 ? (
+          <Empty
+            title="러너를 찾지 못했어요"
+            detail="닉네임을 다시 확인해 주세요."
+          />
+        ) : (
+          users.map((person, index) => (
+            <Pressable
+              key={person.uid}
+              accessibilityRole="button"
+              onPress={() => onProfile(person.uid)}
+              style={styles.person}
+            >
+              {ranking && <AppText variant="subheading">{index + 1}</AppText>}
+              <Avatar uri={person.profile_image} />
+              <View style={styles.grow}>
+                <AppText variant="subheading">{person.display_name}</AppText>
+                <AppText variant="caption" color={colors.textMuted}>
+                  {person.region} · {person.total_km.toFixed(1)}km
+                </AppText>
+              </View>
+            </Pressable>
+          ))
+        )}
+      </ScrollView>
+    </Page>
+  );
+}
+function ProfilePage({
+  uid,
+  onBack,
+  onPost,
+  onTogether,
+  onMessage,
+}: {
+  uid: string;
+  onBack: () => void;
+  onPost: (id: string) => void;
+  onTogether?: (friendUid: string) => void;
+  onMessage: (uid: string) => void;
+}) {
+  const [profile, setProfile] = useState<PublicProfile | null>(null);
+  const [following, setFollowing] = useState(false);
+  const [friend, setFriend] = useState(false);
+  const [posts, setPosts] = useState<SocialPost[]>([]);
+  const [status, setStatus] = useState<'loading' | 'success' | 'error'>(
+    'loading',
+  );
+  const [busy, setBusy] = useState(false);
+  const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    let live = true;
+    setStatus('loading');
+    Promise.all([
+      socialRequest<{
+        profile: PublicProfile;
+        following: boolean;
+        friend?: boolean;
+      }>('profile', {
+        uid,
+      }),
+      socialRequest<{ posts: SocialPost[] }>('profilePosts', { uid }),
+    ])
+      .then(([data, feed]) => {
+        if (live) {
+          setProfile(data.profile);
+          setFollowing(data.following);
+          setFriend(data.friend === true);
+          setPosts(feed.posts);
+          setStatus('success');
+        }
+      })
+      .catch(() => {
+        if (live) setStatus('error');
+      });
+    return () => {
+      live = false;
+    };
+  }, [uid, revision]);
+  const follow = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await socialRequest('follow', { uid, following: !following });
+      setFollowing(v => !v);
+      setRevision(v => v + 1);
+    } catch (error) {
+      errorAlert(error);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Page title="러너 프로필" onBack={onBack}>
+      <ScrollView contentContainerStyle={styles.content}>
+        {status === 'loading' ? (
+          <Loading />
+        ) : status === 'error' ? (
+          <Failure retry={() => setRevision(v => v + 1)} />
+        ) : (
+          profile && (
+            <>
+              <Card style={styles.empty}>
+                <Avatar uri={profile.profile_image} size={80} />
+                <AppText variant="heading">{profile.display_name}</AppText>
+                <AppText color={colors.textMuted}>
+                  {profile.region} · 누적 {profile.total_km.toFixed(1)}km
+                </AppText>
+                <AppText variant="caption">
+                  팔로워 {profile.follower_count} · 팔로잉{' '}
+                  {profile.following_count}
+                </AppText>
+                {uid !== myUid() && (
+                  <Button
+                    label={following ? '팔로잉' : '팔로우'}
+                    size="md"
+                    variant={following ? 'secondary' : 'primary'}
+                    disabled={busy}
+                    onPress={follow}
+                  />
+                )}
+                {uid !== myUid() && (
+                  <Button
+                    icon={MessageSquare}
+                    label="메시지 보내기"
+                    size="md"
+                    variant="secondary"
+                    onPress={() => onMessage(uid)}
+                  />
+                )}
+                {friend && onTogether && (
+                  <Button
+                    label="같이 달리기 요청"
+                    size="md"
+                    disabled={busy}
+                    onPress={() => onTogether(uid)}
+                  />
+                )}
+              </Card>
+              <AppText variant="subheading">최근 게시물</AppText>
+              {posts.length === 0 ? (
+                <Empty
+                  title="공개된 글이 없어요"
+                  detail="볼 수 있는 최근 게시물이 없습니다."
+                />
+              ) : (
+                posts.map(post => (
+                  <PostCard
+                    key={post.post_id}
+                    post={post}
+                    onOpen={() => onPost(post.post_id)}
+                    onProfile={() => {}}
+                  />
+                ))
+              )}
+            </>
+          )
+        )}
+      </ScrollView>
+    </Page>
+  );
+}
+function SavedPage({
+  onBack,
+  onPost,
+  onProfile,
+}: {
+  onBack: () => void;
+  onPost: (id: string) => void;
+  onProfile: (uid: string) => void;
+}) {
+  const [posts, setPosts] = useState<SocialPost[]>([]);
+  const [status, setStatus] = useState<'loading' | 'success' | 'error'>(
+    'loading',
+  );
+  const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    let live = true;
+    setStatus('loading');
+    savedPosts()
+      .then(items => {
+        if (live) {
+          setPosts(items);
+          setStatus('success');
+        }
+      })
+      .catch(() => {
+        if (live) setStatus('error');
+      });
+    return () => {
+      live = false;
+    };
+  }, [revision]);
+  return (
+    <Page title="저장한 게시물" onBack={onBack}>
+      <ScrollView contentContainerStyle={styles.content}>
+        {status === 'loading' ? (
+          <Loading />
+        ) : status === 'error' ? (
+          <Failure retry={() => setRevision(v => v + 1)} />
+        ) : posts.length === 0 ? (
+          <Empty
+            title="저장한 글이 없어요"
+            detail="마음에 드는 글의 책갈피를 눌러 보세요."
+          />
+        ) : (
+          posts.map(post => (
+            <PostCard
+              key={post.post_id}
+              post={post}
+              onOpen={() => onPost(post.post_id)}
+              onProfile={() => onProfile(post.uid)}
+            />
+          ))
+        )}
+      </ScrollView>
+    </Page>
   );
 }
 
-// ─────────────────────────────────────────────────────────────
-// 유틸
-// ─────────────────────────────────────────────────────────────
-function formatTime(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m}:${String(s).padStart(2, '0')}`;
-}
-
-// ─────────────────────────────────────────────────────────────
-// 스타일
-// ─────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  screen: {flex: 1, backgroundColor: CREAM},
-
-  // 헤더
-  header: {flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', paddingHorizontal: 22, paddingTop: 14, paddingBottom: 10},
-  headerLogo: {color: MINT, fontSize: 26, fontWeight: '900'},
-  headerSub: {color: MUTED, fontSize: 12, fontWeight: '700', marginTop: 2},
-  headerRight: {flexDirection: 'row', gap: 8, paddingTop: 4},
-  iconBtn: {width: 36, height: 36, borderRadius: 18, backgroundColor: CARD_BG, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#E0EDE6'},
-  iconBtnText: {fontSize: 17},
-
-  // 탭
-  tabBar: {flexDirection: 'row', backgroundColor: CARD_BG, borderBottomWidth: 1, borderBottomColor: '#E4EEE8', position: 'relative'},
-  tabItem: {flex: 1, alignItems: 'center', paddingVertical: 13},
-  tabText: {color: '#B0B0B0', fontSize: 15, fontWeight: '800'},
-  tabTextActive: {color: TEXT},
-  tabIndicator: {position: 'absolute', bottom: 0, width: '25%', height: 2.5, borderRadius: 2, backgroundColor: MINT},
-
-  // 리스트 공통
-  listContent: {paddingHorizontal: 16, paddingTop: 14, paddingBottom: 120},
-  sectionLabel: {marginBottom: 12},
-  sectionLabelText: {color: TEXT, fontSize: 15, fontWeight: '900'},
-
-  // 오늘 탭 배너
-  todayBanner: {marginBottom: 16},
-  todayDate: {color: MINT_DEEP, fontSize: 13, fontWeight: '800', marginBottom: 6},
-  todayTitle: {color: TEXT, fontSize: 22, fontWeight: '900', lineHeight: 32},
-
-  // 챌린지 필
-  challengePill: {flexDirection: 'row', alignItems: 'center', backgroundColor: CARD_BG, borderRadius: 16, padding: 14, marginBottom: 20, borderWidth: 1, borderColor: 'rgba(88,207,166,0.2)', gap: 12},
-  challengePillEmoji: {fontSize: 28},
-  challengePillText: {flex: 1},
-  challengePillTitle: {color: TEXT, fontSize: 14, fontWeight: '900'},
-  challengePillSub: {color: MUTED, fontSize: 12, fontWeight: '700', marginTop: 3},
-
-  // 일지 카드
-  diaryCard: {backgroundColor: CARD_BG, borderRadius: 20, padding: 18, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: {width: 0, height: 2}, elevation: 2},
-  diaryTop: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14},
-  diaryDateWrap: {flexDirection: 'row', alignItems: 'center', gap: 6},
-  diaryDate: {color: MUTED, fontSize: 13, fontWeight: '800'},
-  diaryWeather: {fontSize: 16},
-  diaryAuthorWrap: {flexDirection: 'row', alignItems: 'center', gap: 8},
-  diaryAvatar: {width: 32, height: 32, borderRadius: 16},
-  diaryAuthor: {color: TEXT, fontSize: 13, fontWeight: '900', textAlign: 'right'},
-  diaryTag: {color: MINT_DEEP, fontSize: 11, fontWeight: '700', textAlign: 'right', marginTop: 1},
-
-  // 거리 히어로
-  diaryStats: {flexDirection: 'row', alignItems: 'center', backgroundColor: '#F0FBF6', borderRadius: 14, padding: 14, marginBottom: 12},
-  diaryDistanceBlock: {flexDirection: 'row', alignItems: 'baseline', flex: 1},
-  diaryDistanceNum: {color: MINT_DEEP, fontSize: 42, fontWeight: '900', lineHeight: 48},
-  diaryDistanceUnit: {color: MINT_DEEP, fontSize: 18, fontWeight: '700', marginLeft: 4, marginBottom: 4},
-  diaryStatRight: {gap: 6},
-  diaryStatRow: {flexDirection: 'row', alignItems: 'center', gap: 4},
-  diaryStatIcon: {fontSize: 14},
-  diaryStatVal: {color: '#4A4A4A', fontSize: 14, fontWeight: '800'},
-
-  // 이미지
-  diaryImage: {width: '100%', height: 200, borderRadius: 14, marginBottom: 12},
-
-  // 텍스트
-  diaryTextWrap: {borderLeftWidth: 3, borderLeftColor: '#D6F0E6', paddingLeft: 12, marginBottom: 14},
-  diaryText: {color: '#333333', fontSize: 15, fontWeight: '500', lineHeight: 24},
-
-  // 반응
-  diaryReactions: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 4},
-  reactionLeft: {flexDirection: 'row', gap: 16},
-  reactionIconBtn: {flexDirection: 'row', alignItems: 'center', gap: 5},
-  reactionIcon: {fontSize: 18},
-  reactionCount: {color: '#AAAAAA', fontSize: 13, fontWeight: '800'},
-  reactionCountActive: {color: MINT_DEEP},
-  reactionCountJoin: {color: '#E08800'},
-
-  // 탐색 탭
-  searchWrap: {padding: 14, paddingBottom: 8},
-  searchBar: {flexDirection: 'row', alignItems: 'center', backgroundColor: CARD_BG, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11, borderWidth: 1, borderColor: '#E0E8E2', gap: 10},
-  searchBarFocused: {borderColor: MINT},
-  searchInput: {flex: 1, color: TEXT, fontSize: 15, fontWeight: '600', padding: 0},
-  clearBtn: {color: '#AAAAAA', fontSize: 15, fontWeight: '700'},
-  tagScroll: {maxHeight: 48},
-  tagScrollContent: {paddingHorizontal: 14, gap: 8, alignItems: 'center'},
-  tagChip: {backgroundColor: CARD_BG, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1, borderColor: '#D8EDE4'},
-  tagChipText: {color: MINT_DEEP, fontSize: 13, fontWeight: '800'},
-
-  // 나 탭
-  athleteHeader: {backgroundColor: CARD_BG, borderRadius: 20, padding: 20, marginBottom: 16},
-  athleteTop: {flexDirection: 'row', alignItems: 'flex-start', gap: 16, marginBottom: 20},
-  athleteAvatar: {width: 76, height: 76, borderRadius: 38, borderWidth: 3, borderColor: '#C8EFE0'},
-  athleteInfo: {flex: 1, paddingTop: 4},
-  athleteName: {color: TEXT, fontSize: 20, fontWeight: '900', marginBottom: 4},
-  athleteRegion: {color: MUTED, fontSize: 13, fontWeight: '700', marginBottom: 10},
-  followRow: {flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10},
-  followStat: {color: MUTED, fontSize: 13, fontWeight: '700'},
-  followNum: {color: TEXT, fontWeight: '900'},
-  followDot: {color: MUTED, fontSize: 13},
-  editBtn: {alignSelf: 'flex-start', borderRadius: 10, borderWidth: 1, borderColor: '#D0D0D0', paddingHorizontal: 14, paddingVertical: 6},
-  editBtnText: {color: '#555555', fontSize: 13, fontWeight: '800'},
-  athleteStats: {flexDirection: 'row', backgroundColor: CREAM, borderRadius: 14, padding: 16, marginBottom: 16},
-  athleteStatItem: {flex: 1, alignItems: 'center'},
-  athleteStatDivider: {width: 1, backgroundColor: '#D8E8E0'},
-  athleteStatValue: {color: MINT_DEEP, fontSize: 22, fontWeight: '900'},
-  athleteStatUnit: {color: MINT_DEEP, fontSize: 13, fontWeight: '700'},
-  athleteStatLabel: {color: MUTED, fontSize: 12, fontWeight: '700', marginTop: 4},
-  badgeRow: {marginBottom: 16},
-  badgeRowLabel: {color: TEXT, fontSize: 14, fontWeight: '900', marginBottom: 10},
-  badgeList: {flexDirection: 'row', gap: 10},
-  badge: {width: 46, height: 46, borderRadius: 23, backgroundColor: '#EEF9F4', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#C4E8D4'},
-  badgeLocked: {backgroundColor: '#F5F5F5', borderColor: '#E0E0E0'},
-  badgeEmoji: {fontSize: 22},
-  writeBtn: {backgroundColor: MINT, borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginBottom: 20},
-  writeBtnText: {color: '#FFFFFF', fontSize: 15, fontWeight: '900'},
-  myPostsLabel: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#F0F0F0', paddingTop: 14},
-  myPostsLabelText: {color: TEXT, fontSize: 14, fontWeight: '900'},
-  viewToggleRow: {flexDirection: 'row', gap: 4},
-  viewToggleBtn: {width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F4F4F4'},
-  viewToggleBtnActive: {backgroundColor: '#E0F9EE'},
-  viewToggleIcon: {fontSize: 18, color: '#AAAAAA'},
-  viewToggleIconActive: {color: MINT_DEEP},
-  gridRow: {gap: 2},
-  gridItem: {width: GRID_CELL, height: GRID_CELL, margin: 1, borderRadius: 8, overflow: 'hidden'},
-  gridImage: {width: '100%', height: '100%'},
-  gridPlaceholder: {width: '100%', height: '100%', backgroundColor: '#EEF9F4', alignItems: 'center', justifyContent: 'center', padding: 6},
-  gridPlaceholderEmoji: {fontSize: 20, marginBottom: 4},
-  gridPlaceholderText: {color: '#5A8A74', fontSize: 10, fontWeight: '700', textAlign: 'center', lineHeight: 14},
-  meEmptyWrap: {alignItems: 'center', paddingTop: 32},
-  meEmptyText: {color: MUTED, fontSize: 15, fontWeight: '700'},
-
-  // 공통 빈 상태
-  emptyWrap: {alignItems: 'center', paddingTop: 60, paddingHorizontal: 32},
-  emptyEmoji: {fontSize: 52, marginBottom: 16},
-  emptyTitle: {color: TEXT, fontSize: 18, fontWeight: '900', textAlign: 'center'},
-  emptySubText: {color: MUTED, fontSize: 14, fontWeight: '700', textAlign: 'center', marginTop: 8, lineHeight: 22},
-  emptyBtn: {marginTop: 24, backgroundColor: MINT, borderRadius: 22, paddingHorizontal: 26, paddingVertical: 13},
-  emptyBtnText: {color: '#FFFFFF', fontSize: 15, fontWeight: '900'},
-
-  // FAB
-  fab: {position: 'absolute', right: 20, bottom: 104, width: 52, height: 52, borderRadius: 26, backgroundColor: CARD_BG, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 12, shadowOffset: {width: 0, height: 4}, elevation: 8, borderWidth: 1, borderColor: '#D8EDE4'},
-  fabText: {fontSize: 22},
-
-  // 해시태그 칩 (DiaryCard 본문 아래)
-  hashtagRow: {flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10},
-  hashtagChip: {backgroundColor: '#EDF8F3', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4},
-  hashtagChipText: {color: MINT_DEEP, fontSize: 12, fontWeight: '700'},
+  screen: { flex: 1, backgroundColor: colors.background },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  content: { padding: spacing.xl, paddingBottom: 60, gap: spacing.md },
+  feedContent: { paddingBottom: TAB_BAR_HEIGHT + 40 },
+  toolbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginVertical: spacing.md,
+  },
+  grow: { flex: 1 },
+  togetherCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: colors.primarySoft,
+    padding: 18,
+    borderRadius: radius.lg,
+    marginTop: 4,
+    marginBottom: 20,
+  },
+  togetherIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 16,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dim: { opacity: 0.75 },
+  section: { marginVertical: spacing.md },
+  tabs: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    gap: 26,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  tab: {
+    paddingVertical: 13,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  selectedTab: { borderBottomColor: colors.primary },
+  loading: { marginVertical: 40 },
+  empty: {
+    alignItems: 'center',
+    gap: spacing.md,
+    marginVertical: spacing.md,
+    paddingVertical: 32,
+    paddingHorizontal: 20,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surface,
+  },
+  avatar: {
+    backgroundColor: colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  post: {
+    backgroundColor: colors.surface,
+    marginBottom: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+    paddingBottom: 18,
+  },
+  detailPost: { borderRadius: radius.lg, overflow: 'hidden' },
+  feedScreen: { backgroundColor: colors.surface },
+  feedHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  feedWordmark: {
+    fontFamily: fonts.extrabold,
+    fontSize: 25,
+    lineHeight: 32,
+    letterSpacing: -0.8,
+  },
+  feedEyebrow: {
+    fontFamily: fonts.semibold,
+    fontSize: 8,
+    lineHeight: 12,
+    letterSpacing: 1.1,
+  },
+  headerActions: { flexDirection: 'row', gap: 0 },
+  runnersRow: {
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 12,
+    gap: 18,
+  },
+  runner: { alignItems: 'center', gap: 7, width: 66 },
+  runnerRing: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    padding: 3,
+    borderWidth: 1.5,
+    borderColor: colors.primaryBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  runnerName: { maxWidth: 66, fontSize: 10 },
+  addRunner: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    backgroundColor: colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  discoveryRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    gap: 8,
+    paddingBottom: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  discovery: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    minHeight: 34,
+    borderRadius: 12,
+    backgroundColor: colors.surfaceMuted,
+  },
+  postHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  feedPhoto: { width: '100%', aspectRatio: 1 },
+  postActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingTop: 4,
+    gap: 4,
+  },
+  socialIcon: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  postCaption: { paddingHorizontal: 18, gap: 7 },
+  captionText: { fontSize: 14, lineHeight: 21 },
+  postDate: { fontSize: 10, lineHeight: 15, marginTop: 2 },
+  runTile: {
+    padding: 28,
+    gap: 16,
+    backgroundColor: colors.primarySoft,
+    minHeight: 250,
+  },
+  runTileTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  runTileDistance: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
+  runTileNumber: {
+    fontFamily: fonts.extrabold,
+    fontSize: 62,
+    lineHeight: 74,
+    color: colors.primaryInk,
+    letterSpacing: -2,
+  },
+  attachedRun: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    backgroundColor: colors.primarySoft,
+  },
+  textPost: {
+    marginHorizontal: 16,
+    backgroundColor: colors.primarySoft,
+    borderRadius: 20,
+    padding: 24,
+    minHeight: 145,
+    justifyContent: 'center',
+  },
+  textPostBody: {
+    fontFamily: fonts.semibold,
+    fontSize: 21,
+    lineHeight: 31,
+    letterSpacing: -0.3,
+  },
+  authorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  author: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    flex: 1,
+  },
+  postImage: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: radius.md,
+    marginTop: spacing.md,
+  },
+  postText: { marginTop: spacing.md, lineHeight: 24 },
+  runSummary: {
+    padding: spacing.md,
+    marginTop: spacing.md,
+    backgroundColor: colors.primarySoft,
+    borderRadius: radius.md,
+    gap: spacing.sm,
+  },
+  actions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.lg,
+    marginTop: spacing.md,
+  },
+  action: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44 },
+  input: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    color: colors.text,
+    fontFamily: fonts.regular,
+    fontSize: 16,
+    backgroundColor: colors.surface,
+    minHeight: 48,
+  },
+  composer: { minHeight: 160, textAlignVertical: 'top' },
+  runChoice: {
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+  },
+  comment: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+    paddingVertical: spacing.md,
+    gap: spacing.sm,
+  },
+  reply: { marginLeft: spacing.lg },
+  person: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
 });

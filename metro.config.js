@@ -6,6 +6,13 @@ const { getDefaultConfig, mergeConfig } = require('@react-native/metro-config');
  *
  * @type {import('@react-native/metro-config').MetroConfig}
  */
-const config = {};
+const defaultConfig = getDefaultConfig(__dirname);
+const config = {
+  resolver: {
+    // Java emulator sockets are not app sources and cannot be stat'ed on Windows.
+    blockList: [...[defaultConfig.resolver.blockList].flat().filter(Boolean), /(?:^|[\\/])\.build-tmp(?:[\\/].*|$)/],
+    assetExts: [...new Set([...defaultConfig.resolver.assetExts, 'riv'])],
+  },
+};
 
-module.exports = mergeConfig(getDefaultConfig(__dirname), config);
+module.exports = mergeConfig(defaultConfig, config);

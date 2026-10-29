@@ -1,4 +1,4 @@
-import {auth} from '../lib/firebase';
+import {auth, firestore, messaging} from '../lib/firebase';
 import type {AuthResult, PhoneConfirmation} from '../types/auth.types';
 
 function normalizeKoreanPhoneNumber(phoneNumber: string) {
@@ -15,17 +15,9 @@ function normalizeKoreanPhoneNumber(phoneNumber: string) {
   return `+82${digits}`;
 }
 
-const PHONE_VERIFY_TIMEOUT_MS = 15000;
-
 export async function requestPhoneVerification(phoneNumber: string): Promise<PhoneConfirmation> {
   const normalizedPhoneNumber = normalizeKoreanPhoneNumber(phoneNumber);
-
-  return Promise.race([
-    auth().signInWithPhoneNumber(normalizedPhoneNumber),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('인증 요청 시간이 초과됐어요. 잠시 후 다시 시도해 주세요.')), PHONE_VERIFY_TIMEOUT_MS),
-    ),
-  ]);
+  return auth().signInWithPhoneNumber(normalizedPhoneNumber);
 }
 
 export async function verifyPhoneCode(confirmation: PhoneConfirmation, code: string): Promise<AuthResult> {
@@ -52,5 +44,11 @@ export async function signInWithKakao() {
 }
 
 export async function signOut() {
+  const uid = auth().currentUser?.uid;
+  if (uid) {
+    // Unlink this device before the next account can sign in.
+    await firestore().collection('users').doc(uid).update({fcm_token: null});
+    await messaging().deleteToken().catch(() => undefined);
+  }
   await auth().signOut();
 }

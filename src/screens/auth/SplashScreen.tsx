@@ -1,6 +1,7 @@
 import React, {useEffect, useState} from 'react';
 import {ImageBackground, StatusBar, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
+import {colors, fonts} from '../../theme';
 import {getIsDusk, getIsDuskSync} from '../../utils/skyBackground';
 
 const images = {
@@ -12,7 +13,7 @@ type Props = {
   onStart: () => void;
 };
 
-const MINT = '#58CFA6';
+const MINT = colors.primary;
 
 export function AuthStartScreen({onStart}: Props) {
   const [isDusk, setIsDusk] = useState(() => getIsDuskSync());
@@ -21,7 +22,7 @@ export function AuthStartScreen({onStart}: Props) {
     getIsDusk().then(setIsDusk);
   }, []);
 
-  const accent = isDusk ? '#78E0C5' : MINT;
+  const accent = isDusk ? colors.surface : colors.primaryInk;
 
   return (
     <ImageBackground source={isDusk ? images.bgDusk : images.bgDay} resizeMode="cover" style={styles.screen}>
@@ -51,11 +52,11 @@ const styles = StyleSheet.create({
   duskScrim: {backgroundColor: 'rgba(0,0,0,0.16)'},
   safeArea: {flex: 1},
   brand: {alignItems: 'center', paddingTop: 108},
-  logo: {fontSize: 58, fontWeight: '900', textShadowColor: 'rgba(255,255,255,0.92)', textShadowOffset: {width: 0, height: 2}, textShadowRadius: 2},
-  tagline: {fontSize: 20, fontWeight: '900', marginTop: 8, textShadowColor: 'rgba(255,255,255,0.45)', textShadowOffset: {width: 0, height: 1}, textShadowRadius: 1},
+  logo: {fontSize: 58, fontFamily: fonts.extrabold, textShadowColor: 'rgba(255,255,255,0.92)', textShadowOffset: {width: 0, height: 2}, textShadowRadius: 2},
+  tagline: {fontSize: 20, fontFamily: fonts.extrabold, marginTop: 8, textShadowColor: 'rgba(255,255,255,0.45)', textShadowOffset: {width: 0, height: 1}, textShadowRadius: 1},
   bottomContent: {position: 'absolute', left: 36, right: 36, bottom: 100, alignItems: 'center'},
-  message: {color: '#FFFFFF', fontSize: 21, fontWeight: '900', textAlign: 'center', textShadowColor: 'rgba(0,0,0,0.28)', textShadowOffset: {width: 0, height: 2}, textShadowRadius: 8},
-  messageStrong: {color: '#FFFFFF', fontSize: 24, fontWeight: '900', textAlign: 'center', marginTop: 8, marginBottom: 32, textShadowColor: 'rgba(0,0,0,0.34)', textShadowOffset: {width: 0, height: 2}, textShadowRadius: 8},
-  startButton: {alignItems: 'center', alignSelf: 'stretch', backgroundColor: MINT, borderRadius: 26, justifyContent: 'center', minHeight: 62, shadowColor: '#000000', shadowOpacity: 0.18, shadowRadius: 14, shadowOffset: {width: 0, height: 8}, elevation: 8},
-  startButtonText: {color: '#FFFFFF', fontSize: 27, fontWeight: '900'},
+  message: {color: '#FFFFFF', fontSize: 21, fontFamily: fonts.extrabold, textAlign: 'center', textShadowColor: 'rgba(0,0,0,0.28)', textShadowOffset: {width: 0, height: 2}, textShadowRadius: 8},
+  messageStrong: {color: '#FFFFFF', fontSize: 24, fontFamily: fonts.extrabold, textAlign: 'center', marginTop: 8, marginBottom: 32, textShadowColor: 'rgba(0,0,0,0.34)', textShadowOffset: {width: 0, height: 2}, textShadowRadius: 8},
+  startButton: {alignItems: 'center', alignSelf: 'stretch', backgroundColor: MINT, borderRadius: 20, justifyContent: 'center', minHeight: 62, shadowColor: '#000000', shadowOpacity: 0.18, shadowRadius: 14, shadowOffset: {width: 0, height: 8}, elevation: 0},
+  startButtonText: {color: '#FFFFFF', fontSize: 17, fontFamily: fonts.semibold},
 });

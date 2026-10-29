@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
+import {colors, fonts} from '../../theme';
 import {completeOnboarding} from '../../services/user.service';
 import {pickStarterCharacter} from '../../services/character.service';
 import type {CharacterType} from '../../types/character.types';
@@ -18,7 +19,6 @@ import type {Dialect, Gender, OnboardingProfileInput} from '../../types/user.typ
 
 const images = {
   egg: require('../../assets/images/egg.png'),
-  brokenEgg: require('../../assets/images/broken_egg.png'),
 };
 
 type Props = {
@@ -28,9 +28,8 @@ type Props = {
 
 type Step = 1 | 2 | 3 | 4;
 
-const MINT = '#58CFA6';
-const GREEN = '#78B85F';
-const TEXT = '#151515';
+const MINT = colors.primary;
+const TEXT = colors.text;
 const MUTED = '#808080';
 
 
@@ -65,12 +64,14 @@ export function OnboardingScreen({onBack, onDone}: Props) {
   const [weightKg, setWeightKg] = useState('');
   const [selectedRegion, setSelectedRegion] = useState(regions[0]);
   const [characterType, setCharacterType] = useState<CharacterType>(() => pickStarterCharacter());
-  const [hatched, setHatched] = useState(false);
+  const [eggReceived, setEggReceived] = useState(false);
   const [isSaving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const eggShake = useRef(new Animated.Value(0)).current;
-  const characterScale = useRef(new Animated.Value(0)).current;
-  const rotate = eggShake.interpolate({inputRange: [-1, 0, 1], outputRange: ['-8deg', '0deg', '8deg']});
+  const eggDrop = useRef(new Animated.Value(0)).current;
+  const eggWobble = useRef(new Animated.Value(0)).current;
+  const eggTranslateY = eggDrop.interpolate({inputRange: [0, 1], outputRange: [-260, 0]});
+  const eggScale = eggDrop.interpolate({inputRange: [0, 0.7, 1], outputRange: [0.6, 1.08, 1]});
+  const rotate = eggWobble.interpolate({inputRange: [-1, 0, 1], outputRange: ['-4deg', '0deg', '4deg']});
 
   const goNext = () => setStep(current => Math.min(current + 1, 4) as Step);
   const goBack = () => {
@@ -81,27 +82,28 @@ export function OnboardingScreen({onBack, onDone}: Props) {
     setStep(current => Math.max(current - 1, 1) as Step);
   };
 
-  const runHatchAnimation = () => {
-    setHatched(false);
-    characterScale.setValue(0);
-    eggShake.setValue(0);
+  // 알이 위에서 떨어져 통통 튄 뒤 살짝 흔들림. 부화는 첫 달리기 완료 화면에서
+  const runEggGiftAnimation = () => {
+    setEggReceived(false);
+    eggDrop.setValue(0);
+    eggWobble.setValue(0);
     Animated.sequence([
+      Animated.spring(eggDrop, {toValue: 1, friction: 5, tension: 60, useNativeDriver: true}),
       Animated.loop(
         Animated.sequence([
-          Animated.timing(eggShake, {toValue: 1, duration: 80, useNativeDriver: true}),
-          Animated.timing(eggShake, {toValue: -1, duration: 80, useNativeDriver: true}),
-          Animated.timing(eggShake, {toValue: 0, duration: 80, useNativeDriver: true}),
+          Animated.timing(eggWobble, {toValue: 1, duration: 140, useNativeDriver: true}),
+          Animated.timing(eggWobble, {toValue: -1, duration: 140, useNativeDriver: true}),
+          Animated.timing(eggWobble, {toValue: 0, duration: 140, useNativeDriver: true}),
         ]),
-        {iterations: 5},
+        {iterations: 2},
       ),
-      Animated.timing(characterScale, {toValue: 1, duration: 360, useNativeDriver: true}),
-    ]).start(() => setHatched(true));
+    ]).start(() => setEggReceived(true));
   };
 
-  const openHatchStep = () => {
+  const openEggGiftStep = () => {
     setCharacterType(pickStarterCharacter());
     setStep(4);
-    requestAnimationFrame(runHatchAnimation);
+    requestAnimationFrame(runEggGiftAnimation);
   };
 
   const saveOnboarding = async () => {
@@ -132,7 +134,7 @@ export function OnboardingScreen({onBack, onDone}: Props) {
 
   return (
     <SafeAreaView style={styles.screen}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F6FEFF" />
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
       <View style={styles.softGlowTop} />
       <View style={styles.softGlowBottom} />
       <View style={styles.header}>
@@ -200,23 +202,22 @@ export function OnboardingScreen({onBack, onDone}: Props) {
             ))}
           </View>
           <View style={styles.stepSpacer} />
-          <PrimaryButton label="다음" onPress={openHatchStep} />
+          <PrimaryButton label="다음" onPress={openEggGiftStep} />
         </View>
       )}
       {step === 4 && (
         <View style={styles.hatchContent}>
-          <Text style={styles.stepTitle}>{hatched ? '달료 펫이 태어났어요!' : '알이 흔들려요!'}</Text>
-          <Text style={styles.hatchSubtitle}>{hatched ? '함께 달리며 건강한 습관을 만들어봐요.' : '잠시 후 새로운 달료가 태어나요.'}</Text>
+          <Text style={styles.stepTitle}>{eggReceived ? `${petName.trim()}의 알을\n받았어요!` : '달료 알이 도착했어요!'}</Text>
+          <Text style={styles.hatchSubtitle}>
+            {eggReceived ? '첫 달리기를 마치면 알이 부화해요.' : '어떤 친구가 들어 있을까요?'}
+          </Text>
           <View style={styles.hatchStage}>
-            {!hatched && (
-              <Animated.View style={{transform: [{rotate}]}}>
-                <EggImage size={210} />
-              </Animated.View>
-            )}
-            {hatched && <Image source={images.brokenEgg} resizeMode="contain" style={styles.brokenEgg} />}
+            <Animated.View style={{transform: [{translateY: eggTranslateY}, {scale: eggScale}, {rotate}]}}>
+              <EggImage size={210} />
+            </Animated.View>
           </View>
           {!!errorMessage && <Text style={styles.errorText}>{errorMessage}</Text>}
-          <PrimaryButton label={isSaving ? '저장중...' : hatched ? '달리기 시작하기' : '두근두근...'} onPress={saveOnboarding} disabled={!hatched || isSaving} />
+          <PrimaryButton label={isSaving ? '저장중...' : eggReceived ? '달리기 시작하기' : '두근두근...'} onPress={saveOnboarding} disabled={!eggReceived || isSaving} />
         </View>
       )}
     </SafeAreaView>
@@ -275,7 +276,7 @@ function getStepName(step: Step) {
   if (step === 1) return '기본 정보';
   if (step === 2) return '신체 정보';
   if (step === 3) return '내 지역';
-  return '달료 탄생';
+  return '알 받기';
 }
 
 function parseOptionalNumber(value: string) {
@@ -284,52 +285,50 @@ function parseOptionalNumber(value: string) {
 }
 
 const styles = StyleSheet.create({
-  screen: {flex: 1, backgroundColor: '#F6FEFF'},
+  screen: {flex: 1, backgroundColor: colors.background},
   softGlowTop: {position: 'absolute', left: -80, top: -80, width: 260, height: 260, borderRadius: 130, backgroundColor: 'rgba(174,232,225,0.35)'},
   softGlowBottom: {position: 'absolute', right: -100, bottom: -110, width: 280, height: 280, borderRadius: 140, backgroundColor: 'rgba(191,237,214,0.45)'},
   header: {flexDirection: 'row', alignItems: 'center', paddingHorizontal: 22, paddingTop: 12, minHeight: 62},
   backButton: {width: 36, height: 44, justifyContent: 'center'},
   backText: {color: TEXT, fontSize: 42, lineHeight: 42},
   progressWrap: {flex: 1},
-  progressTitle: {color: '#777777', fontSize: 13, fontWeight: '800', marginBottom: 8},
+  progressTitle: {color: '#777777', fontSize: 13, fontFamily: fonts.bold, marginBottom: 8},
   progressRow: {flexDirection: 'row', gap: 6},
   progressSegment: {flex: 1, height: 5, borderRadius: 3, backgroundColor: '#D8D8D8'},
   progressSegmentActive: {backgroundColor: MINT},
   stepScroll: {paddingHorizontal: 32, paddingTop: 46, paddingBottom: 34},
   stepContent: {flex: 1, paddingHorizontal: 32, paddingTop: 46, paddingBottom: 34},
-  stepTitle: {color: TEXT, fontSize: 28, fontWeight: '900', lineHeight: 38, marginBottom: 24},
+  stepTitle: {color: TEXT, fontSize: 28, fontFamily: fonts.extrabold, lineHeight: 38, marginBottom: 24},
   profileCircle: {alignSelf: 'center', width: 156, height: 156, borderRadius: 78, borderWidth: 1, borderColor: '#9BE2C6', backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', marginBottom: 24},
   profileCharacter: {width: 146, height: 146},
   cameraBadge: {position: 'absolute', right: -5, bottom: 8, width: 42, height: 42, borderRadius: 21, borderWidth: 2, borderColor: '#8CDBBF', backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center'},
-  cameraText: {color: MINT, fontSize: 18, fontWeight: '900'},
+  cameraText: {color: MINT, fontSize: 18, fontFamily: fonts.extrabold},
   inputGroup: {marginBottom: 16},
-  inputLabel: {color: '#222222', fontSize: 15, fontWeight: '900', marginBottom: 8},
+  inputLabel: {color: '#222222', fontSize: 15, fontFamily: fonts.extrabold, marginBottom: 8},
   inputWrap: {height: 50, borderWidth: 1, borderColor: '#DCDCDC', borderRadius: 9, backgroundColor: '#FFFFFF', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16},
-  input: {flex: 1, color: TEXT, fontSize: 16, fontWeight: '600', paddingVertical: 0},
-  inputSuffix: {color: '#666666', fontSize: 14, fontWeight: '900'},
+  input: {flex: 1, color: TEXT, fontSize: 16, fontFamily: fonts.medium, paddingVertical: 0},
+  inputSuffix: {color: '#666666', fontSize: 14, fontFamily: fonts.extrabold},
   segmentRow: {flexDirection: 'row', gap: 12, marginBottom: 18},
   segment: {flex: 1, height: 46, borderWidth: 1, borderColor: '#D8D8D8', borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF'},
-  segmentActive: {borderColor: MINT, backgroundColor: '#EFFFF7'},
-  segmentText: {color: '#4B4B4B', fontSize: 15, fontWeight: '800'},
-  segmentActiveText: {color: '#37AE86', fontSize: 15, fontWeight: '900'},
+  segmentActive: {borderColor: MINT, backgroundColor: colors.primarySoft},
+  segmentText: {color: '#4B4B4B', fontSize: 15, fontFamily: fonts.bold},
+  segmentActiveText: {color: colors.primaryInk, fontSize: 15, fontFamily: fonts.extrabold},
   eggImage: {alignSelf: 'center', marginBottom: 26},
   stepSpacer: {flex: 1},
   skipButton: {height: 58, borderRadius: 10, backgroundColor: 'rgba(88,207,166,0.12)', alignItems: 'center', justifyContent: 'center', marginTop: 14},
-  skipButtonText: {color: '#7CC8AC', fontSize: 18, fontWeight: '900'},
+  skipButtonText: {color: colors.primaryInk, fontSize: 18, fontFamily: fonts.extrabold},
   locationButton: {height: 56, borderWidth: 1, borderColor: MINT, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.68)', marginBottom: 20},
-  locationButtonText: {color: '#37AE86', fontSize: 17, fontWeight: '900'},
+  locationButtonText: {color: colors.primaryInk, fontSize: 17, fontFamily: fonts.extrabold},
   regionGrid: {flexDirection: 'row', flexWrap: 'wrap', gap: 10},
   regionChip: {width: '18%', minWidth: 58, height: 52, borderWidth: 1, borderColor: '#DFDFDF', borderRadius: 10, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center'},
   regionChipActive: {backgroundColor: MINT, borderColor: MINT},
-  regionText: {color: '#333333', fontSize: 15, fontWeight: '800'},
-  regionTextActive: {color: '#FFFFFF', fontWeight: '900'},
+  regionText: {color: '#333333', fontSize: 15, fontFamily: fonts.bold},
+  regionTextActive: {color: '#FFFFFF', fontFamily: fonts.extrabold},
   hatchContent: {flex: 1, paddingHorizontal: 32, paddingTop: 50, paddingBottom: 34},
-  hatchSubtitle: {color: MUTED, fontSize: 16, fontWeight: '700', marginTop: -12, marginBottom: 36},
+  hatchSubtitle: {color: MUTED, fontSize: 16, fontFamily: fonts.semibold, marginTop: -12, marginBottom: 36},
   hatchStage: {flex: 1, alignItems: 'center', justifyContent: 'center'},
-  bornCharacter: {position: 'absolute', width: 230, height: 260},
-  brokenEgg: {position: 'absolute', width: 210, height: 150, bottom: 58},
-  errorText: {color: '#C95B5B', fontSize: 14, fontWeight: '800', lineHeight: 20, textAlign: 'center', marginBottom: 12},
-  wideButton: {height: 58, borderRadius: 10, backgroundColor: MINT, alignItems: 'center', justifyContent: 'center', shadowColor: MINT, shadowOpacity: 0.24, shadowRadius: 16, shadowOffset: {width: 0, height: 8}, elevation: 6},
+  errorText: {color: '#C95B5B', fontSize: 14, fontFamily: fonts.bold, lineHeight: 20, textAlign: 'center', marginBottom: 12},
+  wideButton: {height: 58, borderRadius: 18, backgroundColor: MINT, alignItems: 'center', justifyContent: 'center', shadowColor: MINT, shadowOpacity: 0.06, shadowRadius: 16, shadowOffset: {width: 0, height: 8}, elevation: 0},
   wideButtonDisabled: {opacity: 0.45},
-  wideButtonText: {color: '#FFFFFF', fontSize: 20, fontWeight: '900'},
+  wideButtonText: {color: '#FFFFFF', fontSize: 16, fontFamily: fonts.semibold},
 });
