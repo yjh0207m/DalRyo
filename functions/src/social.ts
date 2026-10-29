@@ -11,6 +11,7 @@ import { getMessaging } from 'firebase-admin/messaging';
 import { logger } from 'firebase-functions';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { documentId, scopedImageUrl, text } from './validation';
+import { chatAction } from './chat';
 
 const db = () => getFirestore();
 const now = () => FieldValue.serverTimestamp();
@@ -122,6 +123,10 @@ export const socialAction = onCall(
       );
     const actor = publicUser(uid, mine);
     try {
+      if (
+        ['chatOpen', 'chatSend', 'chatRead', 'chatBlock'].includes(input.action)
+      )
+        return await chatAction(uid, input);
       if (input.action === 'search' || input.action === 'rankings') {
         let query = db()
           .collection('users')

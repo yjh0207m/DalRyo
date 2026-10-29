@@ -15,9 +15,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
+  Bell,
+  Footprints,
+  MoreHorizontal,
+  Plus,
+  Settings,
   Bookmark,
   ChevronLeft,
-  Heart,
+  MessageSquare,
   MessageCircle,
   Pencil,
   Search,
@@ -28,14 +33,10 @@ import {
   Users,
   X,
 } from 'lucide-react-native';
-import {
-  AppText,
-  Badge,
-  Button,
-  Card,
-  IconButton,
-  ScreenHeader,
-} from '../../components/ui';
+import { AppText, Button, Card, IconButton } from '../../components/ui';
+import { RunningShoeIcon } from '../../components/ui/RunningShoeIcon';
+import { ChatScreen } from './ChatScreen';
+import { hasUnread, watchConversations } from '../../services/chat.service';
 import { TAB_BAR_HEIGHT } from '../../navigation/BottomTabBar';
 import { colors, fonts, radius, spacing } from '../../theme';
 import { useSocialFeed } from '../../hooks/useSocialFeed';
@@ -74,7 +75,8 @@ type Route =
   | { page: 'profile'; uid: string }
   | { page: 'search' }
   | { page: 'rankings' }
-  | { page: 'saved' };
+  | { page: 'saved' }
+  | { page: 'chat'; peer?: string };
 const VISIBILITY = {
   public: '전체 공개',
   followers: '팔로워 공개',
@@ -82,6 +84,16 @@ const VISIBILITY = {
 };
 
 export function CommunityScreen(props: Props) {
+  const [unreadChat, setUnreadChat] = useState(false);
+  useEffect(
+    () =>
+      watchConversations(
+        page =>
+          setUnreadChat(page.items.some(room => hasUnread(room, myUid()))),
+        () => setUnreadChat(false),
+      ),
+    [],
+  );
   const [scope, setScope] = useState<FeedScope>('public');
   const [stack, setStack] = useState<Route[]>([{ page: 'feed' }]);
   const onSubpageChange = props.onSubpageChange;
@@ -91,6 +103,9 @@ export function CommunityScreen(props: Props) {
   }, [stack.length, onSubpageChange]);
   const feed = useSocialFeed(scope);
   const route = stack[stack.length - 1];
+  const authors = [
+    ...new Map(feed.posts.map(post => [post.uid, post])).values(),
+  ].slice(0, 8);
   const push = (next: Route) => setStack(old => [...old, next]);
   const back = () => setStack(old => (old.length > 1 ? old.slice(0, -1) : old));
   const showPost = (id: string) => push({ page: 'post', id });
@@ -98,6 +113,8 @@ export function CommunityScreen(props: Props) {
   const changed = () => {
     feed.refresh();
   };
+  if (route.page === 'chat')
+    return <ChatScreen initialPeer={route.peer} onBack={back} />;
   if (route.page === 'compose')
     return (
       <Composer
@@ -130,6 +147,7 @@ export function CommunityScreen(props: Props) {
         onBack={back}
         onPost={showPost}
         onTogether={props.onTogetherPress}
+        onMessage={uid => push({ page: 'chat', peer: uid })}
       />
     );
   if (route.page === 'search' || route.page === 'rankings')
@@ -145,8 +163,65 @@ export function CommunityScreen(props: Props) {
       <SavedPage onBack={back} onPost={showPost} onProfile={showProfile} />
     );
   return (
-    <Page title="커뮤니티">
+    <Page title="커뮤니티" feed>
+      <View style={styles.feedHeader}>
+        <View>
+          <AppText style={styles.feedWordmark}>달료 클럽</AppText>
+          <AppText style={styles.feedEyebrow} color={colors.primaryInk}>
+            YOUR DAILY RUN, SHARED.
+          </AppText>
+        </View>
+        <View style={styles.headerActions}>
+          <IconButton
+            icon={Search}
+            size={40}
+            variant="plain"
+            accessibilityLabel="러너 검색"
+            onPress={() => push({ page: 'search' })}
+          />
+          <IconButton
+            icon={MessageSquare}
+            dot={unreadChat}
+            size={40}
+            variant="plain"
+            accessibilityLabel="메시지"
+            onPress={() => push({ page: 'chat' })}
+          />
+          <IconButton
+            icon={Bell}
+            size={40}
+            variant="plain"
+            dot={props.hasUnread}
+            accessibilityLabel="알림"
+            onPress={props.onNotificationPress}
+          />
+          <IconButton
+            icon={Settings}
+            size={40}
+            variant="plain"
+            accessibilityLabel="설정"
+            onPress={props.onSettingsPress}
+          />
+        </View>
+      </View>
+      <View style={styles.tabs}>
+        {(
+          [
+            ['public', '전체'],
+            ['following', '팔로잉'],
+            ['mine', '내 게시물'],
+          ] as Array<[FeedScope, string]>
+        ).map(([value, label]) => (
+          <Tab
+            key={value}
+            label={label}
+            selected={scope === value}
+            onPress={() => setScope(value)}
+          />
+        ))}
+      </View>
       <ScrollView
+        showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.feedContent}
         refreshControl={
           <RefreshControl
@@ -156,57 +231,76 @@ export function CommunityScreen(props: Props) {
           />
         }
       >
-        <ScreenHeader title="커뮤니티" {...props} />
-        <View style={styles.toolbar}>
-          <IconButton
-            icon={Search}
-            accessibilityLabel="러너 검색"
-            onPress={() => push({ page: 'search' })}
-          />
-          <IconButton
-            icon={Trophy}
-            accessibilityLabel="러너 랭킹"
-            onPress={() => push({ page: 'rankings' })}
-          />
-          <IconButton
-            icon={Bookmark}
-            accessibilityLabel="저장한 게시물"
-            onPress={() => push({ page: 'saved' })}
-          />
-          <Button
-            label="글쓰기"
-            size="md"
-            icon={Pencil}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.runnersRow}
+        >
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="내 러닝 이야기 작성"
             onPress={() => push({ page: 'compose' })}
-            style={styles.grow}
-          />
-        </View>
-        <View style={styles.tabs}>
-          {(
-            [
-              ['public', '전체'],
-              ['following', '팔로잉'],
-              ['mine', '내 글'],
-            ] as Array<[FeedScope, string]>
-          ).map(([value, label]) => (
-            <Tab
-              key={value}
-              label={label}
-              selected={scope === value}
-              onPress={() => setScope(value)}
-            />
+            style={styles.runner}
+          >
+            <View style={styles.addRunner}>
+              <Plus color={colors.primaryInk} size={25} />
+            </View>
+            <AppText variant="label" color={colors.textMuted}>
+              내 러닝 공유
+            </AppText>
+          </Pressable>
+          {authors.map(author => (
+            <Pressable
+              key={author.uid}
+              accessibilityRole="button"
+              accessibilityLabel={`${author.author_name} 프로필`}
+              onPress={() => showProfile(author.uid)}
+              style={styles.runner}
+            >
+              <View style={styles.runnerRing}>
+                <Avatar uri={author.author_image} size={54} />
+              </View>
+              <AppText
+                variant="label"
+                numberOfLines={1}
+                style={styles.runnerName}
+              >
+                {author.author_name}
+              </AppText>
+            </Pressable>
           ))}
+        </ScrollView>
+        <View style={styles.discoveryRow}>
+          {props.onTogetherPress && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="같이 달리기"
+              onPress={() => props.onTogetherPress?.()}
+              style={styles.discovery}
+            >
+              <Users size={15} color={colors.primaryInk} />
+              <AppText variant="label" color={colors.primaryInk}>
+                같이 달리기
+              </AppText>
+            </Pressable>
+          )}
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => push({ page: 'rankings' })}
+            style={styles.discovery}
+          >
+            <Trophy size={15} color={colors.textMuted} />
+            <AppText variant="label">러너 랭킹</AppText>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => push({ page: 'saved' })}
+            style={styles.discovery}
+          >
+            <Bookmark size={15} color={colors.textMuted} />
+            <AppText variant="label">저장함</AppText>
+          </Pressable>
         </View>
-        {props.onTogetherPress && (
-          <Button
-            label="같이 달리기"
-            variant="secondary"
-            size="md"
-            icon={Users}
-            onPress={() => props.onTogetherPress?.()}
-            style={styles.section}
-          />
-        )}
         {feed.status === 'loading' ? (
           <Loading />
         ) : feed.status === 'error' ? (
@@ -256,7 +350,9 @@ function Page({
   title,
   onBack,
   children,
+  feed = false,
 }: {
+  feed?: boolean;
   title: string;
   onBack?: () => void;
   children: React.ReactNode;
@@ -270,7 +366,10 @@ function Page({
     return () => sub.remove();
   }, [onBack]);
   return (
-    <SafeAreaView style={styles.screen} edges={['top']}>
+    <SafeAreaView
+      style={[styles.screen, feed && styles.feedScreen]}
+      edges={['top']}
+    >
       <StatusBar barStyle="dark-content" />
       {onBack && (
         <View style={styles.header}>
@@ -367,7 +466,7 @@ function errorAlert(error: unknown) {
   Alert.alert('잠시만요', socialError(error));
 }
 
-function PostCard({
+export function PostCard({
   post,
   onOpen,
   onProfile,
@@ -427,23 +526,41 @@ function PostCard({
       },
     ]);
   const own = post.uid === myUid();
+  const sharePost = () =>
+    Share.share({
+      message: `달료 · ${post.author_name}\n${post.text}${
+        post.run_id ? `\n${post.distance_km?.toFixed(2)}km` : ''
+      }`,
+    }).catch(errorAlert);
+  const menu = () =>
+    Alert.alert('게시물', post.author_name, [
+      { text: '게시물 보기', onPress: onOpen },
+      { text: '프로필 보기', onPress: onProfile },
+      { text: '취소', style: 'cancel' },
+    ]);
+  const postedDate = post.createdAtMs
+    ? new Date(post.createdAtMs).toLocaleDateString('ko-KR', {
+        month: 'long',
+        day: 'numeric',
+      })
+    : '';
+  const hasMedia = !!post.image_url || !!post.run_id;
   return (
-    <Card style={styles.post}>
-      <View style={styles.authorRow}>
+    <View style={[styles.post, detail && styles.detailPost]}>
+      <View style={styles.postHeader}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`${post.author_name} 프로필`}
           onPress={onProfile}
           style={styles.author}
         >
-          <Avatar uri={post.author_image} />
+          <Avatar uri={post.author_image} size={36} />
           <View style={styles.grow}>
-            <AppText variant="subheading">{post.author_name}</AppText>
-            <AppText variant="label" color={colors.textSubtle}>
-              {post.createdAtMs
-                ? new Date(post.createdAtMs).toLocaleString('ko-KR')
-                : ''}{' '}
-              · {VISIBILITY[post.visibility]}
+            <AppText variant="subheading" numberOfLines={1}>
+              {post.author_name}
+            </AppText>
+            <AppText variant="label" color={colors.textMuted}>
+              {post.run_id ? '오늘의 러닝 기록' : VISIBILITY[post.visibility]}
             </AppText>
           </View>
         </Pressable>
@@ -464,93 +581,156 @@ function PostCard({
             onPress={remove}
           />
         )}
+        {!detail && (
+          <IconButton
+            icon={MoreHorizontal}
+            variant="plain"
+            accessibilityLabel="게시물 메뉴"
+            onPress={menu}
+          />
+        )}
       </View>
       <Pressable
-        accessibilityRole="button"
+        accessibilityRole={detail ? undefined : 'button'}
         accessibilityLabel="게시물 상세 보기"
         disabled={detail}
         onPress={onOpen}
       >
-        {post.image_url && (
+        {post.image_url ? (
           <Image
             source={{ uri: post.image_url }}
             resizeMode="cover"
-            style={styles.postImage}
+            style={styles.feedPhoto}
           />
-        )}
-        {!!post.text && (
-          <AppText style={styles.postText} selectable={detail}>
-            {post.text}
-          </AppText>
-        )}
-        {post.run_id && (
-          <View style={styles.runSummary}>
-            <Badge label="달리기 기록" />
-            <AppText variant="subheading">
-              {(post.distance_km ?? 0).toFixed(2)} km
+        ) : post.run_id ? (
+          <View style={styles.runTile}>
+            <View style={styles.runTileTop}>
+              <Footprints size={20} color={colors.primaryInk} />
+              <AppText variant="label" color={colors.primaryInk}>
+                MY RUNNING LOG
+              </AppText>
+            </View>
+            <View style={styles.runTileDistance}>
+              <AppText style={styles.runTileNumber}>
+                {(post.distance_km ?? 0).toFixed(2)}
+              </AppText>
+              <AppText variant="heading" color={colors.primaryInk}>
+                km
+              </AppText>
+            </View>
+            <AppText color={colors.primaryInk}>
+              나의 속도로 채운 오늘의 한 걸음.
             </AppText>
-            <AppText variant="caption">
+            <AppText variant="caption" color={colors.primaryInk}>
               {formatPace(post.avg_pace_sec ?? 0)} /km · {post.calories ?? 0}{' '}
               kcal
             </AppText>
           </View>
+        ) : (
+          <View style={styles.textPost}>
+            <AppText
+              style={styles.textPostBody}
+              numberOfLines={detail ? undefined : 5}
+            >
+              {post.text}
+            </AppText>
+          </View>
+        )}
+        {!!post.image_url && !!post.run_id && (
+          <View style={styles.attachedRun}>
+            <Footprints color={colors.primaryInk} size={16} />
+            <AppText variant="caption" color={colors.primaryInk}>
+              {(post.distance_km ?? 0).toFixed(2)} km ·{' '}
+              {formatPace(post.avg_pace_sec ?? 0)} /km
+            </AppText>
+          </View>
         )}
       </Pressable>
-      <View style={styles.actions}>
+      <View style={styles.postActions}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="응원"
           accessibilityState={{ selected: flags.liked, disabled: !!busy }}
           disabled={!!busy}
           onPress={() => toggle('like')}
-          style={styles.action}
+          style={styles.socialIcon}
         >
-          <Heart
-            size={20}
-            color={flags.liked ? colors.danger : colors.textMuted}
-            fill={flags.liked ? colors.danger : 'none'}
+          <RunningShoeIcon
+            size={28}
+            color={flags.liked ? colors.primary : colors.text}
+            active={flags.liked}
           />
-          <AppText variant="caption">{post.like_count}</AppText>
         </Pressable>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="댓글 보기"
           onPress={onOpen}
-          style={styles.action}
+          style={styles.socialIcon}
         >
-          <MessageCircle size={20} color={colors.textMuted} />
-          <AppText variant="caption">{post.comment_count}</AppText>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={flags.saved ? '저장 취소' : '게시물 저장'}
-          accessibilityState={{ selected: flags.saved, disabled: !!busy }}
-          disabled={!!busy}
-          onPress={() => toggle('bookmark')}
-          style={styles.action}
-        >
-          <Bookmark
-            size={20}
-            color={flags.saved ? colors.primaryInk : colors.textMuted}
-            fill={flags.saved ? colors.primarySoft : 'none'}
-          />
+          <MessageCircle size={25} color={colors.text} strokeWidth={1.8} />
         </Pressable>
         {post.visibility === 'public' && (
           <IconButton
             icon={Share2}
             variant="plain"
             accessibilityLabel="게시물 공유"
-            onPress={() => {
-              Share.share({
-                message: `달료 · ${post.author_name}\n${post.text}${
-                  post.run_id ? `\n${post.distance_km?.toFixed(2)}km` : ''
-                }`,
-              }).catch(errorAlert);
-            }}
+            onPress={sharePost}
           />
         )}
+        <View style={styles.grow} />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={flags.saved ? '저장 취소' : '게시물 저장'}
+          accessibilityState={{ selected: flags.saved, disabled: !!busy }}
+          disabled={!!busy}
+          onPress={() => toggle('bookmark')}
+          style={styles.socialIcon}
+        >
+          <Bookmark
+            size={25}
+            color={flags.saved ? colors.primaryInk : colors.text}
+            fill={flags.saved ? colors.primarySoft : 'none'}
+            strokeWidth={1.8}
+          />
+        </Pressable>
       </View>
-    </Card>
+      <View style={styles.postCaption}>
+        <AppText variant="label">
+          {post.like_count > 0
+            ? `응원 ${post.like_count}개`
+            : '첫 응원을 보내보세요'}
+        </AppText>
+        {hasMedia && !!post.text && (
+          <Pressable
+            accessibilityRole={detail ? undefined : 'button'}
+            disabled={detail}
+            onPress={onOpen}
+          >
+            <AppText
+              style={styles.captionText}
+              numberOfLines={detail ? undefined : 3}
+              selectable={detail}
+            >
+              <AppText variant="subheading">{post.author_name} </AppText>
+              {post.text}
+            </AppText>
+          </Pressable>
+        )}
+        <Pressable accessibilityRole="button" onPress={onOpen}>
+          <AppText variant="caption" color={colors.textMuted}>
+            {post.comment_count > 0
+              ? `댓글 ${post.comment_count}개 모두 보기`
+              : '댓글로 응원을 남겨 보세요'}
+          </AppText>
+        </Pressable>
+        <AppText style={styles.postDate} color={colors.textMuted}>
+          {postedDate}
+          {post.visibility !== 'public'
+            ? ` · ${VISIBILITY[post.visibility]}`
+            : ''}
+        </AppText>
+      </View>
+    </View>
   );
 }
 
@@ -807,6 +987,8 @@ function PostDetail({
   const commentFeed = useComments(id, revision);
   const { comments } = commentFeed;
   const commentId = useRef(newSocialId());
+  const detailScroll = useRef<ScrollView>(null);
+  const commentTop = useRef(0);
   useEffect(() => {
     setStatus('loading');
     const stop = watchPost(
@@ -855,6 +1037,7 @@ function PostDetail({
   return (
     <Page title="게시물" onBack={onBack}>
       <ScrollView
+        ref={detailScroll}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.content}
       >
@@ -872,12 +1055,23 @@ function PostDetail({
             <PostCard
               post={post}
               detail
-              onOpen={() => {}}
+              onOpen={() =>
+                detailScroll.current?.scrollTo({
+                  y: commentTop.current,
+                  animated: true,
+                })
+              }
               onProfile={() => onProfile(post.uid)}
               onEdit={() => onEdit(post)}
               onDeleted={onDeleted}
             />
-            <AppText variant="subheading">댓글 {post.comment_count}</AppText>
+            <View
+              onLayout={event => {
+                commentTop.current = event.nativeEvent.layout.y;
+              }}
+            >
+              <AppText variant="subheading">댓글 {post.comment_count}</AppText>
+            </View>
             {commentFeed.status === 'loading' ? (
               <Loading />
             ) : commentFeed.status === 'error' ? (
@@ -1083,11 +1277,13 @@ function ProfilePage({
   onBack,
   onPost,
   onTogether,
+  onMessage,
 }: {
   uid: string;
   onBack: () => void;
   onPost: (id: string) => void;
   onTogether?: (friendUid: string) => void;
+  onMessage: (uid: string) => void;
 }) {
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [following, setFollowing] = useState(false);
@@ -1167,6 +1363,15 @@ function ProfilePage({
                     variant={following ? 'secondary' : 'primary'}
                     disabled={busy}
                     onPress={follow}
+                  />
+                )}
+                {uid !== myUid() && (
+                  <Button
+                    icon={MessageSquare}
+                    label="메시지 보내기"
+                    size="md"
+                    variant="secondary"
+                    onPress={() => onMessage(uid)}
                   />
                 )}
                 {friend && onTogether && (
@@ -1268,10 +1473,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   content: { padding: spacing.xl, paddingBottom: 60, gap: spacing.md },
-  feedContent: {
-    paddingHorizontal: spacing.xl,
-    paddingBottom: TAB_BAR_HEIGHT + 50,
-  },
+  feedContent: { paddingBottom: TAB_BAR_HEIGHT + 40 },
   toolbar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1279,33 +1481,189 @@ const styles = StyleSheet.create({
     marginVertical: spacing.md,
   },
   grow: { flex: 1 },
+  togetherCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: colors.primarySoft,
+    padding: 18,
+    borderRadius: radius.lg,
+    marginTop: 4,
+    marginBottom: 20,
+  },
+  togetherIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 16,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dim: { opacity: 0.75 },
   section: { marginVertical: spacing.md },
   tabs: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    marginVertical: spacing.md,
+    paddingHorizontal: 20,
+    gap: 26,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
   },
   tab: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.border,
+    paddingVertical: 13,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  selectedTab: { borderBottomColor: colors.primary },
+  loading: { marginVertical: 40 },
+  empty: {
+    alignItems: 'center',
+    gap: spacing.md,
+    marginVertical: spacing.md,
+    paddingVertical: 32,
+    paddingHorizontal: 20,
+    borderRadius: radius.lg,
     backgroundColor: colors.surface,
   },
-  selectedTab: {
-    backgroundColor: colors.primarySoft,
-    borderColor: colors.primary,
-  },
-  loading: { marginVertical: 40 },
-  empty: { alignItems: 'center', gap: spacing.md, marginVertical: spacing.md },
   avatar: {
     backgroundColor: colors.primarySoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  post: { marginVertical: spacing.sm },
+  post: {
+    backgroundColor: colors.surface,
+    marginBottom: 16,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+    paddingBottom: 18,
+  },
+  detailPost: { borderRadius: radius.lg, overflow: 'hidden' },
+  feedScreen: { backgroundColor: colors.surface },
+  feedHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  feedWordmark: {
+    fontFamily: fonts.extrabold,
+    fontSize: 25,
+    lineHeight: 32,
+    letterSpacing: -0.8,
+  },
+  feedEyebrow: {
+    fontFamily: fonts.semibold,
+    fontSize: 8,
+    lineHeight: 12,
+    letterSpacing: 1.1,
+  },
+  headerActions: { flexDirection: 'row', gap: 0 },
+  runnersRow: {
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    paddingBottom: 12,
+    gap: 18,
+  },
+  runner: { alignItems: 'center', gap: 7, width: 66 },
+  runnerRing: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    padding: 3,
+    borderWidth: 1.5,
+    borderColor: colors.primaryBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  runnerName: { maxWidth: 66, fontSize: 10 },
+  addRunner: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    backgroundColor: colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  discoveryRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    gap: 8,
+    paddingBottom: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  discovery: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    minHeight: 34,
+    borderRadius: 12,
+    backgroundColor: colors.surfaceMuted,
+  },
+  postHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  feedPhoto: { width: '100%', aspectRatio: 1 },
+  postActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingTop: 4,
+    gap: 4,
+  },
+  socialIcon: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  postCaption: { paddingHorizontal: 18, gap: 7 },
+  captionText: { fontSize: 14, lineHeight: 21 },
+  postDate: { fontSize: 10, lineHeight: 15, marginTop: 2 },
+  runTile: {
+    padding: 28,
+    gap: 16,
+    backgroundColor: colors.primarySoft,
+    minHeight: 250,
+  },
+  runTileTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  runTileDistance: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
+  runTileNumber: {
+    fontFamily: fonts.extrabold,
+    fontSize: 62,
+    lineHeight: 74,
+    color: colors.primaryInk,
+    letterSpacing: -2,
+  },
+  attachedRun: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    backgroundColor: colors.primarySoft,
+  },
+  textPost: {
+    marginHorizontal: 16,
+    backgroundColor: colors.primarySoft,
+    borderRadius: 20,
+    padding: 24,
+    minHeight: 145,
+    justifyContent: 'center',
+  },
+  textPostBody: {
+    fontFamily: fonts.semibold,
+    fontSize: 21,
+    lineHeight: 31,
+    letterSpacing: -0.3,
+  },
   authorRow: {
     flexDirection: 'row',
     alignItems: 'center',

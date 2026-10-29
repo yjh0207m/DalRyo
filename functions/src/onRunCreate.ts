@@ -1,6 +1,7 @@
 import {FieldValue, getFirestore} from 'firebase-admin/firestore';
 import {logger} from 'firebase-functions';
 import {onDocumentCreated} from 'firebase-functions/v2/firestore';
+import {parkWeekKey} from './parkData';
 import {
   addStat,
   calculateRunExp,
@@ -37,6 +38,9 @@ export const onRunCreate = onDocumentCreated({document: 'runs/{runId}', region: 
     const userRef = db.collection('users').doc(uid);
     const characterRef = userRef.collection('character').doc(uid);
     const [userSnap, characterSnap] = await Promise.all([tx.get(userRef), tx.get(characterRef)]);
+    const parkRef = typeof run.park_id === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(run.park_id)
+      ? db.collection('parks').doc(run.park_id) : null;
+    const parkSnap = parkRef ? await tx.get(parkRef) : null;
 
     if (!userSnap.exists) {
       logger.warn('run without user document', {runId: runRef.id, uid});
@@ -63,6 +67,13 @@ export const onRunCreate = onDocumentCreated({document: 'runs/{runId}', region: 
       is_frozen: false,
       updated_at: now,
     });
+    if (parkSnap?.exists && parkRef && countedKm > 0) {
+      const week = parkWeekKey(run.started_at.toDate());
+      tx.set(parkRef.collection('weeks').doc(week).collection('runners').doc(uid), {
+        uid, display_name: userSnap.get('display_name'), profile_image: userSnap.get('profile_image') ?? null,
+        distance_km: FieldValue.increment(countedKm), run_count: FieldValue.increment(1), updated_at: now,
+      }, {merge:true});
+    }
 
     if (!characterSnap.exists) {
       return;

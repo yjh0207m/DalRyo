@@ -36,6 +36,8 @@
 	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>달리는 동안 거리·페이스·경로를 기록하고, 일출·일몰 시간에 맞춰 배경 화면을 설정합니다.</string>
+	<key>UIBackgroundModes</key>
+	<array><string>location</string></array>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>프로필 사진과 달리기 인증 사진을 선택합니다.</string>
 	<key>NSCameraUsageDescription</key>

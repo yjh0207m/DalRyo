@@ -2,9 +2,11 @@ import React, {useState} from 'react';
 import {ActivityIndicator, Alert, Pressable, StatusBar, StyleSheet, View} from 'react-native';
 import {CommunityScreen} from '../community/CommunityScreen';
 import {TogetherScreen} from '../together/TogetherScreen';
+import {ParksScreen} from '../parks/ParksScreen';
 import {GrowthScreen} from '../growth/GrowthScreen';
 import {HomeScreen} from '../home/HomeScreen';
 import {MyPageScreen} from '../profile/MyPageScreen';
+import {InventoryScreen} from '../profile/InventoryScreen';
 import {CharacterPreviewScreen} from '../dev/CharacterPreviewScreen';
 import {SettingsScreen} from '../profile/SettingsScreen';
 import {NotificationsScreen} from '../profile/NotificationsScreen';
@@ -12,46 +14,49 @@ import {useUnreadNotifications} from '../../hooks/useNotifications';
 import {usePushNotifications} from '../../hooks/usePushNotifications';
 import {GoalValueScreen} from '../run/GoalValueScreen';
 import {RecordScreen} from '../run/RecordScreen';
-import {RunDetailScreen} from '../run/RunDetailScreen';
-import {RunCompleteScreen} from '../run/RunCompleteScreen';
+import {CompletedRunScreen} from '../run/CompletedRunScreen';
 import {RunningScreen} from '../run/RunningScreen';
 import {RunStartSheet} from '../run/RunStartSheet';
 import type {RunResult} from '../../hooks/useRunSession';
-import {AppText} from '../../components/ui';
+import {AppText, Button} from '../../components/ui';
 import {BottomTabBar, type MainTab} from '../../navigation/BottomTabBar';
-import {saveRunRecord} from '../../services/run.service';
+import {queueRun, uploadPendingRun} from '../../services/runOutbox.service';
+import {useRunRecovery} from '../../hooks/useRunRecovery';
+import {RunRecoveryScreen} from '../run/RunRecoveryScreen';
+import {sessionResult} from '../../utils/runSession';
+import type {RunContext, RunSessionSnapshot} from '../../types/runSession';
+import {publishRoomProgress} from '../../services/room.service';
 import {colors} from '../../theme';
 import type {CharacterDocument, CharacterStage} from '../../types/character.types';
 import type {RunDocument, RunGoalType} from '../../types/run.types';
 import type {UserDocument} from '../../types/user.types';
-import {getCharacterStage} from '../../utils/exp';
-import {calculateAveragePace} from '../../utils/pace';
+import type {RunStartSnapshot} from '../../utils/runCompletion';
 
 type Props = {
   user: UserDocument | null;
   character: CharacterDocument | null;
 };
 
-type RunGoal = {goalType: RunGoalType; goalValue: number | null};
+type RunGoal = {goalType: RunGoalType; goalValue: number | null; parkId?:string; parkName?:string; courseId?:string};
 
 // 달리기 중에는 바텀 탭을 숨기고 전체 화면으로 진행한다.
 // 시작 시점의 단계·누적 거리를 들고 다녀야 서버 반영 전에도 부화/성장 여부를 판단할 수 있다
-type RunStart = {goal: RunGoal; stageBefore: CharacterStage; totalKmBefore: number; wasFrozen: boolean};
+type RunStart = {context: RunContext; restore?: RunSessionSnapshot; goal: RunGoal; stageBefore: CharacterStage; totalKmBefore: number; wasFrozen: boolean};
 
 type RunFlow =
   // 시간·거리·칼로리 목표는 값을 고르는 화면을 먼저 거친다
   | {phase: 'setup'; goalType: Exclude<RunGoalType, 'free'>}
   | ({phase: 'running'} & RunStart)
   | ({phase: 'saving'; result: RunResult} & RunStart)
-  | {phase: 'complete'; stageBefore: CharacterStage; stageAfter: CharacterStage; totalKmBefore: number; wasFrozen: boolean; result: RunResult; run: RunDocument}
-  // 완료 화면의 '기록 보기' → 방금 저장한 달리기의 상세(경로 지도)로 바로 간다
-  | {phase: 'detail'; run: RunDocument};
+  | {phase: 'complete'; before: RunStartSnapshot; run: RunDocument};
 
 export function MainAppScreen({user, character}: Props) {
   const [activeTab, setActiveTab] = useState<MainTab>('home');
   const [runFlow, setRunFlow] = useState<RunFlow | null>(null);
   const [runSheetOpen, setRunSheetOpen] = useState(false);
+  const [parksOpen,setParksOpen]=useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [inventoryMode, setInventoryMode] = useState<'owned' | 'all' | null>(null);
   const [characterPreviewOpen, setCharacterPreviewOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [communitySubpage, setCommunitySubpage] = useState(false);
@@ -60,6 +65,7 @@ export function MainAppScreen({user, character}: Props) {
   const hasUnread = useUnreadNotifications(user?.uid);
   const push = usePushNotifications(user?.uid, user?.notification_settings?.push ?? false, () => setNotificationsOpen(true));
 
+  const recovery = useRunRecovery(user?.uid);
   const openRunSheet = () => setRunSheetOpen(true);
 
   const selectGoal = (goalType: RunGoalType) => {
@@ -74,43 +80,37 @@ export function MainAppScreen({user, character}: Props) {
   const startRun = (goal: RunGoal) => {
     if (!user || !character) {
       Alert.alert('잠시만요', '캐릭터 정보를 불러오는 중이에요. 잠시 후 다시 시도해 주세요.');
-      return;
+      return false;
     }
-    setRunFlow({phase: 'running', goal, stageBefore: character.stage, totalKmBefore: user.total_km, wasFrozen: user.is_frozen});
+    const before = {stageBefore: character.stage, totalKmBefore: user.total_km, wasFrozen: user.is_frozen};
+    const context: RunContext = {uid: user.uid, sessionKey: `${user.uid}_${Date.now()}`, goal, before, weightKg: user.weight_kg};
+    setRunFlow({phase: 'running', context, goal, ...before});
+    return true;
   };
 
   const saveRun = async (flow: Extract<RunFlow, {phase: 'running' | 'saving'}>, result: RunResult) => {
     setRunFlow({...flow, phase: 'saving', result});
 
     try {
-      const run = await saveRunRecord({
-        goalType: flow.goal.goalType,
-        goalValue: flow.goal.goalValue,
-        startedAt: result.startedAt,
-        durationSec: result.durationSec,
-        distanceKm: result.distanceKm,
-        avgSpeedKmh: result.avgSpeedKmh,
-        calories: result.calories,
-        route: result.route,
-      });
+      const id = await queueRun(flow.context, result);
+      recovery.dismiss();
+      const run = await uploadPendingRun(flow.context.uid, id);
+      recovery.refresh();
       setRunFlow({
         phase: 'complete',
-        stageBefore: flow.stageBefore,
-        stageAfter: getCharacterStage(flow.totalKmBefore + result.distanceKm),
-        totalKmBefore: flow.totalKmBefore,
-        wasFrozen: flow.wasFrozen,
-        result,
+        before: {stageBefore: flow.stageBefore, totalKmBefore: flow.totalKmBefore, wasFrozen: flow.wasFrozen},
         run,
       });
     } catch {
-      Alert.alert('기록 저장에 실패했어요', '네트워크를 확인하고 다시 시도해 주세요.', [
-        {text: '버리기', style: 'destructive', onPress: () => setRunFlow(null)},
+      Alert.alert('저장을 완료하지 못했어요', '기기에 남아 있는 기록은 다시 열 때 복구하거나 자동으로 저장해요. 앱을 삭제하면 기기 기록이 사라질 수 있어요.', [
+        {text: '홈으로', onPress: () => {setRunFlow(null); recovery.refresh();}},
         {text: '다시 시도', onPress: () => saveRun(flow, result)},
       ]);
     }
   };
 
   const closeRunFlow = (nextTab: MainTab) => {
+    recovery.dismiss(); recovery.refresh();
     setRunFlow(null);
     setActiveTab(nextTab);
   };
@@ -132,10 +132,15 @@ export function MainAppScreen({user, character}: Props) {
     if (runFlow.phase === 'running') {
       return (
         <RunningScreen
+          context={runFlow.context}
+          restore={runFlow.restore}
+          onProgress={runFlow.context.roomId ? (km, pace, paused) => {publishRoomProgress(runFlow.context.roomId!, km, pace, paused ? 'paused' : 'active').catch(() => {});} : undefined}
           goalType={runFlow.goal.goalType}
           goalValue={runFlow.goal.goalValue}
+          contextLabel={runFlow.goal.parkName}
           characterType={character.character_type}
           characterStage={runFlow.stageBefore}
+          equipped={character.equipped}
           weightKg={user?.weight_kg ?? null}
           onFinish={result => saveRun(runFlow, result)}
           onCancel={() => closeRunFlow('home')}
@@ -154,32 +159,27 @@ export function MainAppScreen({user, character}: Props) {
       );
     }
 
-    if (runFlow.phase === 'detail') {
-      // 상세에서 뒤로 가면 기록 탭(달력)에 도착한다
-      return <RunDetailScreen run={runFlow.run} character={character} onBack={() => closeRunFlow('records')} />;
-    }
+    return <CompletedRunScreen run={runFlow.run} before={runFlow.before} character={character}
+      onRecordBack={() => closeRunFlow('records')} onClose={() => closeRunFlow('home')}/>;
+  }
 
-    return (
-      <RunCompleteScreen
-        distanceKm={runFlow.result.distanceKm}
-        durationSec={runFlow.result.durationSec}
-        avgPaceSec={calculateAveragePace(runFlow.result.durationSec, runFlow.result.distanceKm)}
-        calories={runFlow.result.calories}
-        route={runFlow.result.route}
-        characterType={character.character_type}
-        petName={character.pet_name}
-        stageBeforeRun={runFlow.stageBefore}
-        stageAfterRun={runFlow.stageAfter}
-        totalKmBefore={runFlow.totalKmBefore}
-        wasFrozen={runFlow.wasFrozen}
-        onViewRecord={() => setRunFlow({phase: 'detail', run: runFlow.run})}
-        onClose={() => closeRunFlow('home')}
-      />
-    );
+  if (recovery.status !== 'ready') return <View style={styles.savingScreen}>
+    {recovery.status === 'loading' ? <ActivityIndicator color={colors.primary}/> : <><AppText>기기에 보관한 달리기를 확인하지 못했어요.</AppText><Button label="복구 기록 다시 확인" onPress={recovery.refresh}/></>}
+  </View>;
+  if (recovery.active && character) {
+    const session = recovery.active;
+    const flow = {context: session.context, goal: session.context.goal, ...session.context.before};
+    return <RunRecoveryScreen session={session} onResume={() => {setRunFlow({phase: 'running', ...flow, restore: session}); recovery.dismiss();}}
+      onSave={finished => saveRun({phase: 'saving', ...flow, result: sessionResult(finished)}, sessionResult(finished))}
+      onDiscard={() => {recovery.dismiss(); recovery.refresh();}}/>;
   }
 
   if (__DEV__ && characterPreviewOpen) return <CharacterPreviewScreen onBack={() => setCharacterPreviewOpen(false)} />;
   if (settingsOpen && user) return <SettingsScreen user={user} onBack={() => setSettingsOpen(false)} />;
+  if (inventoryMode && character) return <InventoryScreen key={character.uid} character={character} frozen={user?.is_frozen} initialMode={inventoryMode} onBack={() => setInventoryMode(null)}/>;
+  if (parksOpen) return <ParksScreen onBack={()=>setParksOpen(false)} onStart={(park,km,courseId)=>{
+    if(startRun({goalType:'distance',goalValue:km,parkId:park.park_id,parkName:park.name,courseId}))setParksOpen(false);
+  }}/>;
   if (notificationsOpen)
     return (
       <NotificationsScreen
@@ -198,15 +198,16 @@ export function MainAppScreen({user, character}: Props) {
   return (
     <View style={styles.screen}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
+      {recovery.pending > 0 && <View style={styles.pendingBanner}><AppText variant="caption">기기에 보관한 기록 {recovery.pending}개 · {recovery.syncing ? '저장 중' : '연결되면 자동 저장'}</AppText><Button label="다시 저장" size="md" variant="ghost" disabled={recovery.syncing} onPress={recovery.sync}/></View>}
       <View style={styles.body}>
         {activeTab === 'home' && <HomeScreen user={user} character={character} onRunPress={openRunSheet} {...header} />}
         {activeTab === 'growth' && <GrowthScreen user={user} character={character} {...header} />}
         {activeTab === 'community' && <CommunityScreen {...header} onSubpageChange={setCommunitySubpage} onTogetherPress={friendUid => setTogether({friendUid})}/>}
         {activeTab === 'records' && <RecordScreen {...header} character={character} onSubpageChange={setRecordSubpage}/>}
-        {activeTab === 'my' && <MyPageScreen user={user} character={character} onBack={() => setActiveTab('home')} onOpenSettings={() => setSettingsOpen(true)} onPreviewCharacter={() => setCharacterPreviewOpen(true)} />}
+        {activeTab === 'my' && <MyPageScreen user={user} character={character} onBack={() => setActiveTab('home')} onOpenSettings={() => setSettingsOpen(true)} onOpenInventory={setInventoryMode} onPreviewCharacter={() => setCharacterPreviewOpen(true)} />}
       </View>
       {!(activeTab === 'community' && communitySubpage) && !(activeTab === 'records' && recordSubpage) && <BottomTabBar activeTab={activeTab} onChange={tab => (tab === 'run' ? openRunSheet() : setActiveTab(tab))} />}
-      <RunStartSheet visible={runSheetOpen} onClose={() => setRunSheetOpen(false)} onSelect={selectGoal} />
+      <RunStartSheet visible={runSheetOpen} onClose={() => setRunSheetOpen(false)} onSelect={selectGoal} onParkPress={()=>{setRunSheetOpen(false);setParksOpen(true);}}/>
       {push.notice && <Pressable accessibilityRole="button" onPress={() => {push.dismiss(); setNotificationsOpen(true);}} style={styles.pushBanner}>
         <AppText variant="subheading">{push.notice.title}</AppText><AppText variant="caption">{push.notice.body}</AppText>
       </Pressable>}
@@ -217,6 +218,7 @@ export function MainAppScreen({user, character}: Props) {
 const styles = StyleSheet.create({
   screen: {flex: 1, backgroundColor: colors.background},
   body: {flex: 1},
+  pendingBanner: {paddingTop: 40, paddingHorizontal: 20, backgroundColor: colors.primarySoft, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'},
   savingScreen: {flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center'},
   savingText: {marginTop: 16},
   pushBanner: {position: 'absolute', top: 56, left: 20, right: 20, padding: 16, backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.primary},

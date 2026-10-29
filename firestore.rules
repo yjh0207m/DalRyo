@@ -2,6 +2,10 @@ rules_version = '2';
 // Access/model audit: docs/firestore-access-review.md.
 // users are private PII. Growth, counters, social writes and memberships are server-owned.
 // Public/followers/private posts use canonical author + relationship authorization.
+// conversations: server-owned {members:[uid,uid],profiles:{uid:{display_name,profile_image}},
+// blocked_by:[uid],read_at:{uid:timestamp},last_text:string,last_sender_uid:string|null,
+// last_message_id:string|null,last_sent_at:timestamp|null,created_at:timestamp,updated_at:timestamp}.
+// conversations/{id}/messages: immutable server-owned {sender_uid:string,text:string(1..2000),created_at:timestamp}.
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
@@ -42,7 +46,7 @@ service cloud.firestore {
     }
     function validRun(d,id) {
       return d.keys().hasAll(['run_id','uid','goal_type','goal_value','started_at','ended_at','duration_sec','distance_km','avg_pace_sec','avg_speed_kmh','calories','route','exp_earned','created_at'])
-        && d.keys().hasOnly(['run_id','uid','goal_type','goal_value','started_at','ended_at','duration_sec','distance_km','avg_pace_sec','avg_speed_kmh','avg_heart_rate','calories','route','park_id','exp_earned','created_at'])
+        && d.keys().hasOnly(['run_id','uid','goal_type','goal_value','started_at','ended_at','duration_sec','distance_km','avg_pace_sec','avg_speed_kmh','avg_heart_rate','calories','route','park_id','course_id','exp_earned','created_at'])
         && d.run_id == id && d.uid == request.auth.uid && d.goal_type in ['free','time','distance','calorie']
         && (d.goal_value == null || (d.goal_value is number && d.goal_value > 0 && d.goal_value <= 100000))
         && d.started_at is timestamp && d.started_at <= request.time && d.ended_at == request.time && d.created_at == request.time
@@ -52,7 +56,16 @@ service cloud.firestore {
         && d.avg_speed_kmh is number && d.avg_speed_kmh >= 0 && d.avg_speed_kmh <= 200
         && d.calories is number && d.calories >= 0 && d.calories <= 100000
         && (d.get('avg_heart_rate',null) == null || (d.avg_heart_rate is number && d.avg_heart_rate >= 20 && d.avg_heart_rate <= 250))
-        && nullableString(d.get('park_id',null),128) && d.route is list && d.route.size() <= 12000 && d.exp_earned == 0;
+        && validParkSelection(d) && d.route is list && d.route.size() <= 12000 && d.exp_earned == 0;
+    }
+    function validParkSelection(d) {
+      let park = d.get('park_id',null);
+      let course = d.get('course_id',null);
+      return (park == null && course == null) ||
+        (park is string && park.matches('^[A-Za-z0-9_-]{1,128}$')
+          && exists(/databases/$(database)/documents/parks/$(park))
+          && (course == null || (course is string && course.matches('^[A-Za-z0-9_-]{1,128}$')
+            && exists(/databases/$(database)/documents/parks/$(park)/courses/$(course)))));
     }
     function visiblePost(d) {
       return signedIn() && (d.uid == request.auth.uid || d.visibility == 'public'
@@ -102,6 +115,15 @@ service cloud.firestore {
       match /comments/{commentId} { allow read: if visibleParent(id); allow write: if false; }
     }
     match /follows/{id} { allow read: if signedIn(); allow write: if false; }
+    match /conversations/{id} {
+      allow read: if signedIn() && request.auth.uid in resource.data.members;
+      allow write: if false;
+      match /messages/{messageId} {
+        allow read: if signedIn() && exists(/databases/$(database)/documents/conversations/$(id))
+          && request.auth.uid in get(/databases/$(database)/documents/conversations/$(id)).data.members;
+        allow write: if false;
+      }
+    }
     match /bookmarks/{id} { allow read: if signedIn() && resource.data.uid == request.auth.uid; allow write: if false; }
     match /together_rooms/{id} {
       // 방장과 요청받은 친구만 방을 볼 수 있다

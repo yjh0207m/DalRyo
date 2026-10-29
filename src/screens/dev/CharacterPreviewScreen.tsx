@@ -4,7 +4,8 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import {ChevronLeft} from 'lucide-react-native';
 import {CharacterView} from '../../components/character/CharacterView';
 import type {RevealMode} from '../../components/character/CharacterReveal';
-import {RunCompleteScreen} from '../run/RunCompleteScreen';
+import {CompletedRunScreen} from '../run/CompletedRunScreen';
+import {Timestamp} from '@react-native-firebase/firestore';
 import {AppText, Button, Card, IconButton} from '../../components/ui';
 import {colors, spacing} from '../../theme';
 import type {CharacterMotion, CharacterStage} from '../../types/character.types';
@@ -40,25 +41,21 @@ export function CharacterPreviewScreen({onBack}: {onBack: () => void}) {
   const [candidate, setCandidate] = useState(true);
   const [demo, setDemo] = useState<(typeof REVEAL_DEMOS)[number] | null>(null);
   useEffect(() => {
+    if (demo) return;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {onBack(); return true;});
     return () => sub.remove();
-  }, [onBack]);
+  }, [onBack, demo]);
 
   if (demo) {
     return (
-      <RunCompleteScreen
-        distanceKm={3.24}
-        durationSec={1268}
-        avgPaceSec={391}
-        calories={214}
-        route={DEMO_ROUTE}
-        characterType="rabbit"
-        petName="달료"
-        stageBeforeRun={demo.before}
-        stageAfterRun={demo.after}
-        totalKmBefore={demo.totalKmBefore}
-        wasFrozen={demo.frozen}
-        onViewRecord={() => setDemo(null)}
+      <CompletedRunScreen
+        run={{run_id:'preview-only',uid:'preview-only',goal_type:'free',goal_value:null,
+          started_at:Timestamp.fromMillis(Date.now()-1268000),ended_at:Timestamp.now(),created_at:Timestamp.now(),
+          distance_km:3.24,duration_sec:1268,avg_pace_sec:391,avg_speed_kmh:9.2,calories:214,
+          route:DEMO_ROUTE,avg_heart_rate:null,park_id:null,exp_earned:32}}
+        character={{uid:'preview-only',character_type:'rabbit',pet_name:'달료',stage:demo.after,
+          exp:0,stat_stamina:0,stat_speed:0,stat_endurance:0,last_active_at:Timestamp.now(),created_at:Timestamp.now(),updated_at:Timestamp.now()}}
+        before={{stageBefore:demo.before,totalKmBefore:demo.totalKmBefore,wasFrozen:demo.frozen??false}}
         onClose={() => setDemo(null)}
       />
     );

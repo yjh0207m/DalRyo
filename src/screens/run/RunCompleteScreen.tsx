@@ -12,7 +12,7 @@ import {RouteMap} from '../../components/maps/RouteMap';
 import {MeadowScene} from '../../components/scene/MeadowScene';
 import {AppText, Button, Card, IconButton} from '../../components/ui';
 import {colors, radius, spacing, typography} from '../../theme';
-import type {CharacterStage, CharacterType} from '../../types/character.types';
+import type {CharacterStage, CharacterType, EquippedOutfit} from '../../types/character.types';
 import type {GpsPoint} from '../../types/run.types';
 import {STAGE_LABELS, calculateRunExp, getNextStageProgress} from '../../utils/exp';
 import {formatDuration, formatPace} from '../../utils/pace';
@@ -20,12 +20,14 @@ import {getRevealMode, type RevealMode} from '../../utils/reveal';
 
 type Props = {
   distanceKm: number;
+  growthDistanceKm?: number;
   durationSec: number;
   avgPaceSec: number;
   calories: number;
   // 달린 경로. 있으면 기록 카드 위에 출발·도착이 표시된 지도를 보여 준다
   route?: readonly GpsPoint[];
   characterType: CharacterType;
+  equipped?: EquippedOutfit;
   petName: string;
   // 이번 달리기 전 캐릭터 단계. 'egg'이고 거리가 0보다 크면 부화 연출
   stageBeforeRun: CharacterStage;
@@ -47,11 +49,13 @@ const MEADOW_HEIGHT = 170;
 // 완료 화면 순서: 캐릭터 등장 연출(CharacterReveal) → 기록 숫자가 차오름 → 경험치 막대 → '완주' 도장 → 버튼 활성화
 export function RunCompleteScreen({
   distanceKm,
+  growthDistanceKm = distanceKm,
   durationSec,
   avgPaceSec,
   calories,
   route,
   characterType,
+  equipped,
   petName,
   stageBeforeRun,
   stageAfterRun,
@@ -64,7 +68,7 @@ export function RunCompleteScreen({
   const insets = useSafeAreaInsets();
   const window = useWindowDimensions();
   const t = useDialect();
-  const mode = getRevealMode(stageBeforeRun, stageAfterRun, distanceKm, wasFrozen);
+  const mode = getRevealMode(stageBeforeRun, stageAfterRun, growthDistanceKm, wasFrozen);
   const [revealed, setRevealed] = useState(false);
   const [confetti, setConfetti] = useState(false);
   const [stamped, setStamped] = useState(false);
@@ -104,7 +108,7 @@ export function RunCompleteScreen({
       <View pointerEvents="box-none" style={styles.meadowLayer}>
         <MeadowScene height={MEADOW_HEIGHT} groundRatio={0.42}>
           <View style={styles.actor}>
-            <CharacterReveal mode={mode} type={characterType} stageBefore={stageBeforeRun} stageAfter={stageAfterRun} size={CHARACTER_SIZE} onRevealed={onRevealed} />
+            <CharacterReveal equipped={equipped} mode={mode} type={characterType} stageBefore={stageBeforeRun} stageAfter={stageAfterRun} size={CHARACTER_SIZE} onRevealed={onRevealed} />
           </View>
         </MeadowScene>
         <View style={[styles.grassFill, {height: bottomInset}]} />
@@ -122,7 +126,7 @@ export function RunCompleteScreen({
           )}
           <ResultStats distanceKm={distanceKm} durationSec={durationSec} avgPaceSec={avgPaceSec} calories={calories} start={revealed} />
           <View style={styles.hDivider} />
-          <GrowthRow distanceKm={distanceKm} stageBefore={stageBeforeRun} stageAfter={stageAfterRun} totalKmBefore={totalKmBefore} start={revealed} />
+          <GrowthRow distanceKm={growthDistanceKm} stageBefore={stageBeforeRun} stageAfter={stageAfterRun} totalKmBefore={totalKmBefore} start={revealed} />
           <Stamp label="완주!" show={stamped} style={styles.stamp} />
         </Card>
 

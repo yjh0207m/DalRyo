@@ -25,13 +25,16 @@ import {
   type TogetherRoom,
 } from '../../services/room.service';
 import { myUid, socialError } from '../../services/social.service';
-import { saveRunRecord } from '../../services/run.service';
+import {queueRun, uploadPendingRun} from '../../services/runOutbox.service';
+import type {RunContext} from '../../types/runSession';
 import { RunningScreen } from '../run/RunningScreen';
-import { RunCompleteScreen } from '../run/RunCompleteScreen';
+import { CompletedRunScreen } from '../run/CompletedRunScreen';
+import type {RunStartSnapshot} from '../../utils/runCompletion';
+import type {RunDocument} from '../../types/run.types';
 import type { RunResult } from '../../hooks/useRunSession';
 import type { CharacterDocument } from '../../types/character.types';
 import type { UserDocument } from '../../types/user.types';
-import { calculateAveragePace, formatPace } from '../../utils/pace';
+import { formatPace } from '../../utils/pace';
 import { colors, spacing } from '../../theme';
 type Props = {
   user: UserDocument;
@@ -66,6 +69,9 @@ export function TogetherScreen({
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<RunResult | null>(null);
   const [complete, setComplete] = useState(false);
+  const [savedRun, setSavedRun] = useState<RunDocument|null>(null);
+  const sessionContext = useRef<RunContext | null>(null);
+  const startSnapshot = useRef<RunStartSnapshot>({stageBefore: character.stage, totalKmBefore:user.total_km,wasFrozen:user.is_frozen});
   const [syncError, setSyncError] = useState(false);
   const operation = useRef(false),
     publishing = useRef(false),
@@ -200,21 +206,10 @@ export function TogetherScreen({
     setResult(value);
     setError(null);
     try {
-      await saveRunRecord({
-        goalType: 'distance',
-        goalValue: room?.goal_km ?? null,
-        startedAt: value.startedAt,
-        durationSec: value.durationSec,
-        distanceKm: value.distanceKm,
-        avgSpeedKmh: value.avgSpeedKmh,
-        calories: value.calories,
-        route: value.route,
-      });
-      await roomRequest('finish', {
-        roomId,
-        km: value.distanceKm,
-        pace: calculateAveragePace(value.durationSec, value.distanceKm),
-      });
+      if (!sessionContext.current) throw new Error('시작 기록을 찾지 못했어요.');
+      const id = await queueRun(sessionContext.current, value);
+      const run = await uploadPendingRun(user.uid, id);
+      if (mounted.current) setSavedRun(run);
       if (mounted.current) setComplete(true);
     } catch (e) {
       if (mounted.current) setError(socialError(e));
@@ -225,32 +220,8 @@ export function TogetherScreen({
   };
   const visibleMembers = members.filter(m => m.state !== 'left');
   if (result) {
-    if (complete)
-      return (
-        <RunCompleteScreen
-          distanceKm={result.distanceKm}
-          durationSec={result.durationSec}
-          avgPaceSec={calculateAveragePace(
-            result.durationSec,
-            result.distanceKm,
-          )}
-          calories={result.calories}
-          characterType={character.character_type}
-          petName={character.pet_name}
-          stageBeforeRun={character.stage}
-          stageAfterRun={character.stage}
-          totalKmBefore={user.total_km}
-          wasFrozen={false}
-          onViewRecord={() => {
-            setResult(null);
-            setComplete(false);
-          }}
-          onClose={() => {
-            setResult(null);
-            setComplete(false);
-          }}
-        />
-      );
+    if (complete && savedRun)
+      return <CompletedRunScreen run={savedRun} before={startSnapshot.current} character={character} onClose={() => {setResult(null);setComplete(false);setSavedRun(null);}}/>;
     return (
       <SafeAreaView style={styles.center}>
         <StatusBar
@@ -267,6 +238,7 @@ export function TogetherScreen({
               disabled={busy}
               onPress={() => save(result)}
             />
+            <Button label="기기에 보관하고 나가기" variant="ghost" onPress={onBack}/>
           </>
         )}
       </SafeAreaView>
@@ -275,10 +247,12 @@ export function TogetherScreen({
   if (running && room)
     return (
       <RunningScreen
+        context={sessionContext.current!}
         goalType="distance"
         goalValue={room.goal_km}
         characterType={character.character_type}
-        characterStage={character.stage}
+        characterStage={startSnapshot.current.stageBefore}
+        equipped={character.equipped}
         weightKg={user.weight_kg}
         onFinish={save}
         cancelMessage="그만두면 기록이 저장되지 않고 같이 달리기 방에서도 나가요."
@@ -431,7 +405,11 @@ export function TogetherScreen({
                   <Button
                     label="달리기 참여"
                     disabled={busy}
-                    onPress={() => setRunning(true)}
+                    onPress={() => {
+                      startSnapshot.current={stageBefore:character.stage,totalKmBefore:user.total_km,wasFrozen:user.is_frozen};
+                      sessionContext.current={uid:user.uid,sessionKey:`${user.uid}_${Date.now()}`,goal:{goalType:'distance',goalValue:room.goal_km},before:startSnapshot.current,weightKg:user.weight_kg,roomId:room.room_id};
+                      setRunning(true);
+                    }}
                   />
                 )}
                 <Button

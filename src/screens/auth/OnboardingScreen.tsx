@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
+import {colors, fonts} from '../../theme';
 import {completeOnboarding} from '../../services/user.service';
 import {pickStarterCharacter} from '../../services/character.service';
 import type {CharacterType} from '../../types/character.types';
@@ -27,8 +28,8 @@ type Props = {
 
 type Step = 1 | 2 | 3 | 4;
 
-const MINT = '#58CFA6';
-const TEXT = '#151515';
+const MINT = colors.primary;
+const TEXT = colors.text;
 const MUTED = '#808080';
 
 
@@ -133,7 +134,7 @@ export function OnboardingScreen({onBack, onDone}: Props) {
 
   return (
     <SafeAreaView style={styles.screen}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F6FEFF" />
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
       <View style={styles.softGlowTop} />
       <View style={styles.softGlowBottom} />
       <View style={styles.header}>
@@ -284,50 +285,50 @@ function parseOptionalNumber(value: string) {
 }
 
 const styles = StyleSheet.create({
-  screen: {flex: 1, backgroundColor: '#F6FEFF'},
+  screen: {flex: 1, backgroundColor: colors.background},
   softGlowTop: {position: 'absolute', left: -80, top: -80, width: 260, height: 260, borderRadius: 130, backgroundColor: 'rgba(174,232,225,0.35)'},
   softGlowBottom: {position: 'absolute', right: -100, bottom: -110, width: 280, height: 280, borderRadius: 140, backgroundColor: 'rgba(191,237,214,0.45)'},
   header: {flexDirection: 'row', alignItems: 'center', paddingHorizontal: 22, paddingTop: 12, minHeight: 62},
   backButton: {width: 36, height: 44, justifyContent: 'center'},
   backText: {color: TEXT, fontSize: 42, lineHeight: 42},
   progressWrap: {flex: 1},
-  progressTitle: {color: '#777777', fontSize: 13, fontWeight: '800', marginBottom: 8},
+  progressTitle: {color: '#777777', fontSize: 13, fontFamily: fonts.bold, marginBottom: 8},
   progressRow: {flexDirection: 'row', gap: 6},
   progressSegment: {flex: 1, height: 5, borderRadius: 3, backgroundColor: '#D8D8D8'},
   progressSegmentActive: {backgroundColor: MINT},
   stepScroll: {paddingHorizontal: 32, paddingTop: 46, paddingBottom: 34},
   stepContent: {flex: 1, paddingHorizontal: 32, paddingTop: 46, paddingBottom: 34},
-  stepTitle: {color: TEXT, fontSize: 28, fontWeight: '900', lineHeight: 38, marginBottom: 24},
+  stepTitle: {color: TEXT, fontSize: 28, fontFamily: fonts.extrabold, lineHeight: 38, marginBottom: 24},
   profileCircle: {alignSelf: 'center', width: 156, height: 156, borderRadius: 78, borderWidth: 1, borderColor: '#9BE2C6', backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', marginBottom: 24},
   profileCharacter: {width: 146, height: 146},
   cameraBadge: {position: 'absolute', right: -5, bottom: 8, width: 42, height: 42, borderRadius: 21, borderWidth: 2, borderColor: '#8CDBBF', backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center'},
-  cameraText: {color: MINT, fontSize: 18, fontWeight: '900'},
+  cameraText: {color: MINT, fontSize: 18, fontFamily: fonts.extrabold},
   inputGroup: {marginBottom: 16},
-  inputLabel: {color: '#222222', fontSize: 15, fontWeight: '900', marginBottom: 8},
+  inputLabel: {color: '#222222', fontSize: 15, fontFamily: fonts.extrabold, marginBottom: 8},
   inputWrap: {height: 50, borderWidth: 1, borderColor: '#DCDCDC', borderRadius: 9, backgroundColor: '#FFFFFF', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16},
-  input: {flex: 1, color: TEXT, fontSize: 16, fontWeight: '600', paddingVertical: 0},
-  inputSuffix: {color: '#666666', fontSize: 14, fontWeight: '900'},
+  input: {flex: 1, color: TEXT, fontSize: 16, fontFamily: fonts.medium, paddingVertical: 0},
+  inputSuffix: {color: '#666666', fontSize: 14, fontFamily: fonts.extrabold},
   segmentRow: {flexDirection: 'row', gap: 12, marginBottom: 18},
   segment: {flex: 1, height: 46, borderWidth: 1, borderColor: '#D8D8D8', borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF'},
-  segmentActive: {borderColor: MINT, backgroundColor: '#EFFFF7'},
-  segmentText: {color: '#4B4B4B', fontSize: 15, fontWeight: '800'},
-  segmentActiveText: {color: '#37AE86', fontSize: 15, fontWeight: '900'},
+  segmentActive: {borderColor: MINT, backgroundColor: colors.primarySoft},
+  segmentText: {color: '#4B4B4B', fontSize: 15, fontFamily: fonts.bold},
+  segmentActiveText: {color: colors.primaryInk, fontSize: 15, fontFamily: fonts.extrabold},
   eggImage: {alignSelf: 'center', marginBottom: 26},
   stepSpacer: {flex: 1},
   skipButton: {height: 58, borderRadius: 10, backgroundColor: 'rgba(88,207,166,0.12)', alignItems: 'center', justifyContent: 'center', marginTop: 14},
-  skipButtonText: {color: '#7CC8AC', fontSize: 18, fontWeight: '900'},
+  skipButtonText: {color: colors.primaryInk, fontSize: 18, fontFamily: fonts.extrabold},
   locationButton: {height: 56, borderWidth: 1, borderColor: MINT, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.68)', marginBottom: 20},
-  locationButtonText: {color: '#37AE86', fontSize: 17, fontWeight: '900'},
+  locationButtonText: {color: colors.primaryInk, fontSize: 17, fontFamily: fonts.extrabold},
   regionGrid: {flexDirection: 'row', flexWrap: 'wrap', gap: 10},
   regionChip: {width: '18%', minWidth: 58, height: 52, borderWidth: 1, borderColor: '#DFDFDF', borderRadius: 10, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center'},
   regionChipActive: {backgroundColor: MINT, borderColor: MINT},
-  regionText: {color: '#333333', fontSize: 15, fontWeight: '800'},
-  regionTextActive: {color: '#FFFFFF', fontWeight: '900'},
+  regionText: {color: '#333333', fontSize: 15, fontFamily: fonts.bold},
+  regionTextActive: {color: '#FFFFFF', fontFamily: fonts.extrabold},
   hatchContent: {flex: 1, paddingHorizontal: 32, paddingTop: 50, paddingBottom: 34},
-  hatchSubtitle: {color: MUTED, fontSize: 16, fontWeight: '700', marginTop: -12, marginBottom: 36},
+  hatchSubtitle: {color: MUTED, fontSize: 16, fontFamily: fonts.semibold, marginTop: -12, marginBottom: 36},
   hatchStage: {flex: 1, alignItems: 'center', justifyContent: 'center'},
-  errorText: {color: '#C95B5B', fontSize: 14, fontWeight: '800', lineHeight: 20, textAlign: 'center', marginBottom: 12},
-  wideButton: {height: 58, borderRadius: 10, backgroundColor: MINT, alignItems: 'center', justifyContent: 'center', shadowColor: MINT, shadowOpacity: 0.24, shadowRadius: 16, shadowOffset: {width: 0, height: 8}, elevation: 6},
+  errorText: {color: '#C95B5B', fontSize: 14, fontFamily: fonts.bold, lineHeight: 20, textAlign: 'center', marginBottom: 12},
+  wideButton: {height: 58, borderRadius: 18, backgroundColor: MINT, alignItems: 'center', justifyContent: 'center', shadowColor: MINT, shadowOpacity: 0.06, shadowRadius: 16, shadowOffset: {width: 0, height: 8}, elevation: 0},
   wideButtonDisabled: {opacity: 0.45},
-  wideButtonText: {color: '#FFFFFF', fontSize: 20, fontWeight: '900'},
+  wideButtonText: {color: '#FFFFFF', fontSize: 16, fontFamily: fonts.semibold},
 });

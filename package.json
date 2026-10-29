@@ -11,6 +11,7 @@
     "rive:build": "node scripts/rive/build-crawl-candidate.cjs --export-preview"
   },
   "dependencies": {
+    "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-native-community/geolocation": "^3.4.0",
     "@react-native-firebase/app": "^24.0.0",
     "@react-native-firebase/auth": "^24.0.0",

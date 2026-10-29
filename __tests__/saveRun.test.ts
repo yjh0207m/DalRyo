@@ -22,3 +22,15 @@ test('different running sessions remain distinct',async()=>{
   await saveRunRecord({...input,startedAt:new Date(input.startedAt.getTime()+1000)});
   expect(mockCreates).toBe(2);
 });
+test('an immediate finish is normalized and a mismatched account never creates a record',async()=>{
+  expect(await saveRunRecord({...input,durationSec:0})).toMatchObject({duration_sec:1});
+  await expect(saveRunRecord({...input,expectedUid:'other'})).rejects.toThrow('로그인');
+  expect(mockCreates).toBe(1);
+});
+test('park and course selection survive a lost save acknowledgement and retry',async()=>{
+  mockLostResponse=true;
+  const selected={...input,parkId:'park-one',courseId:'three'};
+  await saveRunRecord(selected);
+  expect(await saveRunRecord(selected)).toMatchObject({park_id:'park-one',course_id:'three',goal_type:'free'});
+  expect(mockCreates).toBe(1);
+});

@@ -1,7 +1,7 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {Animated, Image, StyleSheet, View} from 'react-native';
 import {Flash, ShardBurst, SparkleBurst, SunRays} from '../celebrate/Bursts';
-import type {CharacterStage, CharacterType} from '../../types/character.types';
+import type {CharacterStage, CharacterType, EquippedOutfit} from '../../types/character.types';
 import type {RevealMode} from '../../utils/reveal';
 import {CharacterView, useCharacterSource} from './CharacterView';
 
@@ -16,6 +16,7 @@ export type {RevealMode} from '../../utils/reveal';
 
 type Props = {
   mode: RevealMode;
+  equipped?: EquippedOutfit;
   type: CharacterType;
   stageBefore: CharacterStage;
   stageAfter: CharacterStage;
@@ -34,7 +35,7 @@ const FEET = 0.82;
 
 type Phase = 'before' | 'silhouette' | 'after';
 
-export function CharacterReveal({mode, type, stageBefore, stageAfter, size, onRevealed}: Props) {
+export function CharacterReveal({mode, type, stageBefore, stageAfter, size, onRevealed, equipped}: Props) {
   const [phase, setPhase] = useState<Phase>(mode === 'complete' ? 'after' : 'before');
   const [flashKey, setFlashKey] = useState(0);
   const [popKey, setPopKey] = useState(0);
@@ -135,10 +136,10 @@ export function CharacterReveal({mode, type, stageBefore, stageAfter, size, onRe
       )}
       {phase === 'before' && mode === 'thaw' && (
         <Animated.View style={{transform: [{translateX: shakeX}]}}>
-          <CharacterView type={type} stage={stageAfter} motion="stone" size={size} />
+          <CharacterView equipped={equipped} type={type} stage={stageAfter} motion="stone" size={size} />
         </Animated.View>
       )}
-      {phase === 'before' && mode === 'grow' && <CharacterView type={type} stage={stageBefore} motion="idle" size={size} />}
+      {phase === 'before' && mode === 'grow' && <CharacterView equipped={equipped} type={type} stage={stageBefore} motion="idle" size={size} />}
       {phase === 'silhouette' && <Silhouettes type={type} before={stageBefore} after={stageAfter} size={size} swap={swap} />}
 
       {/* 등장 후 */}
@@ -153,7 +154,7 @@ export function CharacterReveal({mode, type, stageBefore, stageAfter, size, onRe
             opacity: enter.interpolate({inputRange: [0, 0.3, 1], outputRange: [0, 1, 1]}),
           }}
         >
-          <CharacterView type={type} stage={stageAfter} motion="idle" size={size} jumpKey={popKey} grounded={mode !== 'hatch'} />
+          <CharacterView equipped={equipped} type={type} stage={stageAfter} motion="idle" size={size} jumpKey={popKey} grounded={mode !== 'hatch'} />
         </Animated.View>
       )}
       {phase === 'after' && mode === 'hatch' && (

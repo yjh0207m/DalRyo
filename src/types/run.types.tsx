@@ -23,7 +23,10 @@ export type RunDocument = {
   calories: number;
   route: GpsPoint[];
   park_id: string | null;
+  course_id?: string | null;
   exp_earned: number;
+  growth_applied?: boolean;
+  flagged?: boolean;
   created_at: FirebaseFirestoreTypes.Timestamp | FirebaseFirestoreTypes.FieldValue;
 };
 

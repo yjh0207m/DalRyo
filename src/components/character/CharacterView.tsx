@@ -12,7 +12,9 @@ import {
 } from 'react-native';
 import Svg, {Ellipse} from 'react-native-svg';
 import {colors} from '../../theme';
-import type {CharacterMotion, CharacterStage, CharacterType, OutfitSlot} from '../../types/character.types';
+import type {CharacterMotion, CharacterStage, CharacterType, OutfitSlot, EquippedOutfit} from '../../types/character.types';
+import {cleanEquipped} from '../../../functions/src/itemCatalog';
+import {OutfitDecoration} from './OutfitDecoration';
 import {bundledCharacterRive, bundledCharacterStepMs, resolveCharacterRiveUrl, resolveCharacterSource} from './characterAssets';
 import {CharacterEffects} from './CharacterEffects';
 import {RiveCharacter} from './RiveCharacter';
@@ -39,6 +41,7 @@ type Props = {
   // 달릴 때 땀방울·속도선 (작은 아바타에서는 자동으로 끈다)
   effects?: boolean;
   outfitLayers?: Partial<Record<OutfitSlot, ImageSourcePropType>>;
+  equipped?: EquippedOutfit;
   // 발밑 그림자. 캐릭터가 바닥에 서 있는 느낌을 준다 (작은 아바타에서는 끈다)
   grounded?: boolean;
   // 개발 화면에서만 미검수 동작 후보를 비교한다. 일반 화면에는 전달하지 않는다.
@@ -125,11 +128,13 @@ export function CharacterView({
   dust = false,
   effects = true,
   outfitLayers,
+  equipped,
   grounded = true,
   previewRiveSource,
   style,
 }: Props) {
   const source = useCharacterSource(type, stage);
+  const decoration = cleanEquipped(equipped);
   // 외부 의상 레이어는 PNG 경로에서 합성한다. 기본/돌 상태는 Rive 내부 재질을 쓴다.
   const pngOnly = Object.values(outfitLayers ?? {}).some(Boolean);
   const resolvedRiveSource = useRiveSource(type, stage, pngOnly);
@@ -219,6 +224,7 @@ export function CharacterView({
       {effects && size >= EFFECTS_MIN_SIZE && <CharacterEffects motion={motion} size={size} facing={facing} />}
       <Animated.View style={[box, {transformOrigin: [size / 2, size * FEET_RATIO, 0], transform: animated.body}]}>
         <View style={[box, flip]}>
+          <OutfitDecoration itemId={decoration.back} size={size} />
           {riveSource !== null && riveStage ? (
             // 옷은 Rive 파일 안의 교체 가능한 이미지(referenced asset)로 입힌다 — 규격 문서 참고
             <RiveCharacter key={riveKey} source={riveSource} stage={riveStage} motion={motion} jumpKey={jumpKey} style={box} onError={() => setFailedRiveKey(riveKey)} />
@@ -234,6 +240,7 @@ export function CharacterView({
               {motion === 'stone' && source && <Image source={source} resizeMode="contain" style={[layer, styles.stoneOverlay]} />}
             </>
           )}
+          <OutfitDecoration itemId={decoration.accessory} size={size} />
         </View>
       </Animated.View>
     </View>

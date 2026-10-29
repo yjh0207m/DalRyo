@@ -19,12 +19,15 @@ export type GpsFix = {
 const MAX_ACCURACY_M = 25;
 
 Geolocation.setRNConfiguration({
-  skipPermissionRequests: false,
+  // Permission is requested explicitly below; this also enables iOS's native
+  // background location flag once a user starts the watch.
+  skipPermissionRequests: true,
   authorizationLevel: 'whenInUse',
+  enableBackgroundLocationUpdates: true,
   locationProvider: 'auto',
 });
 
-async function requestLocationPermission() {
+export async function requestLocationPermission() {
   if (Platform.OS === 'android') {
     const result = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
     return result === PermissionsAndroid.RESULTS.GRANTED;

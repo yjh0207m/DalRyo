@@ -150,6 +150,84 @@ async function call(user, action, data = {}, name = 'socialAction') {
       await assert.rejects(roomCall(c,'join',{roomId:'room-three'}),{code:'PERMISSION_DENIED'});
       await roomCall(a,'leave',{roomId:'room-three'});
     });
+
+    const parkCall=(u,action,data={})=>call(u,action,data,'parkAction');
+    await env.withSecurityRulesDisabled(async ctx=>{
+      const db=ctx.firestore();
+      await setDoc(doc(db,'parks/qa-park'),{park_id:'qa-park',name:'Local QA park',lat:37.55,lng:126.95,address:''});
+      await setDoc(doc(db,'parks/other-park'),{park_id:'other-park',name:'Other QA park',lat:38,lng:127,address:''});
+      await setDoc(doc(db,'parks/qa-park/courses/three'),{name:'3km QA course',distance_km:3,route:[{lat:37.55,lng:126.95},{lat:37.56,lng:126.96}]});
+      await setDoc(doc(db,'parks/other-park/courses/foreign'),{distance_km:5,route:[]});
+      await setDoc(doc(db,'park_search_cache/37.55_126.95'),{parks:[{park_id:'qa-park',name:'Local QA park',lat:37.55,lng:126.95,address:''},{park_id:'far',name:'Far park',lat:39,lng:127,address:''}],updated_at:Timestamp.now()});
+    });
+    await test('nearby cache filters distance, real courses are returned, coordinates are validated',async()=>{
+      const response=await parkCall(a,'nearby',{lat:37.55,lng:126.95});
+      assert.deepEqual(response.parks.map(p=>p.park_id),['qa-park']);assert.equal(response.stale,false);
+      const courses=await parkCall(a,'courses',{parkId:'qa-park'});assert.equal(courses.courses[0].course_id,'three');assert.equal(courses.courses[0].route.length,2);
+      await assert.rejects(parkCall(a,'nearby',{lat:'37;out;',lng:126}),{code:'INVALID_ARGUMENT'});
+    });
+    await test('run references must point to an existing park and its own course',async()=>{
+      const client=env.authenticatedContext(a.uid).firestore();
+      const make=id=>({run_id:id,uid:a.uid,goal_type:'distance',goal_value:3,started_at:Timestamp.fromMillis(Date.now()-600000),ended_at:serverTimestamp(),created_at:serverTimestamp(),duration_sec:600,distance_km:1,avg_pace_sec:600,avg_speed_kmh:6,calories:60,route:[],exp_earned:0});
+      await assert.rejects(setDoc(doc(client,'runs/invalid-park'),{...make('invalid-park'),park_id:'missing'}));
+      await assert.rejects(setDoc(doc(client,'runs/wrong-course'),{...make('wrong-course'),park_id:'qa-park',course_id:'foreign'}));
+      await assert.rejects(setDoc(doc(client,'runs/orphan-course'),{...make('orphan-course'),course_id:'three'}));
+      await setDoc(doc(client,'runs/qa-park-run'),{...make('qa-park-run'),park_id:'qa-park',course_id:'three'});
+      await assert.rejects(setDoc(doc(client,'parks/qa-park/weeks/forged/runners/forged'),{distance_km:999}));
+    });
+    await test('weekly park distance is credited once and suspicious runs are excluded',async()=>{
+      const backendRequire=require('node:module').createRequire(require('node:path').resolve(__dirname,'../functions/package.json'));
+      const {initializeApp:getAdminApp}=backendRequire('firebase-admin/app');
+      const {getFirestore:getAdminDb}=backendRequire('firebase-admin/firestore');
+      const admin=getAdminDb(getAdminApp({projectId:project}));
+      const {onRunCreate}=require('../functions/lib/onRunCreate');
+      const snapshot=await admin.doc('runs/qa-park-run').get();
+      await Promise.all([onRunCreate.run({data:snapshot}),onRunCreate.run({data:snapshot})]);
+      const ranks=await parkCall(b,'rankings',{parkId:'qa-park'});
+      assert.equal(ranks.runners.length,1);assert.equal(ranks.runners[0].distance_km,1);assert.equal(ranks.runners[0].run_count,1);
+      const client=env.authenticatedContext(a.uid).firestore();
+      const id='qa-fast-run';await setDoc(doc(client,`runs/${id}`),{run_id:id,uid:a.uid,goal_type:'free',goal_value:null,started_at:Timestamp.fromMillis(Date.now()-600000),ended_at:serverTimestamp(),created_at:serverTimestamp(),duration_sec:600,distance_km:10,avg_pace_sec:60,avg_speed_kmh:60,calories:600,route:[],exp_earned:0,park_id:'qa-park'});
+      await onRunCreate.run({data:await admin.doc(`runs/${id}`).get()});
+      assert.equal((await parkCall(b,'rankings',{parkId:'qa-park'})).runners[0].distance_km,1);
+      assert.equal((await read(`runs/${id}`)).flagged,true);
+      await assert.rejects(getDoc(doc(env.authenticatedContext(b.uid).firestore(),'runs/qa-park-run')));
+    });
+
+    const items=(u,action,data={})=>call(u,action,data,'inventoryAction');
+    await test('starter grants retry once, ownership and equipment stay private and server-owned',async()=>{
+      const results=await Promise.all([items(b,'list'),items(b,'list')]);
+      assert.deepEqual(results[0].owned.sort(),['gold-stars','mint-glow']);
+      assert.equal(results[0].totalKm,0);
+      const acquired=(await read(`users/${b.uid}/inventory/mint-glow`)).acquired_at.toMillis();
+      await items(b,'list');
+      assert.equal((await read(`users/${b.uid}/inventory/mint-glow`)).acquired_at.toMillis(),acquired);
+      await assert.rejects(items(b,'equip',{itemId:'pink-petals',totalKm:999,uid:a.uid}),{code:'PERMISSION_DENIED'});
+      await assert.rejects(items(b,'equip',{itemId:'../gold-stars'}),{code:'INVALID_ARGUMENT'});
+      await assert.rejects(items(b,'unequip',{slot:'__proto__'}),{code:'INVALID_ARGUMENT'});
+      const client=env.authenticatedContext(b.uid).firestore();
+      await assert.rejects(setDoc(doc(client,`users/${b.uid}/inventory/pink-petals`),{item_id:'pink-petals'}));
+      await assert.rejects(updateDoc(doc(client,`users/${b.uid}/character/${b.uid}`),{equipped:{accessory:'pink-petals'}}));
+      await assert.rejects(getDoc(doc(env.authenticatedContext(c.uid).firestore(),`users/${b.uid}/inventory/mint-glow`)));
+    });
+    await test('equipping derives the correct slot, preserves other slots, and survives a fresh read',async()=>{
+      await Promise.all([items(b,'equip',{itemId:'gold-stars',slot:'top'}),items(b,'equip',{itemId:'mint-glow'})]);
+      assert.deepEqual((await items(b,'list')).equipped,{back:'mint-glow',accessory:'gold-stars'});
+      await items(b,'equip',{itemId:'gold-stars'});
+      const unlinked=await items(b,'unequip',{slot:'accessory'});
+      assert.deepEqual(unlinked.equipped,{back:'mint-glow'});
+      assert.deepEqual((await read(`users/${b.uid}/character/${b.uid}`)).equipped,{back:'mint-glow'});
+      assert.equal((await read(`users/${b.uid}/character/${b.uid}`)).exp,0);
+    });
+    await test('distance unlocks use authoritative mileage and replace only the matching slot',async()=>{
+      await env.withSecurityRulesDisabled(async ctx=>{await updateDoc(doc(ctx.firestore(),`users/${b.uid}`),{total_km:5});});
+      const state=await items(b,'list');assert.ok(state.owned.includes('peach-glow'));assert.ok(!state.owned.includes('pink-petals'));
+      await items(b,'equip',{itemId:'peach-glow'});assert.equal((await items(b,'list')).equipped.back,'peach-glow');
+      await assert.rejects(items(b,'equip',{itemId:'pink-petals'}),{code:'PERMISSION_DENIED'});
+      await env.withSecurityRulesDisabled(async ctx=>{await updateDoc(doc(ctx.firestore(),`users/${b.uid}`),{total_km:10});});
+      await items(b,'equip',{itemId:'pink-petals'});
+      assert.deepEqual((await items(b,'list')).equipped,{back:'peach-glow',accessory:'pink-petals'});
+    });
+
     console.log(`${passed} backend integration scenarios passed`);
   } finally {await env.cleanup();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

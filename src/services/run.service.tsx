@@ -13,6 +13,8 @@ export async function saveRunRecord({
   calories,
   route,
   parkId = null,
+  courseId = null,
+  expectedUid,
 }: {
   goalType: RunGoalType;
   goalValue: number | null;
@@ -23,12 +25,16 @@ export async function saveRunRecord({
   calories: number;
   route: GpsPoint[];
   parkId?: string | null;
+  courseId?: string | null;
+  expectedUid?: string;
 }) {
   const user = auth().currentUser;
 
-  if (!user) {
+  if (!user || (expectedUid !== undefined && user.uid !== expectedUid)) {
     throw new Error('달리기 기록을 저장하려면 로그인이 필요해요.');
   }
+  if (!Number.isFinite(durationSec) || !Number.isFinite(distanceKm) || distanceKm < 0 || !Number.isFinite(startedAt.getTime())) throw new Error('달리기 기록의 시간과 거리를 확인해 주세요.');
+  durationSec = Math.max(1, Math.round(durationSec));
 
   // A timed-out write may already have committed. Reuse the session identity.
   const runRef = db().collection('runs').doc(`${user.uid}_${startedAt.getTime()}`);
@@ -47,6 +53,7 @@ export async function saveRunRecord({
     calories,
     route,
     park_id: parkId,
+    ...(courseId ? {course_id: courseId} : {}),
     exp_earned: 0,
     created_at: firestore.FieldValue.serverTimestamp(),
   };
