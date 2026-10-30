@@ -1,5 +1,12 @@
+import {Platform} from 'react-native';
 import {auth, firestore, messaging} from '../lib/firebase';
 import type {AuthResult, PhoneConfirmation} from '../types/auth.types';
+
+// 테스트 단계에서는 Firebase 콘솔에 등록한 테스트 전화번호와 인증번호로만 로그인한다.
+// iOS는 인증 요청 전에 APNs 무음 푸시로 앱을 검증하고, 안 되면 reCAPTCHA 웹 화면을 띄운다(테스트 번호도 동일).
+// 사이드로딩 빌드는 푸시 권한이 없어 항상 reCAPTCHA로 가므로 테스트하는 동안 앱 검증을 건너뛴다.
+// 켜 두면 실제 전화번호로는 로그인할 수 없으니 실제 SMS를 테스트하거나 출시하기 전에 false로 바꾼다.
+const PHONE_AUTH_TEST_NUMBERS_ONLY = true;
 
 function normalizeKoreanPhoneNumber(phoneNumber: string) {
   const digits = phoneNumber.replace(/[^\d]/g, '');
@@ -17,6 +24,9 @@ function normalizeKoreanPhoneNumber(phoneNumber: string) {
 
 export async function requestPhoneVerification(phoneNumber: string): Promise<PhoneConfirmation> {
   const normalizedPhoneNumber = normalizeKoreanPhoneNumber(phoneNumber);
+  if (Platform.OS === 'ios') {
+    auth().settings.appVerificationDisabledForTesting = PHONE_AUTH_TEST_NUMBERS_ONLY;
+  }
   return auth().signInWithPhoneNumber(normalizedPhoneNumber);
 }
 
