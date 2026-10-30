@@ -45,6 +45,18 @@ setLogLevel('silent');
       await assertSucceeds(setDoc(doc(eve,'users/eve'),user('eve')));
       await assertFails(setDoc(doc(eve,'users/eve/character/eve'),{uid:'eve',stage:'egg',character_type:'goldpig',pet_name:'달료',exp:0,stat_stamina:0,stat_speed:0,stat_endurance:0,last_active_at:serverTimestamp(),created_at:serverTimestamp(),updated_at:serverTimestamp()}));
     });
+    await test('starter eggs allow rabbit and duck only; all shop animals are denied', async () => {
+      const source = fs.readFileSync('src/types/character.types.tsx', 'utf8').split('] as const;')[0];
+      const types = [...source.matchAll(/'([a-z]+)'/g)].map(match => match[1]);
+      for (const type of types) {
+        const uid = `starter-${type}`;
+        const db = env.authenticatedContext(uid).firestore();
+        const ref = doc(db, `users/${uid}/character/${uid}`);
+        const character = {uid,stage:'egg',character_type:type,pet_name:'달료',exp:0,stat_stamina:0,stat_speed:0,stat_endurance:0,last_active_at:serverTimestamp(),created_at:serverTimestamp(),updated_at:serverTimestamp()};
+        await (['rabbit','duck'].includes(type) ? assertSucceeds(setDoc(ref,character)) : assertFails(setDoc(ref,character)));
+      }
+      await assertFails(updateDoc(doc(alice,'users/alice/character/alice'),{character_type:'penguin'}));
+    });
     await test('post visibility requires authentication, authorship or an actual follow', async () => {
       await assertSucceeds(getDoc(doc(alice,'posts/public')));
       await assertFails(getDoc(doc(guest,'posts/public')));

@@ -9,7 +9,6 @@ export type Dialect = 'std' | 'seoul' | 'gyeonggi' | 'gangwon' | 'chung' | 'jeon
 export type OnboardingProfileInput = {
   displayName: string;
   petName: string;
-  birthDate: string;
   gender: Gender;
   website?: string | null;
   heightCm?: number | null;
