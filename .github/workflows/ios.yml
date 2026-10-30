@@ -86,7 +86,14 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             COMPILER_INDEX_STORE_ENABLE=NO \
-            build 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log"
+            build 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log" | xcbeautify --renderer github-actions
+
+      # 로그가 길어 오류가 묻히므로 실패 시 error 줄만 모아 보여 준다
+      - name: Summarize build errors
+        if: failure()
+        run: |
+          grep -n -E "error:|\*\* BUILD FAILED|fatal error|ld: " "$RUNNER_TEMP/xcodebuild.log" | head -50 || true
+          tail -n 40 "$RUNNER_TEMP/xcodebuild.log" || true
 
       - name: Package IPA
         run: |
