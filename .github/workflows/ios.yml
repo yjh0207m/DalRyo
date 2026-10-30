@@ -64,6 +64,35 @@ jobs:
             exit 1
           fi
 
+      # Firebase Auth(11+)는 verifyPhoneNumber 첫 줄에서 콜백 URL 스킴이 Info.plist에 있는지 검사하고, 없으면
+      # fatalError로 앱을 종료한다(APNs 여부와 무관). 검사하는 스킴은 CLIENT_ID가 있고 그 역순이 등록돼 있으면
+      # REVERSED_CLIENT_ID, 아니면 Encoded App ID(app- + GOOGLE_APP_ID의 ':'를 '-'로)다. 최근 plist에는
+      # REVERSED_CLIENT_ID가 없을 수 있어 항상 있는 Encoded App ID를 등록하고, REVERSED_CLIENT_ID는 있을 때만 더한다.
+      # 값은 Git에 없는 plist에서 읽으므로 빌드할 때 Info.plist에 넣는다
+      - name: Register Firebase Auth URL schemes
+        run: |
+          set -euo pipefail
+          PLIST=ios/DalRyoTemp/GoogleService-Info.plist
+          INFO=ios/DalRyoTemp/Info.plist
+          app_id=$(/usr/libexec/PlistBuddy -c 'Print :GOOGLE_APP_ID' "$PLIST") \
+            || { echo "::error::GoogleService-Info.plist has no GOOGLE_APP_ID"; exit 1; }
+          schemes=("app-${app_id//:/-}")
+          if reversed=$(/usr/libexec/PlistBuddy -c 'Print :REVERSED_CLIENT_ID' "$PLIST" 2>/dev/null); then
+            schemes+=("$reversed")
+          fi
+          /usr/libexec/PlistBuddy -c 'Delete :CFBundleURLTypes' "$INFO" 2>/dev/null || true
+          /usr/libexec/PlistBuddy \
+            -c 'Add :CFBundleURLTypes array' \
+            -c 'Add :CFBundleURLTypes:0 dict' \
+            -c 'Add :CFBundleURLTypes:0:CFBundleURLSchemes array' \
+            "$INFO"
+          for i in "${!schemes[@]}"; do
+            /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:0:CFBundleURLSchemes:$i string ${schemes[$i]}" "$INFO"
+          done
+          plutil -lint "$INFO"
+          # 값 자체는 로그에 남기지 않고 개수만 확인한다
+          echo "Registered ${#schemes[@]} URL scheme(s) for Firebase Auth"
+
       # Xcode 단계보다 먼저 JS 번들링 오류(import 누락, 에셋 확장자 등)를 확인한다
       - name: Verify JS bundle
         run: |
