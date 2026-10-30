@@ -32,6 +32,9 @@ jobs:
 
       - name: Install Pods
         working-directory: ios
+        env:
+          # Firebase Swift 팟이 정적 라이브러리로 통합되지 못하는 오류를 피하려고 정적 프레임워크로 링크한다
+          USE_FRAMEWORKS: static
         run: bundle exec pod install
 
       - name: Build Release (unsigned)
