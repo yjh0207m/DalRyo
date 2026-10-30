@@ -33,6 +33,7 @@ import type { RunGoalType } from '../../types/run.types';
 import { getMotion } from '../../utils/motion';
 import {
   calculateAveragePace,
+  calculateCurrentPace,
   formatDuration,
   formatPace,
 } from '../../utils/pace';
@@ -92,6 +93,10 @@ export function RunningScreen({
   }, [countdown, begin]);
 
   const paceSec = calculateAveragePace(session.elapsedSec, session.distanceKm);
+  const currentPaceSec =
+    session.phase === 'running' && session.gpsStatus === 'tracking'
+      ? calculateCurrentPace(session.speedKmh)
+      : 0;
   const progress = getGoalProgress(goalType, goalValue, session);
   const cheer = useCheer(
     Math.floor(session.distanceKm),
@@ -225,6 +230,12 @@ export function RunningScreen({
             label="시간"
             value={formatDuration(session.elapsedSec)}
             unit="분:초"
+          />
+          <View style={styles.divider} />
+          <Stat
+            label="현재 페이스"
+            value={currentPaceSec > 0 ? formatPace(currentPaceSec) : '—'}
+            unit="/km"
           />
           <View style={styles.divider} />
           <Stat
@@ -423,7 +434,13 @@ function Stat({
 }) {
   return (
     <View style={styles.stat}>
-      <AppText variant="label" color={colors.textMuted}>
+      <AppText
+        variant="label"
+        color={colors.textMuted}
+        style={styles.statLabel}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+      >
         {label}
       </AppText>
       <AppText style={styles.statNumber} numberOfLines={1} adjustsFontSizeToFit>
@@ -520,11 +537,18 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
   },
-  stat: { flex: 1, alignItems: 'center', gap: 5 },
+  stat: {
+    flex: 1,
+    minWidth: 0,
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 2,
+  },
+  statLabel: { fontSize: 11, lineHeight: 16, maxWidth: '100%' },
   statNumber: {
     fontFamily: fonts.bold,
-    fontSize: 23,
-    lineHeight: 30,
+    fontSize: 21,
+    lineHeight: 28,
     letterSpacing: -0.6,
     fontVariant: ['tabular-nums'],
     maxWidth: '100%',

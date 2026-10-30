@@ -1,6 +1,6 @@
 import firestore from '@react-native-firebase/firestore';
 import {firestore as db, storage} from '../lib/firebase';
-import {CHARACTER_TYPES, type CharacterDocument, type CharacterStage, type CharacterType} from '../types/character.types';
+import {STARTER_CHARACTER_TYPES, type CharacterDocument, type CharacterStage, type CharacterType, type StarterCharacterType} from '../types/character.types';
 
 const STORAGE_STAGE_SUFFIX: Record<Exclude<CharacterStage, 'egg'>, 'S' | 'M' | 'L'> = {
   baby: 'S',
@@ -8,11 +8,8 @@ const STORAGE_STAGE_SUFFIX: Record<Exclude<CharacterStage, 'egg'>, 'S' | 'M' | '
   runner: 'L',
 };
 
-// goldpig는 특별 캐릭터라 가입 시 지급 대상에서 제외
-const STARTER_TYPES = CHARACTER_TYPES.filter(type => type !== 'goldpig');
-
-export function pickStarterCharacter(): CharacterType {
-  return STARTER_TYPES[Math.floor(Math.random() * STARTER_TYPES.length)];
+export function pickStarterCharacter(): StarterCharacterType {
+  return STARTER_CHARACTER_TYPES[Math.floor(Math.random() * STARTER_CHARACTER_TYPES.length)];
 }
 
 // Firebase Storage 경로. egg 단계는 로컬 egg.png를 쓰므로 null
@@ -60,6 +57,9 @@ export function buildInitialCharacter({
   petName: string;
   characterType: CharacterType;
 }) {
+  if (!(STARTER_CHARACTER_TYPES as readonly CharacterType[]).includes(characterType)) {
+    throw new Error('기본 캐릭터는 토끼와 오리만 받을 수 있어요.');
+  }
   const now = firestore.FieldValue.serverTimestamp();
   const character: CharacterDocument = {
     uid,

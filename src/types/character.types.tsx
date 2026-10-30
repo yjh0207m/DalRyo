@@ -11,6 +11,13 @@ export const CHARACTER_TYPES = [
 
 export type CharacterType = (typeof CHARACTER_TYPES)[number];
 
+// 가입 선물은 두 종류만 지급한다. 나머지는 향후 상점 알 뽑기로 획득한다.
+export const STARTER_CHARACTER_TYPES = ['rabbit', 'duck'] as const satisfies readonly CharacterType[];
+export type StarterCharacterType = (typeof STARTER_CHARACTER_TYPES)[number];
+export const SHOP_CHARACTER_TYPES = CHARACTER_TYPES.filter(
+  type => !(STARTER_CHARACTER_TYPES as readonly CharacterType[]).includes(type),
+);
+
 // egg는 로컬 egg.png, baby/child/runner는 Storage의 {type}_S/M/L.png
 export type CharacterStage = 'egg' | 'baby' | 'child' | 'runner';
 

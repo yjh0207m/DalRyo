@@ -5,7 +5,8 @@ import { PostCard } from '../src/screens/community/CommunityScreen';
 import type { SocialPost } from '../src/services/social.service';
 const mockAction = jest.fn(),
   mockOpen = jest.fn(),
-  mockProfile = jest.fn();
+  mockProfile = jest.fn(),
+  mockComments = jest.fn();
 jest.mock('../src/services/social.service', () => ({
   myUid: () => 'me',
   socialRequest: (...args: unknown[]) => mockAction(...args),
@@ -27,7 +28,10 @@ jest.mock('../src/services/run.service', () => ({
 jest.mock('../src/services/chat.service', () => ({
   watchConversations: () => () => {},
 }));
-jest.mock('react-native-safe-area-context', () => ({ SafeAreaView: MockView }));
+jest.mock('react-native-safe-area-context', () => ({
+  SafeAreaView: MockView,
+  useSafeAreaInsets: () => ({ top: 0, bottom: 0 }),
+}));
 jest.mock(
   'lucide-react-native',
   () => new Proxy({}, { get: () => () => null }),
@@ -61,7 +65,12 @@ afterEach(async () => {
 async function render(value: SocialPost = post) {
   await act(async () => {
     tree = Renderer.create(
-      <PostCard post={value} onOpen={mockOpen} onProfile={mockProfile} />,
+      <PostCard
+        post={value}
+        onOpen={mockOpen}
+        onComments={mockComments}
+        onProfile={mockProfile}
+      />,
     );
   });
 }
@@ -86,7 +95,8 @@ test('the photo feed preserves real media and profile/comment navigation', async
   await press('러너 프로필');
   await press('댓글 보기');
   expect(mockProfile).toHaveBeenCalledTimes(1);
-  expect(mockOpen).toHaveBeenCalledTimes(1);
+  expect(mockComments).toHaveBeenCalledTimes(1);
+  expect(mockOpen).not.toHaveBeenCalled();
 });
 test('the reorganized action row keeps desired-state like and bookmark mutations', async () => {
   await render();

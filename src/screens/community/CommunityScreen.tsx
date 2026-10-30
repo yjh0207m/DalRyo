@@ -18,7 +18,6 @@ import {
   Bell,
   Footprints,
   MoreHorizontal,
-  Plus,
   Settings,
   Bookmark,
   ChevronLeft,
@@ -36,11 +35,11 @@ import {
 import { AppText, Button, Card, IconButton } from '../../components/ui';
 import { RunningShoeIcon } from '../../components/ui/RunningShoeIcon';
 import { ChatScreen } from './ChatScreen';
+import { CommentsSheet } from './CommentsSheet';
 import { hasUnread, watchConversations } from '../../services/chat.service';
 import { TAB_BAR_HEIGHT } from '../../navigation/BottomTabBar';
 import { colors, fonts, radius, spacing } from '../../theme';
 import { useSocialFeed } from '../../hooks/useSocialFeed';
-import { useComments } from '../../hooks/useComments';
 import { choosePhoto, uploadPhoto } from '../../services/media.service';
 import { fetchRecentRuns } from '../../services/run.service';
 import {
@@ -53,7 +52,6 @@ import {
   watchPostFlags,
   type FeedScope,
   type PublicProfile,
-  type SocialComment,
   type SocialPost,
 } from '../../services/social.service';
 import { formatDuration, formatPace } from '../../utils/pace';
@@ -84,6 +82,33 @@ const VISIBILITY = {
 };
 
 export function CommunityScreen(props: Props) {
+  const [comments, setComments] = useState<{
+    id: string;
+    onProfile: (uid: string) => void;
+  } | null>(null);
+  return (
+    <>
+      <CommunityContent
+        {...props}
+        onComments={(id, onProfile) => setComments({ id, onProfile })}
+      />
+      {comments && (
+        <CommentsSheet
+          key={comments.id}
+          postId={comments.id}
+          onClose={() => setComments(null)}
+          onProfile={comments.onProfile}
+        />
+      )}
+    </>
+  );
+}
+
+function CommunityContent(
+  props: Props & {
+    onComments: (id: string, onProfile: (uid: string) => void) => void;
+  },
+) {
   const [unreadChat, setUnreadChat] = useState(false);
   useEffect(
     () =>
@@ -103,13 +128,11 @@ export function CommunityScreen(props: Props) {
   }, [stack.length, onSubpageChange]);
   const feed = useSocialFeed(scope);
   const route = stack[stack.length - 1];
-  const authors = [
-    ...new Map(feed.posts.map(post => [post.uid, post])).values(),
-  ].slice(0, 8);
   const push = (next: Route) => setStack(old => [...old, next]);
   const back = () => setStack(old => (old.length > 1 ? old.slice(0, -1) : old));
   const showPost = (id: string) => push({ page: 'post', id });
   const showProfile = (uid: string) => push({ page: 'profile', uid });
+  const showComments = (id: string) => props.onComments(id, showProfile);
   const changed = () => {
     feed.refresh();
   };
@@ -131,6 +154,7 @@ export function CommunityScreen(props: Props) {
     return (
       <PostDetail
         id={route.id}
+        onComments={() => showComments(route.id)}
         onBack={back}
         onProfile={showProfile}
         onEdit={post => push({ page: 'compose', post })}
@@ -147,6 +171,7 @@ export function CommunityScreen(props: Props) {
         onBack={back}
         onPost={showPost}
         onTogether={props.onTogetherPress}
+        onComments={showComments}
         onMessage={uid => push({ page: 'chat', peer: uid })}
       />
     );
@@ -160,7 +185,12 @@ export function CommunityScreen(props: Props) {
     );
   if (route.page === 'saved')
     return (
-      <SavedPage onBack={back} onPost={showPost} onProfile={showProfile} />
+      <SavedPage
+        onBack={back}
+        onPost={showPost}
+        onProfile={showProfile}
+        onComments={showComments}
+      />
     );
   return (
     <Page title="커뮤니티" feed>
@@ -168,37 +198,37 @@ export function CommunityScreen(props: Props) {
         <View>
           <AppText style={styles.feedWordmark}>달료 클럽</AppText>
           <AppText style={styles.feedEyebrow} color={colors.primaryInk}>
-            YOUR DAILY RUN, SHARED.
+            함께 달리는 이야기
           </AppText>
         </View>
         <View style={styles.headerActions}>
           <IconButton
             icon={Search}
-            size={40}
-            variant="plain"
+            size={36}
+            variant="surface"
             accessibilityLabel="러너 검색"
             onPress={() => push({ page: 'search' })}
           />
           <IconButton
             icon={MessageSquare}
             dot={unreadChat}
-            size={40}
-            variant="plain"
+            size={36}
+            variant="surface"
             accessibilityLabel="메시지"
             onPress={() => push({ page: 'chat' })}
           />
           <IconButton
             icon={Bell}
-            size={40}
-            variant="plain"
+            size={36}
+            variant="surface"
             dot={props.hasUnread}
             accessibilityLabel="알림"
             onPress={props.onNotificationPress}
           />
           <IconButton
             icon={Settings}
-            size={40}
-            variant="plain"
+            size={36}
+            variant="surface"
             accessibilityLabel="설정"
             onPress={props.onSettingsPress}
           />
@@ -221,6 +251,7 @@ export function CommunityScreen(props: Props) {
         ))}
       </View>
       <ScrollView
+        style={styles.feedCanvas}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.feedContent}
         refreshControl={
@@ -231,45 +262,6 @@ export function CommunityScreen(props: Props) {
           />
         }
       >
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.runnersRow}
-        >
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="내 러닝 이야기 작성"
-            onPress={() => push({ page: 'compose' })}
-            style={styles.runner}
-          >
-            <View style={styles.addRunner}>
-              <Plus color={colors.primaryInk} size={25} />
-            </View>
-            <AppText variant="label" color={colors.textMuted}>
-              내 러닝 공유
-            </AppText>
-          </Pressable>
-          {authors.map(author => (
-            <Pressable
-              key={author.uid}
-              accessibilityRole="button"
-              accessibilityLabel={`${author.author_name} 프로필`}
-              onPress={() => showProfile(author.uid)}
-              style={styles.runner}
-            >
-              <View style={styles.runnerRing}>
-                <Avatar uri={author.author_image} size={54} />
-              </View>
-              <AppText
-                variant="label"
-                numberOfLines={1}
-                style={styles.runnerName}
-              >
-                {author.author_name}
-              </AppText>
-            </Pressable>
-          ))}
-        </ScrollView>
         <View style={styles.discoveryRow}>
           {props.onTogetherPress && (
             <Pressable
@@ -301,6 +293,31 @@ export function CommunityScreen(props: Props) {
             <AppText variant="label">저장함</AppText>
           </Pressable>
         </View>
+        <View style={styles.feedSectionHeading}>
+          <View style={styles.grow}>
+            <AppText variant="heading">
+              {scope === 'mine'
+                ? '나의 러닝 이야기'
+                : scope === 'following'
+                ? '팔로잉의 이야기'
+                : '러닝 이야기'}
+            </AppText>
+            <AppText variant="label" color={colors.textMuted}>
+              각자의 속도, 함께 나누는 한 걸음
+            </AppText>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="글쓰기"
+            onPress={() => push({ page: 'compose' })}
+            style={styles.writeButton}
+          >
+            <Pencil size={16} color={colors.primaryInk} />
+            <AppText variant="label" color={colors.primaryInk}>
+              글쓰기
+            </AppText>
+          </Pressable>
+        </View>
         {feed.status === 'loading' ? (
           <Loading />
         ) : feed.status === 'error' ? (
@@ -323,6 +340,7 @@ export function CommunityScreen(props: Props) {
             <PostCard
               key={post.post_id}
               post={post}
+              onComments={() => showComments(post.post_id)}
               onOpen={() => showPost(post.post_id)}
               onProfile={() => showProfile(post.uid)}
             />
@@ -469,6 +487,7 @@ function errorAlert(error: unknown) {
 export function PostCard({
   post,
   onOpen,
+  onComments,
   onProfile,
   onEdit,
   onDeleted,
@@ -476,6 +495,7 @@ export function PostCard({
 }: {
   post: SocialPost;
   onOpen: () => void;
+  onComments: () => void;
   onProfile: () => void;
   onEdit?: () => void;
   onDeleted?: () => void;
@@ -560,7 +580,9 @@ export function PostCard({
               {post.author_name}
             </AppText>
             <AppText variant="label" color={colors.textMuted}>
-              {post.run_id ? '오늘의 러닝 기록' : VISIBILITY[post.visibility]}
+              {post.run_id
+                ? '함께 나눈 러닝 기록'
+                : VISIBILITY[post.visibility]}
             </AppText>
           </View>
         </Pressable>
@@ -664,7 +686,7 @@ export function PostCard({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="댓글 보기"
-          onPress={onOpen}
+          onPress={onComments}
           style={styles.socialIcon}
         >
           <MessageCircle size={25} color={colors.text} strokeWidth={1.8} />
@@ -716,7 +738,11 @@ export function PostCard({
             </AppText>
           </Pressable>
         )}
-        <Pressable accessibilityRole="button" onPress={onOpen}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="댓글 모두 보기"
+          onPress={onComments}
+        >
           <AppText variant="caption" color={colors.textMuted}>
             {post.comment_count > 0
               ? `댓글 ${post.comment_count}개 모두 보기`
@@ -967,12 +993,14 @@ function PostDetail({
   id,
   onBack,
   onProfile,
+  onComments,
   onEdit,
   onDeleted,
 }: {
   id: string;
   onBack: () => void;
   onProfile: (uid: string) => void;
+  onComments: () => void;
   onEdit: (post: SocialPost) => void;
   onDeleted: () => void;
 }) {
@@ -980,67 +1008,21 @@ function PostDetail({
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>(
     'loading',
   );
-  const [body, setBody] = useState('');
-  const [reply, setReply] = useState<SocialComment | null>(null);
-  const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(0);
-  const commentFeed = useComments(id, revision);
-  const { comments } = commentFeed;
-  const commentId = useRef(newSocialId());
-  const detailScroll = useRef<ScrollView>(null);
-  const commentTop = useRef(0);
   useEffect(() => {
     setStatus('loading');
-    const stop = watchPost(
+    return watchPost(
       id,
-      p => {
-        setPost(p);
+      value => {
+        setPost(value);
         setStatus('success');
       },
       () => setStatus('error'),
     );
-    return stop;
   }, [id, revision]);
-  const send = async () => {
-    if (busy || !body.trim()) return;
-    setBusy(true);
-    try {
-      await socialRequest('comment', {
-        postId: id,
-        commentId: commentId.current,
-        text: body.trim(),
-        parentId: reply?.comment_id ?? null,
-      });
-      setBody('');
-      setReply(null);
-      commentId.current = newSocialId();
-    } catch (error) {
-      errorAlert(error);
-    } finally {
-      setBusy(false);
-    }
-  };
-  const remove = (comment: SocialComment) =>
-    Alert.alert('댓글을 삭제할까요?', '답글이 있으면 삭제 표시가 남아요.', [
-      { text: '취소', style: 'cancel' },
-      {
-        text: '삭제',
-        style: 'destructive',
-        onPress: () => {
-          socialRequest('deleteComment', {
-            postId: id,
-            commentId: comment.comment_id,
-          }).catch(errorAlert);
-        },
-      },
-    ]);
   return (
     <Page title="게시물" onBack={onBack}>
-      <ScrollView
-        ref={detailScroll}
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={styles.content}
-      >
+      <ScrollView contentContainerStyle={styles.content}>
         {status === 'loading' ? (
           <Loading />
         ) : status === 'error' ? (
@@ -1051,126 +1033,15 @@ function PostDetail({
             detail="삭제됐거나 공개 범위가 변경됐을 수 있어요."
           />
         ) : (
-          <>
-            <PostCard
-              post={post}
-              detail
-              onOpen={() =>
-                detailScroll.current?.scrollTo({
-                  y: commentTop.current,
-                  animated: true,
-                })
-              }
-              onProfile={() => onProfile(post.uid)}
-              onEdit={() => onEdit(post)}
-              onDeleted={onDeleted}
-            />
-            <View
-              onLayout={event => {
-                commentTop.current = event.nativeEvent.layout.y;
-              }}
-            >
-              <AppText variant="subheading">댓글 {post.comment_count}</AppText>
-            </View>
-            {commentFeed.status === 'loading' ? (
-              <Loading />
-            ) : commentFeed.status === 'error' ? (
-              <Failure retry={() => setRevision(v => v + 1)} />
-            ) : comments.length === 0 ? (
-              <AppText color={colors.textMuted}>
-                첫 응원을 댓글로 남겨 보세요.
-              </AppText>
-            ) : (
-              comments.map(comment => (
-                <View
-                  key={comment.comment_id}
-                  style={[styles.comment, comment.parent_id && styles.reply]}
-                >
-                  <View style={styles.authorRow}>
-                    <Pressable
-                      onPress={() => onProfile(comment.uid)}
-                      disabled={comment.deleted}
-                      style={styles.author}
-                    >
-                      <Avatar uri={comment.author_image} size={30} />
-                      <AppText variant="caption">
-                        {comment.deleted ? '삭제된 댓글' : comment.author_name}
-                      </AppText>
-                    </Pressable>
-                    {!comment.deleted &&
-                      (comment.uid === myUid() || post.uid === myUid()) && (
-                        <IconButton
-                          icon={Trash2}
-                          variant="plain"
-                          accessibilityLabel="댓글 삭제"
-                          onPress={() => remove(comment)}
-                        />
-                      )}
-                  </View>
-                  <AppText
-                    color={comment.deleted ? colors.textSubtle : colors.text}
-                  >
-                    {comment.deleted
-                      ? '삭제된 댓글입니다.'
-                      : `${comment.parent_id ? '↳ ' : ''}${comment.text}`}
-                  </AppText>
-                  {!comment.deleted && (
-                    <Pressable
-                      accessibilityRole="button"
-                      onPress={() => setReply(comment)}
-                    >
-                      <AppText variant="label" color={colors.primaryInk}>
-                        답글 쓰기
-                      </AppText>
-                    </Pressable>
-                  )}
-                </View>
-              ))
-            )}
-            {commentFeed.more && (
-              <Button
-                size="md"
-                variant="secondary"
-                disabled={commentFeed.pending}
-                label={
-                  commentFeed.pending
-                    ? '불러오는 중…'
-                    : commentFeed.error
-                    ? '이전 댓글 다시 불러오기'
-                    : '이전 댓글 더 보기'
-                }
-                onPress={commentFeed.loadMore}
-              />
-            )}
-            {reply && (
-              <View style={styles.authorRow}>
-                <AppText variant="caption">
-                  {reply.author_name}님에게 답글
-                </AppText>
-                <IconButton
-                  icon={X}
-                  variant="plain"
-                  accessibilityLabel="답글 취소"
-                  onPress={() => setReply(null)}
-                />
-              </View>
-            )}
-            <Field
-              accessibilityLabel="댓글 내용"
-              placeholder="응원의 한마디"
-              value={body}
-              onChangeText={setBody}
-              maxLength={1000}
-              multiline
-              editable={!busy}
-            />
-            <Button
-              label={busy ? '보내는 중…' : '댓글 남기기'}
-              size="md"
-              disabled={busy || !body.trim()}
-              onPress={send}
-            />
-          </>
+          <PostCard
+            post={post}
+            detail
+            onOpen={() => {}}
+            onComments={onComments}
+            onProfile={() => onProfile(post.uid)}
+            onEdit={() => onEdit(post)}
+            onDeleted={onDeleted}
+          />
         )}
       </ScrollView>
     </Page>
@@ -1277,6 +1148,7 @@ function ProfilePage({
   onBack,
   onPost,
   onTogether,
+  onComments,
   onMessage,
 }: {
   uid: string;
@@ -1284,6 +1156,7 @@ function ProfilePage({
   onPost: (id: string) => void;
   onTogether?: (friendUid: string) => void;
   onMessage: (uid: string) => void;
+  onComments: (id: string) => void;
 }) {
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [following, setFollowing] = useState(false);
@@ -1394,6 +1267,7 @@ function ProfilePage({
                   <PostCard
                     key={post.post_id}
                     post={post}
+                    onComments={() => onComments(post.post_id)}
                     onOpen={() => onPost(post.post_id)}
                     onProfile={() => {}}
                   />
@@ -1410,10 +1284,12 @@ function SavedPage({
   onBack,
   onPost,
   onProfile,
+  onComments,
 }: {
   onBack: () => void;
   onPost: (id: string) => void;
   onProfile: (uid: string) => void;
+  onComments: (id: string) => void;
 }) {
   const [posts, setPosts] = useState<SocialPost[]>([]);
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>(
@@ -1454,6 +1330,7 @@ function SavedPage({
             <PostCard
               key={post.post_id}
               post={post}
+              onComments={() => onComments(post.post_id)}
               onOpen={() => onPost(post.post_id)}
               onProfile={() => onProfile(post.uid)}
             />
@@ -1473,7 +1350,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   content: { padding: spacing.xl, paddingBottom: 60, gap: spacing.md },
+  feedCanvas: { backgroundColor: colors.background },
   feedContent: { paddingBottom: TAB_BAR_HEIGHT + 40 },
+  feedSectionHeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingTop: 6,
+    paddingBottom: 16,
+  },
+  writeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 13,
+    minHeight: 38,
+    borderRadius: 14,
+    backgroundColor: colors.primarySoft,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.primaryBorder,
+  },
   toolbar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1503,13 +1400,18 @@ const styles = StyleSheet.create({
   section: { marginVertical: spacing.md },
   tabs: {
     flexDirection: 'row',
-    paddingHorizontal: 20,
-    gap: 26,
+    paddingHorizontal: 16,
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    gap: 20,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
   tab: {
-    paddingVertical: 13,
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 16,
     borderBottomWidth: 2,
     borderBottomColor: 'transparent',
   },
@@ -1531,19 +1433,28 @@ const styles = StyleSheet.create({
   },
   post: {
     backgroundColor: colors.surface,
-    marginBottom: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
+    marginHorizontal: 16,
+    marginBottom: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    borderRadius: 24,
+    overflow: 'hidden',
     paddingBottom: 18,
   },
-  detailPost: { borderRadius: radius.lg, overflow: 'hidden' },
-  feedScreen: { backgroundColor: colors.surface },
+  detailPost: {
+    marginHorizontal: 0,
+    marginBottom: 0,
+    borderRadius: radius.lg,
+    overflow: 'hidden',
+  },
+  feedScreen: { backgroundColor: colors.sky },
   feedHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 20,
     gap: 8,
   },
   feedWordmark: {
@@ -1554,42 +1465,17 @@ const styles = StyleSheet.create({
   },
   feedEyebrow: {
     fontFamily: fonts.semibold,
-    fontSize: 8,
-    lineHeight: 12,
-    letterSpacing: 1.1,
+    fontSize: 11,
+    lineHeight: 17,
+    marginTop: 4,
   },
-  headerActions: { flexDirection: 'row', gap: 0 },
-  runnersRow: {
-    paddingHorizontal: 18,
-    paddingTop: 16,
-    paddingBottom: 12,
-    gap: 18,
-  },
-  runner: { alignItems: 'center', gap: 7, width: 66 },
-  runnerRing: {
-    width: 62,
-    height: 62,
-    borderRadius: 31,
-    padding: 3,
-    borderWidth: 1.5,
-    borderColor: colors.primaryBorder,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  runnerName: { maxWidth: 66, fontSize: 10 },
-  addRunner: {
-    width: 62,
-    height: 62,
-    borderRadius: 31,
-    backgroundColor: colors.primarySoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  headerActions: { flexDirection: 'row', gap: 4 },
   discoveryRow: {
     flexDirection: 'row',
-    paddingHorizontal: 16,
+    padding: 16,
     gap: 8,
-    paddingBottom: 14,
+    backgroundColor: colors.surface,
+    marginBottom: 22,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
@@ -1598,8 +1484,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 5,
-    paddingHorizontal: 10,
-    minHeight: 34,
+    flex: 1,
+    paddingHorizontal: 8,
+    minHeight: 40,
     borderRadius: 12,
     backgroundColor: colors.surfaceMuted,
   },
@@ -1607,7 +1494,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 14,
     gap: 8,
   },
   feedPhoto: { width: '100%', aspectRatio: 1 },

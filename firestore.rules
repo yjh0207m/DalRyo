@@ -40,7 +40,7 @@ service cloud.firestore {
       return d.keys().hasAll(['uid','stage','character_type','pet_name','exp','stat_stamina','stat_speed','stat_endurance','last_active_at','created_at','updated_at'])
         && d.keys().hasOnly(['uid','stage','character_type','pet_name','exp','stat_stamina','stat_speed','stat_endurance','last_active_at','created_at','updated_at'])
         && d.uid is string && validName(d.pet_name) && d.stage == 'egg'
-        && d.character_type in ['bear','capybara','cat','cheetah','chick','chicken','cow','crocodile','deer','dog','duck','eagle','elephant','fox','frog','giraffe','gorilla','hamster','hippo','horse','koala','lion','monkey','ostrich','otter','penguin','pig','platypus','quokka','rabbit','raccoon','sheep','sparrow','squirrel','tiger','zebra']
+        && d.character_type in ['rabbit','duck']
         && d.exp == 0 && d.stat_stamina == 0 && d.stat_speed == 0 && d.stat_endurance == 0
         && d.last_active_at is timestamp && d.created_at is timestamp && d.updated_at is timestamp;
     }
