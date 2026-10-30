@@ -2,22 +2,26 @@ name: iOS unsigned build
 
 on:
   workflow_dispatch:
+    inputs:
+      scheme:
+        description: '빌드할 스킴. 오류 재현용으로 RNFBStorage처럼 팟 하나만 빠르게 빌드할 수 있다'
+        default: DalRyoTemp
 
 concurrency:
   group: ios-build-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  # Firebase Swift 팟이 정적 라이브러리로 통합되지 못하는 오류를 피하려고 정적 프레임워크로 링크한다
-  USE_FRAMEWORKS: static
-  # RN 0.85에서 검증된 Xcode. macos-latest는 Xcode/SDK가 갑자기 바뀌므로 러너와 함께 고정한다
+  # Firebase 12.10(RNFirebase 24 고정 버전)은 Xcode 16.2+를 요구하고, Xcode 26.4(Swift 6.3) Release 빌드의
+  # Auth/Functions 크래시는 12.12~12.13에서야 고쳐졌다. macos-latest는 Xcode가 갑자기 바뀌므로 러너와 함께 고정한다
   XCODE_VERSION: '16.4'
   BUNDLE_ID: com.dalryo.app
 
 jobs:
   build:
     runs-on: macos-15
-    timeout-minutes: 90
+    # Podfile에서 React Native 코어를 소스 빌드하므로 사전 빌드 때보다 오래 걸린다
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
@@ -26,6 +30,7 @@ jobs:
           sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
           xcodebuild -version
           xcrun --sdk iphoneos --show-sdk-version
+          df -h /
 
       - uses: actions/setup-node@v4
         with:
@@ -72,12 +77,39 @@ jobs:
         working-directory: ios
         run: bundle exec pod install --repo-update
 
+      # 사전 빌드 React 코어가 다시 켜지면 RNFirebase 모듈 컴파일이 실패하므로 xcodebuild 전에 막는다
+      - name: Verify React Native is built from source
+        working-directory: ios
+        run: |
+          if grep -E "React-Core-prebuilt|ReactNativeDependencies" Podfile.lock; then
+            echo "::error::Prebuilt React Native core/dependencies are enabled. Check RCT_USE_PREBUILT_RNCORE / RCT_USE_RN_DEP in ios/Podfile"
+            exit 1
+          fi
+
+      # Hermes 팟은 Debug 바이너리로 설치되고 Release 빌드 도중 폴더를 지우고 다시 푼다.
+      # 이 교체가 다른 팟 컴파일과 겹치지 않도록 xcodebuild 전에 같은 스크립트로 미리 교체해 둔다
+      - name: Switch Hermes to Release
+        working-directory: ios/Pods
+        run: |
+          set -eo pipefail
+          shopt -s nullglob
+          tarballs=(hermes-engine-artifacts/hermes-ios-*-release.tar.gz)
+          if [ ${#tarballs[@]} -ne 1 ]; then
+            echo "::warning::Release Hermes tarball not found (${#tarballs[@]}); the Xcode build phase will switch it"
+            exit 0
+          fi
+          version=$(basename "${tarballs[0]}" | sed -E 's/^hermes-ios-(.+)-release\.tar\.gz$/\1/')
+          node "$GITHUB_WORKSPACE/node_modules/react-native/sdks/hermes-engine/utils/replace_hermes_version.js" \
+            -c Release -r "$version" -p "$PWD"
+          test -d hermes-engine/destroot/Library/Frameworks/universal/hermesvm.xcframework \
+            || { echo "::error::Hermes Release switch failed"; exit 1; }
+
       - name: Build Release (unsigned)
         run: |
           set -o pipefail
           xcodebuild \
             -workspace ios/DalRyoTemp.xcworkspace \
-            -scheme DalRyoTemp \
+            -scheme "${{ inputs.scheme || 'DalRyoTemp' }}" \
             -configuration Release \
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
@@ -92,10 +124,18 @@ jobs:
       - name: Summarize build errors
         if: failure()
         run: |
-          grep -n -E "error:|\*\* BUILD FAILED|fatal error|ld: " "$RUNNER_TEMP/xcodebuild.log" | head -50 || true
+          LOG="$RUNNER_TEMP/xcodebuild.log"
+          first=$(grep -n -m1 -E "error:" "$LOG" | cut -d: -f1 || true)
+          if [ -n "$first" ]; then
+            echo "=== 첫 오류 앞뒤 (line $first) ==="
+            sed -n "$((first > 60 ? first - 60 : 1)),$((first + 5))p" "$LOG"
+          fi
+          echo "=== error 줄 목록 ==="
+          grep -n -E "error:|\*\* BUILD FAILED|fatal error|ld: " "$LOG" | head -50 || true
           tail -n 40 "$RUNNER_TEMP/xcodebuild.log" || true
 
       - name: Package IPA
+        if: ${{ (inputs.scheme || 'DalRyoTemp') == 'DalRyoTemp' }}
         run: |
           set -euo pipefail
           APP=build/Build/Products/Release-iphoneos/DalRyoTemp.app
@@ -106,6 +146,7 @@ jobs:
           zip -qry DalRyoTemp-unsigned.ipa Payload
 
       - uses: actions/upload-artifact@v4
+        if: ${{ (inputs.scheme || 'DalRyoTemp') == 'DalRyoTemp' }}
         with:
           name: DalRyoTemp-unsigned-ipa
           path: DalRyoTemp-unsigned.ipa

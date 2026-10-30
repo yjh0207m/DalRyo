@@ -1,3 +1,13 @@
+# Firebase iOS SDK의 Swift 팟 때문에 RNFirebase는 정적 프레임워크 링크가 필요하다.
+# CI와 로컬 어디서 pod install 해도 같은 결과가 나오도록 환경 변수에 맡기지 않고 여기서 고정한다.
+ENV['USE_FRAMEWORKS'] = 'static'
+
+# RN 0.84+는 미리 빌드된 React 코어(React.xcframework)를 기본으로 쓴다. 이 모드에서는 React 헤더가
+# 모듈이 아닌 형태로 노출되어, 정적 프레임워크로 빌드되는 RNFirebase 24 모듈이 RCTBridgeModule 등을
+# 찾지 못한다(invertase/react-native-firebase#8883). React Native 코어와 의존성을 소스에서 빌드한다.
+ENV['RCT_USE_PREBUILT_RNCORE'] = '0'
+ENV['RCT_USE_RN_DEP'] = '0'
+
 # Resolve react_native_pods.rb with node to allow for hoisting
 require Pod::Executable.execute_command('node', ['-p',
   'require.resolve(
@@ -33,17 +43,5 @@ target 'DalRyoTemp' do
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
-
-    installer.pods_project.targets.each do |target|
-      target.build_configurations.each do |bc|
-        # 정적 프레임워크 모듈(RNFirebase 등)이 비모듈 헤더를 포함해도 오류가 되지 않게 한다
-        bc.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
-        # 오래된 배포 타깃(9.0 등)을 가진 팟이 최신 Xcode에서 경고/오류를 내지 않도록 앱 최소 버전에 맞춘다
-        current = bc.build_settings['IPHONEOS_DEPLOYMENT_TARGET']
-        if current.nil? || Gem::Version.new(current) < Gem::Version.new(min_ios_version_supported)
-          bc.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = min_ios_version_supported
-        end
-      end
-    end
   end
 end
