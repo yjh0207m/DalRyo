@@ -3,21 +3,42 @@ name: iOS unsigned build
 on:
   workflow_dispatch:
 
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Firebase Swift 팟이 정적 라이브러리로 통합되지 못하는 오류를 피하려고 정적 프레임워크로 링크한다
+  USE_FRAMEWORKS: static
+  # RN 0.85에서 검증된 Xcode. macos-latest는 Xcode/SDK가 갑자기 바뀌므로 러너와 함께 고정한다
+  XCODE_VERSION: '16.4'
+  BUNDLE_ID: com.dalryo.app
+
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: macos-15
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
 
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
 
+      # Gemfile.lock이 Git에 없으므로 bundler-cache 대신 직접 설치한다
       - uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.3'
-          bundler-cache: true
+
+      - name: Install Ruby gems
+        run: bundle install --jobs 4 --retry 3
 
       - name: Install JS dependencies
         run: npm ci
@@ -27,37 +48,71 @@ jobs:
         env:
           PLIST_BASE64: ${{ secrets.IOS_GOOGLE_SERVICE_INFO_PLIST_BASE64 }}
         run: |
-          test -n "$PLIST_BASE64" || { echo "Secret IOS_GOOGLE_SERVICE_INFO_PLIST_BASE64 is empty"; exit 1; }
-          echo "$PLIST_BASE64" | base64 --decode > ios/DalRyoTemp/GoogleService-Info.plist
+          set -euo pipefail
+          test -n "$PLIST_BASE64" || { echo "::error::Secret IOS_GOOGLE_SERVICE_INFO_PLIST_BASE64 is empty"; exit 1; }
+          PLIST=ios/DalRyoTemp/GoogleService-Info.plist
+          printf '%s' "$PLIST_BASE64" | tr -d '[:space:]' | base64 --decode > "$PLIST"
+          plutil -lint "$PLIST" || { echo "::error::Secret is not a valid plist (base64 of the whole file is required)"; exit 1; }
+          actual=$(/usr/libexec/PlistBuddy -c 'Print :BUNDLE_ID' "$PLIST")
+          if [ "$actual" != "$BUNDLE_ID" ]; then
+            echo "::error::plist BUNDLE_ID ($actual) != $BUNDLE_ID. Use the iOS app's GoogleService-Info.plist registered for $BUNDLE_ID"
+            exit 1
+          fi
+
+      # Xcode 단계보다 먼저 JS 번들링 오류(import 누락, 에셋 확장자 등)를 확인한다
+      - name: Verify JS bundle
+        run: |
+          mkdir -p "$RUNNER_TEMP/jsbundle"
+          npx react-native bundle \
+            --platform ios --dev false --entry-file index.js \
+            --bundle-output "$RUNNER_TEMP/jsbundle/main.jsbundle" \
+            --assets-dest "$RUNNER_TEMP/jsbundle"
 
       - name: Install Pods
         working-directory: ios
-        env:
-          # Firebase Swift 팟이 정적 라이브러리로 통합되지 못하는 오류를 피하려고 정적 프레임워크로 링크한다
-          USE_FRAMEWORKS: static
-        run: bundle exec pod install
+        run: bundle exec pod install --repo-update
 
       - name: Build Release (unsigned)
         run: |
+          set -o pipefail
           xcodebuild \
             -workspace ios/DalRyoTemp.xcworkspace \
             -scheme DalRyoTemp \
             -configuration Release \
             -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            build
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            build 2>&1 | tee "$RUNNER_TEMP/xcodebuild.log"
 
       - name: Package IPA
         run: |
+          set -euo pipefail
+          APP=build/Build/Products/Release-iphoneos/DalRyoTemp.app
+          test -d "$APP" || { echo "::error::$APP not found"; ls build/Build/Products/*; exit 1; }
+          test -f "$APP/main.jsbundle" || { echo "::error::main.jsbundle missing in app"; exit 1; }
           mkdir -p Payload
-          cp -R build/Build/Products/Release-iphoneos/DalRyoTemp.app Payload/
+          cp -R "$APP" Payload/
           zip -qry DalRyoTemp-unsigned.ipa Payload
 
       - uses: actions/upload-artifact@v4
         with:
           name: DalRyoTemp-unsigned-ipa
           path: DalRyoTemp-unsigned.ipa
+          retention-days: 7
+
+      # 실패 시 원인 파악용 로그. 빌드 로그는 길어서 앞부분 대신 파일로 받는다
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build-logs
+          path: |
+            ${{ runner.temp }}/xcodebuild.log
+            ios/Podfile.lock
+            ~/Library/Logs/CocoaPods/*.log
+          if-no-files-found: ignore
           retention-days: 7
