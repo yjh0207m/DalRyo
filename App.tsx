@@ -39,7 +39,8 @@ function App() {
 }
 
 function AppRoutes() {
-  const [route, setRoute] = useState<Route>('start');
+  // 저장된 로그인이 복원되기 전에 시작 화면이 잠깐 비치지 않도록 첫 인증 콜백이 올 때까지 로딩을 보여 준다
+  const [route, setRoute] = useState<Route>('loading');
   const [firebaseUser, setFirebaseUser] =
     useState<FirebaseAuthTypes.User | null>(null);
   const [profile, setProfile] = useState<UserProfileBundle | null>(null);
@@ -97,9 +98,12 @@ function AppRoutes() {
   useEffect(() => {
     const unsubscribe = auth().onAuthStateChanged(user => {
       const previousUid = lastUid.current;
+      const firstCallback = !authReady.current;
       authReady.current = true;
       lastUid.current = user?.uid ?? null;
       setFirebaseUser(user);
+      // 앱을 켰을 때 저장된 로그인이 있으면 시작하기 화면을 건너뛰고 바로 들어간다
+      if (firstCallback && user) entered.current = true;
       if (!entered.current || (!user && previousUid !== null)) {
         entered.current = false;
         routeRequest.current++;
@@ -115,6 +119,8 @@ function AppRoutes() {
     return () => {
       unsubscribe();
       entered.current = false;
+      authReady.current = false;
+      lastUid.current = null;
       routeRequest.current += 1;
     };
   }, [resolveRouteForUser]);

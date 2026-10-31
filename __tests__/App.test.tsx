@@ -86,7 +86,7 @@ async function pressStart() {
 function renderedText() {
   return JSON.stringify(tree.toJSON());
 }
-test('signed-in accounts stay on the first screen until Start, then show preparation and home', async () => {
+test('signed-in accounts skip the first screen and go to preparation, then home', async () => {
   let resolve!: (value: unknown) => void;
   mockFetchUser.mockReturnValue(
     new Promise(done => {
@@ -94,30 +94,26 @@ test('signed-in accounts stay on the first screen until Start, then show prepara
     }),
   );
   await renderUser({ uid: 'test' });
-  expect(renderedText()).toContain('시작하기');
-  expect(mockFetchUser).not.toHaveBeenCalled();
-  expect(mockSubscribe).not.toHaveBeenCalled();
-  await pressStart();
+  expect(renderedText()).not.toContain('시작하기');
   expect(renderedText()).toContain('달료 준비 중');
+  expect(mockSubscribe).not.toHaveBeenCalled();
   await act(async () => resolve({ uid: 'test' }));
   expect(renderedText()).toContain('내 앱');
   expect(mockSubscribe).toHaveBeenCalledTimes(1);
 });
-test('profile read failure after Start offers retry without registering an existing account', async () => {
+test('profile read failure offers retry without registering an existing account', async () => {
   mockFetchUser.mockRejectedValueOnce(new Error('offline'));
   await renderUser({ uid: 'test' });
-  expect(renderedText()).toContain('시작하기');
-  await pressStart();
+  expect(renderedText()).not.toContain('시작하기');
   expect(renderedText()).toContain('다시 시도');
   expect(renderedText()).not.toContain('새 계정 등록');
   await act(async () => tree.root.findAll(node => node.props.accessibilityRole === 'button' && typeof node.props.onPress === 'function')[0].props.onPress());
   expect(renderedText()).toContain('내 앱');
 });
-test('only a confirmed missing user document opens registration after Start', async () => {
+test('only a confirmed missing user document opens registration', async () => {
   mockFetchUser.mockResolvedValue(null);
   await renderUser({ uid: 'test' });
-  expect(renderedText()).toContain('시작하기');
-  await pressStart();
+  expect(renderedText()).not.toContain('시작하기');
   expect(renderedText()).toContain('새 계정 등록');
 });
 test('signed-out accounts see first screen, then phone verification', async () => {
@@ -128,13 +124,12 @@ test('signed-out accounts see first screen, then phone verification', async () =
   expect(mockFetchUser).not.toHaveBeenCalled();
 });
 
-test('an early Start tap waits for auth restoration without incorrectly opening registration', async () => {
-  mockAuth.currentUser = null;
+test('the first screen is not shown while the saved login is being restored', async () => {
   await act(() => {
     tree = Renderer.create(<App />);
   });
-  await pressStart();
   expect(renderedText()).toContain('달료 준비 중');
+  expect(renderedText()).not.toContain('시작하기');
   expect(renderedText()).not.toContain('전화 인증');
   await notifyAuth({ uid: 'test' });
   expect(renderedText()).toContain('내 앱');
@@ -164,7 +159,6 @@ test('logout invalidates an in-flight profile response and returns to the first 
     }),
   );
   await renderUser({ uid: 'test' });
-  await pressStart();
   await notifyAuth(null);
   await act(async () => resolve({ user: { uid: 'test' }, character: null }));
   expect(renderedText()).toContain('시작하기');
@@ -173,12 +167,20 @@ test('logout invalidates an in-flight profile response and returns to the first 
   expect(renderedText()).toContain('전화 인증');
 });
 
-test('reopening the app with a saved login shows the first screen again', async () => {
+test('after logging out of the home screen, the first screen shows and Start leads to phone verification', async () => {
   await renderUser({ uid: 'test' });
+  expect(renderedText()).toContain('내 앱');
+  await notifyAuth(null);
+  expect(renderedText()).toContain('시작하기');
   await pressStart();
+  expect(renderedText()).toContain('전화 인증');
+});
+
+test('reopening the app with a saved login goes straight to home', async () => {
+  await renderUser({ uid: 'test' });
   expect(renderedText()).toContain('내 앱');
   await act(() => tree.unmount());
   await renderUser({ uid: 'test' });
-  expect(renderedText()).toContain('시작하기');
-  expect(renderedText()).not.toContain('내 앱');
+  expect(renderedText()).toContain('내 앱');
+  expect(renderedText()).not.toContain('시작하기');
 });
