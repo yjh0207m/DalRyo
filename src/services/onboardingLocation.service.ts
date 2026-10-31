@@ -1,6 +1,7 @@
 import Geolocation, {type GeolocationResponse} from '@react-native-community/geolocation';
 import {PermissionsAndroid, Platform} from 'react-native';
 import {REGIONS, regionFromAddress, type Region} from '../utils/onboarding';
+import {requestIosLocationPermission} from './locationPermission.service';
 
 let pending: Promise<Region> | null = null;
 let lastResult: {lat: number; lng: number; region: Region} | null = null;
@@ -21,9 +22,8 @@ async function detectRegion(): Promise<Region> {
     if (!Object.values(permissions).includes(PermissionsAndroid.RESULTS.GRANTED)) {
       throw new Error('위치 권한이 없어 지역을 찾지 못했어요. 아래에서 지역을 직접 선택해 주세요.');
     }
-  } else {
-    await new Promise<void>((resolve, reject) => Geolocation.requestAuthorization(resolve,
-      () => reject(new Error('위치 권한을 허용하거나 아래에서 지역을 직접 선택해 주세요.'))));
+  } else if (!await requestIosLocationPermission()) {
+    throw new Error('위치 권한을 허용하거나 아래에서 지역을 직접 선택해 주세요.');
   }
   const {coords} = await new Promise<GeolocationResponse>((resolve, reject) => {
     Geolocation.getCurrentPosition(resolve, () => reject(new Error('위치를 찾지 못했어요. 위치 서비스를 켜거나 지역을 직접 선택해 주세요.')),

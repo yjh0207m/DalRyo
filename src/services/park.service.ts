@@ -5,6 +5,7 @@ import { PermissionsAndroid, Platform } from 'react-native';
 import { auth, firestore } from '../lib/firebase';
 import type { ParkData } from '../../functions/src/parkData';
 import type { GpsPoint } from '../types/run.types';
+import { requestIosLocationPermission } from './locationPermission.service';
 export type NearbyPark = ParkData & { distance_km: number };
 export type ParkCourse = {
   course_id: string;
@@ -47,12 +48,8 @@ export async function getCurrentParkLocation(): Promise<{
         PermissionsAndroid.RESULTS.GRANTED
     )
       throw new Error('주변 공원을 찾으려면 위치 권한을 허용해 주세요.');
-  } else
-    await new Promise<void>((resolve, reject) =>
-      Geolocation.requestAuthorization(resolve, () =>
-        reject(new Error('설정에서 위치 권한을 허용해 주세요.')),
-      ),
-    );
+  } else if (!(await requestIosLocationPermission()))
+    throw new Error('설정에서 위치 권한을 허용해 주세요.');
   return new Promise((resolve, reject) =>
     Geolocation.getCurrentPosition(
       position =>

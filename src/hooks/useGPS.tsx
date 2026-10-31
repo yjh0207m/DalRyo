@@ -1,6 +1,7 @@
 import {useCallback, useEffect, useRef, useState} from 'react';
 import {PermissionsAndroid, Platform} from 'react-native';
 import Geolocation, {type GeolocationResponse} from '@react-native-community/geolocation';
+import {requestIosLocationPermission} from '../services/locationPermission.service';
 
 export type GpsStatus = 'idle' | 'requesting' | 'denied' | 'tracking' | 'error';
 
@@ -33,12 +34,7 @@ export async function requestLocationPermission() {
     return result === PermissionsAndroid.RESULTS.GRANTED;
   }
 
-  return new Promise<boolean>(resolve => {
-    Geolocation.requestAuthorization(
-      () => resolve(true),
-      () => resolve(false),
-    );
-  });
+  return requestIosLocationPermission();
 }
 
 export function useGPS(onFix: (fix: GpsFix) => void) {
