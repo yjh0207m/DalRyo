@@ -79,9 +79,6 @@ export function GrowthScreen({
           onSettingsPress={onSettingsPress}
         />
 
-        <AppText variant="caption" color={colors.textMuted}>
-          달린 만큼, 조금씩 더 단단하게.
-        </AppText>
         <View style={styles.summaryRow}>
           <Summary
             label="누적 거리"
@@ -264,7 +261,8 @@ const styles = StyleSheet.create({
   summaryRow: {
     flexDirection: 'row',
     gap: spacing.md,
-    marginTop: spacing.xl,
+    // 헤더 아래 첫 요소. 부제목이 있던 때의 여백(xl)을 줄여 다른 탭과 간격을 맞춘다
+    marginTop: spacing.sm,
     padding: spacing.xl,
     backgroundColor: colors.primarySoft,
     borderRadius: radius.xl,

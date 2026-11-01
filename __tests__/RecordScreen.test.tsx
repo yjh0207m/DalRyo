@@ -1,5 +1,5 @@
 import React from 'react';
-import { View as MockView } from 'react-native';
+import { StyleSheet, Text, View as MockView } from 'react-native';
 import Renderer, { act } from 'react-test-renderer';
 import { RecordScreen } from '../src/screens/run/RecordScreen';
 import type { RunDocument } from '../src/types/run.types';
@@ -101,4 +101,32 @@ test('calendar selection filters the list and returning to journal clears the fi
   expect(entries()).toHaveLength(1);
   await act(() => tab()[0].props.onPress());
   expect(entries()).toHaveLength(2);
+});
+test('the record screen has no tagline under the header', async () => {
+  await render();
+  const all = tree.root
+    .findAllByType(Text)
+    .map(node => ([] as unknown[]).concat(node.props.children).join(''));
+  expect(all.join('|')).not.toContain('차곡차곡');
+});
+
+test('the month selector sits right under the header with no leftover tagline spacing', async () => {
+  await render();
+  const prev = tree.root.find(
+    node =>
+      node.props.accessibilityLabel === '이전 달' &&
+      typeof node.props.onPress === 'function' &&
+      typeof node.props.style === 'function',
+  );
+  expect(
+    StyleSheet.flatten(prev.props.style({ pressed: false })),
+  ).toMatchObject({ width: 40, height: 40 });
+  let row: Renderer.ReactTestInstance | null = prev.parent;
+  while (
+    row &&
+    StyleSheet.flatten(row.props.style)?.justifyContent !== 'space-between'
+  )
+    row = row.parent;
+  expect(row).not.toBeNull();
+  expect(StyleSheet.flatten(row!.props.style).marginTop).toBe(0);
 });

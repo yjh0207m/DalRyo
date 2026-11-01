@@ -120,7 +120,7 @@ export function RunDetailScreen({
           <View style={styles.rewards}>
             <Badge label={`획득 EXP ${run.exp_earned}`} />
             <AppText variant="caption" color={colors.textMuted}>
-              평균 {run.avg_speed_kmh.toFixed(1)} km/h
+              평균 속도 {run.avg_speed_kmh.toFixed(1)} km/h
             </AppText>
           </View>
         </Card>

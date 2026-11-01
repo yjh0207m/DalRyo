@@ -145,17 +145,11 @@ export function RecordScreen({
           onNotificationPress={onNotificationPress}
           onSettingsPress={onSettingsPress}
         />
-        <AppText
-          variant="caption"
-          color={colors.textMuted}
-          style={styles.subtitle}
-        >
-          차곡차곡 쌓이는 나의 달리기
-        </AppText>
         <View style={styles.monthControls}>
           <IconButton
             icon={ChevronLeft}
             variant="plain"
+            size={40}
             accessibilityLabel="이전 달"
             onPress={() => moveMonth(-1)}
           />
@@ -165,6 +159,7 @@ export function RecordScreen({
           <IconButton
             icon={ChevronRight}
             variant="plain"
+            size={40}
             accessibilityLabel="다음 달"
             onPress={() => moveMonth(1)}
           />
@@ -489,7 +484,6 @@ function RunCard({ run, onOpen }: { run: RunDocument; onOpen: () => void }) {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
   content: { paddingHorizontal: spacing.xl },
-  subtitle: { marginTop: spacing.xs },
   monthHero: {
     backgroundColor: colors.primarySoft,
     borderColor: colors.primarySoft,
@@ -571,8 +565,9 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
   },
   section: { marginTop: spacing.lg },
+  // 헤더 바로 아래 첫 줄. 부제목이 있던 때의 위쪽 여백(14)은 없앴다
   monthControls: {
-    marginTop: 14,
+    marginTop: 0,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
