@@ -5,7 +5,6 @@ import {
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
 import {
-  ArrowUpRight,
   Bell,
   Check,
   Footprints,
@@ -14,11 +13,10 @@ import {
   Snowflake,
 } from 'lucide-react-native';
 import { useDialect } from '../../locales/DialectProvider';
-import type { Translate } from '../../locales/translate';
 import { LobbyCharacter } from '../../components/character/LobbyCharacter';
 import { CompanionScene } from '../../components/scene/CompanionScene';
 import { ExpBar, StreakChip } from '../../components/game/Hud';
-import { AppText, Badge, Button, Card, IconButton } from '../../components/ui';
+import { AppText, Badge, Card, IconButton } from '../../components/ui';
 import { RunRecordsStatus } from '../../components/ui/RunRecordsStatus';
 import { useRunRecords } from '../../hooks/useRunRecords';
 import { TAB_BAR_HEIGHT } from '../../navigation/BottomTabBar';
@@ -30,7 +28,6 @@ import { colors, fonts, radius, spacing } from '../../theme';
 import {
   CHARACTER_STAGE_ORDER,
   type CharacterDocument,
-  type CharacterStage,
 } from '../../types/character.types';
 import type { RunDocument } from '../../types/run.types';
 import type { UserDocument } from '../../types/user.types';
@@ -44,18 +41,17 @@ import {
 type Props = {
   user: UserDocument | null;
   character: CharacterDocument | null;
-  onRunPress: () => void;
   hasUnread?: boolean;
   onNotificationPress: () => void;
   onSettingsPress: () => void;
 };
 const WEEK_LABELS = ['월', '화', '수', '목', '금', '토', '일'];
-const WEEKLY_GOAL_DAYS = 5;
+// 이번 주(월~일) 7일 중 달린 날 수를 보여 준다
+const WEEKLY_GOAL_DAYS = 7;
 
 export function HomeScreen({
   user,
   character,
-  onRunPress,
   onNotificationPress,
   onSettingsPress,
   hasUnread,
@@ -113,14 +109,6 @@ export function HomeScreen({
             />
           </View>
         </View>
-        <View style={styles.intro}>
-          <AppText variant="title" style={styles.headline}>
-            오늘도, 한 걸음 더.
-          </AppText>
-          <AppText variant="caption" color={colors.textMuted}>
-            {user?.display_name ?? '달리너'}님, 나만의 속도로 함께 달려요.
-          </AppText>
-        </View>
         {character && (
           <>
             <Card padded={false} style={styles.companion}>
@@ -156,52 +144,34 @@ export function HomeScreen({
                 </View>
               </View>
               <View style={styles.companionFooter}>
-                <View style={styles.sectionHeader}>
-                  <AppText
-                    variant="caption"
-                    color={colors.text}
-                    style={styles.heroQuote}
-                    numberOfLines={2}
-                  >
-                    {getSpeech(
-                      {
-                        stage: character.stage,
-                        stoneLevel,
-                        ranToday: today.distanceKm > 0,
-                      },
-                      t,
-                    )}
-                  </AppText>
-                  <AppText variant="label" color={colors.textMuted}>
-                    {totalKm.toFixed(1)} km
-                  </AppText>
-                </View>
                 <ExpBar
                   height={4}
                   value={
                     character.stage === 'egg' ? 0 : next ? next.progress : 1
                   }
                 />
-                <AppText variant="label" color={colors.textMuted}>
-                  {character.stage === 'egg'
-                    ? '첫 달리기를 하면 부화해요'
-                    : next
-                    ? `${
-                        STAGE_LABELS[next.next]
-                      }까지 ${next.remainingKm.toFixed(1)}km`
-                    : '함께 완성한 멋진 달리너'}
-                </AppText>
+                <View style={styles.progressRow}>
+                  <AppText variant="label" color={colors.textMuted}>
+                    현재 {totalKm.toFixed(1)}km
+                  </AppText>
+                  <AppText
+                    variant="label"
+                    color={colors.textMuted}
+                    style={styles.progressLabel}
+                  >
+                    {character.stage === 'egg'
+                      ? '첫 달리기를 하면 부화해요'
+                      : next
+                      ? `${
+                          STAGE_LABELS[next.next]
+                        }까지 ${next.remainingKm.toFixed(1)}km`
+                      : '함께 완성한 멋진 달리너'}
+                  </AppText>
+                </View>
               </View>
             </Card>
           </>
         )}
-        <Button
-          label={t('run.startAction')}
-          icon={Footprints}
-          trailingIcon={ArrowUpRight}
-          onPress={onRunPress}
-          style={styles.start}
-        />
         {stoneLevel !== 'none' && (
           <Card
             tone={stoneLevel === 'stone' ? 'stone' : 'warm'}
@@ -343,21 +313,6 @@ export function HomeScreen({
   );
 }
 
-function getSpeech(
-  {
-    stage,
-    stoneLevel,
-    ranToday,
-  }: { stage: CharacterStage; stoneLevel: StoneLevel; ranToday: boolean },
-  t: Translate,
-) {
-  if (stoneLevel === 'stone') return t('home.stone');
-  if (stoneLevel !== 'none') return t('home.warning');
-  if (stage === 'egg') return t('home.egg');
-  if (ranToday) return t('home.ranToday');
-  return t('home.hello');
-}
-
 // 이번 주 안에서 오늘(오늘 안 달렸으면 어제)부터 거슬러 올라간 연속 달린 날 수
 function getWeekStreak(ranDays: Set<number>, todayIndex: number) {
   let day = ranDays.has(todayIndex) ? todayIndex : todayIndex - 1;
@@ -413,9 +368,12 @@ const styles = StyleSheet.create({
     letterSpacing: -1.2,
   },
   headerActions: { flexDirection: 'row', gap: 8 },
-  intro: { marginTop: 22, marginBottom: 20, gap: 5 },
-  headline: { fontSize: 29, lineHeight: 38, letterSpacing: -0.9 },
-  companion: { overflow: 'hidden', borderRadius: radius.xl, borderWidth: 0 },
+  companion: {
+    marginTop: spacing.lg,
+    overflow: 'hidden',
+    borderRadius: radius.xl,
+    borderWidth: 0,
+  },
   companionHeader: {
     position: 'absolute',
     left: 18,
@@ -444,7 +402,6 @@ const styles = StyleSheet.create({
     gap: 9,
     backgroundColor: colors.surface,
   },
-  start: { marginTop: 16 },
   section: { marginTop: 24 },
   sectionHeader: {
     flexDirection: 'row',
@@ -463,7 +420,13 @@ const styles = StyleSheet.create({
   },
   distanceMetric: { flex: 1.4, gap: 6 },
   valueRow: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
-  heroQuote: { flex: 1 },
+  progressRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
+  },
+  progressLabel: { flex: 1, textAlign: 'right' },
   distance: {
     flexShrink: 1,
     fontFamily: fonts.bold,

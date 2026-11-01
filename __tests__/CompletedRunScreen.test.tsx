@@ -5,7 +5,7 @@ import {CompletedRunScreen} from '../src/screens/run/CompletedRunScreen';
 import type {RunDocument} from '../src/types/run.types';
 import type {CharacterDocument} from '../src/types/character.types';
 type CompletionProps=React.ComponentProps<typeof import('../src/screens/run/RunCompleteScreen').RunCompleteScreen>;
-type ChildProps={run?:RunDocument;character:CharacterDocument|null;onBack:()=>void};
+type ChildProps={run?:RunDocument;character:CharacterDocument|null;onBack:()=>void;onPosted?:()=>void};
 const mockComplete=jest.fn();
 const mockShare=jest.fn();
 const mockDetail=jest.fn();
@@ -20,7 +20,7 @@ const character={stage:'child',character_type:'rabbit',pet_name:'달료'} as Cha
 let tree:Renderer.ReactTestRenderer;
 beforeEach(()=>jest.clearAllMocks());
 afterEach(async()=>{await act(()=>tree.unmount());});
-async function render(onRecordBack?:()=>void){await act(()=>{tree=Renderer.create(<CompletedRunScreen run={run} before={before} character={character} onClose={jest.fn()} onRecordBack={onRecordBack}/>);});}
+async function render(onRecordBack?:()=>void,onPosted?:()=>void){await act(()=>{tree=Renderer.create(<CompletedRunScreen run={run} before={before} character={character} onClose={jest.fn()} onRecordBack={onRecordBack} onPosted={onPosted}/>);});}
 test('saved metrics and the original growth and frozen state reach completion',async()=>{
   await render();expect(mockComplete.mock.calls.at(-1)![0]).toMatchObject({distanceKm:2,stageBeforeRun:'baby',stageAfterRun:'child',totalKmBefore:49,wasFrozen:true,route:[]});
 });
@@ -40,4 +40,14 @@ test('record detail receives the same saved run and returns to completion in gro
 test('solo detail retains its existing back-to-records navigation',async()=>{
   const back=jest.fn();await render(back);await act(()=>mockComplete.mock.calls.at(-1)![0].onViewRecord());
   await act(()=>mockDetail.mock.calls.at(-1)![0].onBack());expect(back).toHaveBeenCalledTimes(1);
+});
+test('posting from the share card or the record detail reaches the caller that opens the feed',async()=>{
+  const posted=jest.fn();
+  await render(undefined,posted);await act(()=>mockComplete.mock.calls.at(-1)![0].onTakePhoto());
+  await act(()=>mockShare.mock.calls.at(-1)![0].onPosted());
+  expect(posted).toHaveBeenCalledTimes(1);
+  await act(()=>mockShare.mock.calls.at(-1)![0].onBack());
+  await act(()=>mockComplete.mock.calls.at(-1)![0].onViewRecord());
+  await act(()=>mockDetail.mock.calls.at(-1)![0].onPosted());
+  expect(posted).toHaveBeenCalledTimes(2);
 });

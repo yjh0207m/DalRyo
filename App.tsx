@@ -1,15 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  LogBox,
-  Pressable,
-  StatusBar,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { LogBox, Pressable, StyleSheet, Text } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import auth, { type FirebaseAuthTypes } from '@react-native-firebase/auth';
+import { BackgroundTaskToast } from './src/components/ui/BackgroundTaskToast';
 import { AuthStartScreen } from './src/screens/auth/SplashScreen';
 import { PhoneLoginScreen } from './src/screens/auth/LoginScreen';
 import { OnboardingScreen } from './src/screens/auth/OnboardingScreen';
@@ -34,6 +27,8 @@ function App() {
   return (
     <SafeAreaProvider>
       <AppRoutes />
+      {/* 게시 같은 백그라운드 요청의 진행 상태. 어느 화면에서든 위쪽에 작게 뜬다 */}
+      <BackgroundTaskToast />
     </SafeAreaProvider>
   );
 }
@@ -151,8 +146,9 @@ function AppRoutes() {
     setRoute('start');
   };
 
+  // 시작 화면과 같은 컴포넌트를 쓰므로 로딩 → 시작 화면으로 바뀌어도 배경 이미지가 다시 그려지지 않는다
   if (route === 'loading') {
-    return <LoadingScreen />;
+    return <AuthStartScreen loading onStart={goToStartOrMain} />;
   }
   if (route === 'error') {
     return (
@@ -213,18 +209,6 @@ function AppRoutes() {
   return <AuthStartScreen onStart={goToStartOrMain} />;
 }
 
-function LoadingScreen() {
-  return (
-    <SafeAreaView style={styles.loadingScreen}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F6FEFF" />
-      <View style={styles.loadingCard}>
-        <ActivityIndicator color="#58CFA6" size="large" />
-        <Text style={styles.loadingText}>달료 준비 중...</Text>
-      </View>
-    </SafeAreaView>
-  );
-}
-
 const styles = StyleSheet.create({
   retry: { padding: 20 },
   loadingScreen: {
@@ -233,19 +217,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     padding: 28,
-  },
-  loadingCard: {
-    minWidth: 190,
-    minHeight: 150,
-    borderRadius: 24,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#A7D7C4',
-    shadowOpacity: 0.18,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 6,
   },
   loadingText: {
     color: '#151515',

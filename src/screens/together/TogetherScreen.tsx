@@ -40,6 +40,8 @@ type Props = {
   user: UserDocument;
   character: CharacterDocument;
   onBack: () => void;
+  // 같이 달린 기록의 카드를 피드에 올린 뒤 호출된다
+  onPosted?: () => void;
   // 친구 프로필에서 '같이 달리기 요청'으로 들어오면 그 친구를 미리 골라 둔다
   initialFriendUid?: string;
 };
@@ -47,6 +49,7 @@ export function TogetherScreen({
   user,
   character,
   onBack,
+  onPosted,
   initialFriendUid,
 }: Props) {
   const [roomId, setRoomId] = useState<string | null>(null);
@@ -221,7 +224,7 @@ export function TogetherScreen({
   const visibleMembers = members.filter(m => m.state !== 'left');
   if (result) {
     if (complete && savedRun)
-      return <CompletedRunScreen run={savedRun} before={startSnapshot.current} character={character} onClose={() => {setResult(null);setComplete(false);setSavedRun(null);}}/>;
+      return <CompletedRunScreen run={savedRun} before={startSnapshot.current} character={character} onPosted={onPosted} onClose={() => {setResult(null);setComplete(false);setSavedRun(null);}}/>;
     return (
       <SafeAreaView style={styles.center}>
         <StatusBar

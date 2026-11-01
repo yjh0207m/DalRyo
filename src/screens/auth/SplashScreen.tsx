@@ -1,5 +1,5 @@
 import React, {useEffect, useState} from 'react';
-import {ImageBackground, StatusBar, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
+import {ActivityIndicator, ImageBackground, StatusBar, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {colors, fonts} from '../../theme';
 import {getIsDusk, getIsDuskSync} from '../../utils/skyBackground';
@@ -11,11 +11,13 @@ const images = {
 
 type Props = {
   onStart: () => void;
+  // 로그인 복원·계정 확인 중에는 같은 배경을 유지한 채 시작하기 버튼 자리에 로딩을 보여 준다
+  loading?: boolean;
 };
 
 const MINT = colors.primary;
 
-export function AuthStartScreen({onStart}: Props) {
+export function AuthStartScreen({onStart, loading = false}: Props) {
   const [isDusk, setIsDusk] = useState(() => getIsDuskSync());
 
   useEffect(() => {
@@ -37,9 +39,15 @@ export function AuthStartScreen({onStart}: Props) {
       <View style={styles.bottomContent}>
         <Text style={styles.message}>{isDusk ? '하루의 끝, 러닝으로 마무리해요' : '좋은 아침이에요!'}</Text>
         <Text style={styles.messageStrong}>{isDusk ? '오늘도 수고했어요!' : '오늘도 함께 달려볼까요?'}</Text>
-        <TouchableOpacity activeOpacity={0.86} onPress={onStart} style={styles.startButton}>
-          <Text style={styles.startButtonText}>시작하기</Text>
-        </TouchableOpacity>
+        {loading ? (
+          <View accessibilityLabel="달료 준비 중" accessibilityLiveRegion="polite" style={styles.loading}>
+            <ActivityIndicator color="#FFFFFF" size="large" />
+          </View>
+        ) : (
+          <TouchableOpacity activeOpacity={0.86} onPress={onStart} style={styles.startButton}>
+            <Text style={styles.startButtonText}>시작하기</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </ImageBackground>
   );
@@ -59,4 +67,6 @@ const styles = StyleSheet.create({
   messageStrong: {color: '#FFFFFF', fontSize: 24, fontFamily: fonts.extrabold, textAlign: 'center', marginTop: 8, marginBottom: 32, textShadowColor: 'rgba(0,0,0,0.34)', textShadowOffset: {width: 0, height: 2}, textShadowRadius: 8},
   startButton: {alignItems: 'center', alignSelf: 'stretch', backgroundColor: MINT, borderRadius: 20, justifyContent: 'center', minHeight: 62, shadowColor: '#000000', shadowOpacity: 0.18, shadowRadius: 14, shadowOffset: {width: 0, height: 8}, elevation: 0},
   startButtonText: {color: '#FFFFFF', fontSize: 17, fontFamily: fonts.semibold},
+  // 버튼과 같은 높이를 차지해 로딩이 끝나고 버튼이 나타날 때 글자 위치가 움직이지 않게 한다
+  loading: {alignItems: 'center', alignSelf: 'stretch', justifyContent: 'center', minHeight: 62},
 });

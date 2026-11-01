@@ -17,12 +17,15 @@ export function CompletedRunScreen({
   character,
   onClose,
   onRecordBack,
+  onPosted,
 }: {
   run: RunDocument;
   before: RunStartSnapshot;
   character: CharacterDocument;
   onClose: () => void;
   onRecordBack?: () => void;
+  // 카드를 피드에 올린 뒤 호출된다. 호출하는 쪽에서 커뮤니티 피드로 보낸다
+  onPosted?: () => void;
 }) {
   const [page, setPage] = useState<'complete' | 'share' | 'detail'>('complete');
   useEffect(() => {
@@ -69,6 +72,7 @@ export function CompletedRunScreen({
           character={shownCharacter}
           run={run}
           onBack={() => setPage('complete')}
+          onPosted={onPosted}
         />
       )}
       {page === 'detail' && (
@@ -76,6 +80,7 @@ export function CompletedRunScreen({
           character={shownCharacter}
           run={run}
           onBack={onRecordBack ?? (() => setPage('complete'))}
+          onPosted={onPosted}
         />
       )}
     </View>

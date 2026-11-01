@@ -30,11 +30,22 @@ jest.mock('../src/services/profile.service', () => ({
 jest.mock('react-native-safe-area-context', () => ({
   SafeAreaProvider: ({ children }: { children: React.ReactNode }) => children,
   SafeAreaView: require('react-native').View,
+  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
 }));
 jest.mock('../src/screens/auth/SplashScreen', () => ({
-  AuthStartScreen: ({ onStart }: { onStart: () => void }) => (
-    <MockText onPress={onStart}>시작하기</MockText>
-  ),
+  // 로딩 중에는 시작 화면 배경은 유지하되 시작하기 버튼 대신 로딩 표시를 보여 준다
+  AuthStartScreen: ({
+    onStart,
+    loading,
+  }: {
+    onStart: () => void;
+    loading?: boolean;
+  }) =>
+    loading ? (
+      <MockText>달료 준비 중</MockText>
+    ) : (
+      <MockText onPress={onStart}>시작하기</MockText>
+    ),
 }));
 jest.mock('../src/screens/auth/LoginScreen', () => ({
   PhoneLoginScreen: ({ onBack }: { onBack: () => void }) => (

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { BackHandler, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Camera, ChevronLeft, Route, Share2 } from 'lucide-react-native';
+import { Camera, ChevronLeft, Route } from 'lucide-react-native';
 import { AppText, Badge, Button, Card, IconButton } from '../../components/ui';
 import { RouteMap } from '../../components/maps/RouteMap';
 import { ShareStudioScreen } from './ShareStudioScreen';
@@ -16,10 +16,12 @@ export function RunDetailScreen({
   run,
   character,
   onBack,
+  onPosted,
 }: {
   run: RunDocument;
   character: CharacterDocument | null;
   onBack: () => void;
+  onPosted?: () => void;
 }) {
   const [share, setShare] = useState(false);
   const [parkLabel, setParkLabel] = useState<{
@@ -53,6 +55,7 @@ export function RunDetailScreen({
         run={run}
         character={character}
         onBack={() => setShare(false)}
+        onPosted={onPosted}
       />
     );
   return (
@@ -67,12 +70,8 @@ export function RunDetailScreen({
         <AppText variant="heading" style={styles.headerTitle}>
           러닝 저널
         </AppText>
-        <IconButton
-          icon={Share2}
-          variant="plain"
-          accessibilityLabel="기록 공유"
-          onPress={() => setShare(true)}
-        />
+        {/* 제목이 가운데 오도록 뒤로 가기 버튼과 같은 너비를 비워 둔다 */}
+        <View style={styles.headerSpacer} />
       </View>
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -142,16 +141,13 @@ export function RunDetailScreen({
         )}
         <View style={styles.mapHeading}>
           <AppText variant="heading">내가 달린 길</AppText>
-          <AppText variant="label" color={colors.textMuted}>
-            ROUTE
-          </AppText>
         </View>
         <Card padded={false} style={styles.mapCard}>
           <RouteMap route={run.route ?? []} />
         </Card>
         <Button
           icon={Camera}
-          label="사진·캐릭터와 기록 공유"
+          label="오운완 카드"
           onPress={() => setShare(true)}
         />
       </ScrollView>
@@ -180,6 +176,7 @@ const styles = StyleSheet.create({
     minHeight: 54,
   },
   headerTitle: { flex: 1, textAlign: 'center' },
+  headerSpacer: { width: 44, height: 44 },
   content: { padding: 20, gap: 18, paddingBottom: 40 },
   dateHeading: { gap: 7, paddingVertical: 6 },
   eyebrow: {

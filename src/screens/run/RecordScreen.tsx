@@ -53,6 +53,8 @@ type Props = {
   onSettingsPress: () => void;
   character?: CharacterDocument | null;
   onSubpageChange?: (open: boolean) => void;
+  // 기록 상세의 오운완 카드를 피드에 올린 뒤 호출된다
+  onPosted?: () => void;
 };
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 const GOAL_LABELS = {
@@ -68,6 +70,7 @@ export function RecordScreen({
   hasUnread,
   character = null,
   onSubpageChange,
+  onPosted,
 }: Props) {
   const insets = useSafeAreaInsets();
   const t = useDialect();
@@ -112,6 +115,7 @@ export function RecordScreen({
         run={selectedRun}
         character={character}
         onBack={() => setSelectedRun(null)}
+        onPosted={onPosted}
       />
     );
   return (

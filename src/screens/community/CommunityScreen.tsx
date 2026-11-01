@@ -32,7 +32,13 @@ import {
   Users,
   X,
 } from 'lucide-react-native';
-import { AppText, Button, Card, IconButton } from '../../components/ui';
+import {
+  AppText,
+  Button,
+  Card,
+  FullPhoto,
+  IconButton,
+} from '../../components/ui';
 import { RunningShoeIcon } from '../../components/ui/RunningShoeIcon';
 import { ChatScreen } from './ChatScreen';
 import { CommentsSheet } from './CommentsSheet';
@@ -41,6 +47,7 @@ import { TAB_BAR_HEIGHT } from '../../navigation/BottomTabBar';
 import { colors, fonts, radius, spacing } from '../../theme';
 import { useSocialFeed } from '../../hooks/useSocialFeed';
 import { choosePhoto, uploadPhoto } from '../../services/media.service';
+import { runInBackground } from '../../services/backgroundTask.service';
 import { fetchRecentRuns } from '../../services/run.service';
 import {
   myUid,
@@ -502,7 +509,8 @@ export function PostCard({
   detail?: boolean;
 }) {
   const [flags, setFlags] = useState({ liked: false, saved: false });
-  const [busy, setBusy] = useState<string | null>(null);
+  // 요청이 끝나기 전에 연타해도 서버에 엇갈린 값이 가지 않도록 종류별로 하나만 보낸다
+  const inFlight = useRef({ like: false, bookmark: false });
   useEffect(
     () =>
       watchPostFlags(post.post_id, patch =>
@@ -510,21 +518,29 @@ export function PostCard({
       ),
     [post.post_id],
   );
-  const toggle = async (kind: 'like' | 'bookmark') => {
-    if (busy) return;
-    setBusy(kind);
-    const active = kind === 'like' ? !flags.liked : !flags.saved;
-    try {
-      await socialRequest(kind, { postId: post.post_id, active });
-      setFlags(old => ({
-        ...old,
-        [kind === 'like' ? 'liked' : 'saved']: active,
-      }));
-    } catch (error) {
-      errorAlert(error);
-    } finally {
-      setBusy(null);
-    }
+  const toggle = (kind: 'like' | 'bookmark') => {
+    if (inFlight.current[kind]) return;
+    const key = kind === 'like' ? 'liked' : 'saved';
+    const active = !flags[key];
+    inFlight.current[kind] = true;
+    // 서버 응답을 기다리지 않고 바로 반영하고, 실패하면 되돌린다
+    setFlags(old => ({ ...old, [key]: active }));
+    runInBackground({
+      label: '',
+      failureLabel:
+        kind === 'like' ? '응원을 처리하지 못했어요' : '저장을 처리하지 못했어요',
+      silent: true,
+      retryable: false,
+      describeError: socialError,
+      task: () => socialRequest(kind, { postId: post.post_id, active }),
+      onSuccess: () => {
+        inFlight.current[kind] = false;
+      },
+      onFailure: () => {
+        inFlight.current[kind] = false;
+        setFlags(old => ({ ...old, [key]: !active }));
+      },
+    });
   };
   const remove = () =>
     Alert.alert('게시물을 삭제할까요?', '삭제한 게시물은 피드에서 사라져요.', [
@@ -532,16 +548,16 @@ export function PostCard({
       {
         text: '삭제',
         style: 'destructive',
-        onPress: async () => {
-          try {
-            setBusy('delete');
-            await socialRequest('deletePost', { postId: post.post_id });
-            onDeleted?.();
-          } catch (error) {
-            errorAlert(error);
-          } finally {
-            setBusy(null);
-          }
+        onPress: () => {
+          // 서버 처리를 기다리지 않고 바로 목록으로 돌아간다. 피드는 실시간으로 갱신된다
+          runInBackground({
+            label: '게시물 삭제 중',
+            successLabel: '게시물을 삭제했어요',
+            failureLabel: '게시물을 삭제하지 못했어요',
+            describeError: socialError,
+            task: () => socialRequest('deletePost', { postId: post.post_id }),
+          });
+          onDeleted?.();
         },
       },
     ]);
@@ -599,7 +615,6 @@ export function PostCard({
             icon={Trash2}
             variant="plain"
             accessibilityLabel="게시물 삭제"
-            disabled={!!busy}
             onPress={remove}
           />
         )}
@@ -619,11 +634,7 @@ export function PostCard({
         onPress={onOpen}
       >
         {post.image_url ? (
-          <Image
-            source={{ uri: post.image_url }}
-            resizeMode="cover"
-            style={styles.feedPhoto}
-          />
+          <FullPhoto uri={post.image_url} />
         ) : post.run_id ? (
           <View style={styles.runTile}>
             <View style={styles.runTileTop}>
@@ -672,8 +683,7 @@ export function PostCard({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="응원"
-          accessibilityState={{ selected: flags.liked, disabled: !!busy }}
-          disabled={!!busy}
+          accessibilityState={{ selected: flags.liked }}
           onPress={() => toggle('like')}
           style={styles.socialIcon}
         >
@@ -703,8 +713,7 @@ export function PostCard({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={flags.saved ? '저장 취소' : '게시물 저장'}
-          accessibilityState={{ selected: flags.saved, disabled: !!busy }}
-          disabled={!!busy}
+          accessibilityState={{ selected: flags.saved }}
           onPress={() => toggle('bookmark')}
           style={styles.socialIcon}
         >
@@ -760,7 +769,7 @@ export function PostCard({
   );
 }
 
-function Composer({
+export function Composer({
   post,
   onBack,
   onSaved,
@@ -779,9 +788,7 @@ function Composer({
     'loading',
   );
   const [runId, setRunId] = useState<string | null>(post?.run_id ?? null);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [percent, setPercent] = useState(0);
   const [postId] = useState(() => post?.post_id ?? newSocialId());
   const mounted = useRef(true);
   useEffect(
@@ -812,7 +819,6 @@ function Composer({
     !!photo ||
     runId !== (post?.run_id ?? null);
   const leave = () => {
-    if (busy) return;
     if (!dirty) {
       onBack();
       return;
@@ -823,7 +829,6 @@ function Composer({
     ]);
   };
   const selectPhoto = async (camera: boolean) => {
-    if (busy) return;
     try {
       const selected = await choosePhoto(camera);
       if (selected) setPhoto(selected);
@@ -831,39 +836,39 @@ function Composer({
       setError(socialError(failure));
     }
   };
-  const submit = async () => {
-    if (busy) return;
+  const submit = () => {
     if (!body.trim() && !photo && !runId && !post?.image_url) {
       setError('내용이나 사진, 달리기 기록을 추가해 주세요.');
       return;
     }
-    setBusy(true);
     setError(null);
-    try {
-      if (post)
-        await socialRequest('editPost', {
-          postId,
-          text: body.trim(),
-          visibility,
-        });
-      else {
+    const text = body.trim();
+    // 사진 업로드와 저장은 서버가 하는 일이라 기다리지 않고 피드로 돌아간다. 진행과 실패는 작은 팝업으로 알린다
+    runInBackground({
+      label: post ? '게시물 수정 중' : '게시물 올리는 중',
+      successLabel: post ? '게시물을 수정했어요' : '게시물을 올렸어요',
+      failureLabel: post
+        ? '게시물을 수정하지 못했어요'
+        : '게시물을 올리지 못했어요',
+      describeError: socialError,
+      task: async report => {
+        if (post) {
+          await socialRequest('editPost', { postId, text, visibility });
+          return;
+        }
         const uploaded = photo
-          ? await uploadPhoto(photo, 'posts', setPercent)
+          ? await uploadPhoto(photo, 'posts', report)
           : null;
         await socialRequest('createPost', {
           postId,
-          text: body.trim(),
+          text,
           visibility,
           imageUrl: uploaded?.url ?? null,
           runId,
         });
-      }
-      onSaved();
-    } catch (failure) {
-      setError(socialError(failure));
-    } finally {
-      if (mounted.current) setBusy(false);
-    }
+      },
+    });
+    onSaved();
   };
   return (
     <Page title={post ? '게시물 수정' : '오늘의 달리기'} onBack={leave}>
@@ -878,15 +883,14 @@ function Composer({
           onChangeText={setBody}
           multiline
           maxLength={2000}
-          editable={!busy}
           style={styles.composer}
         />
         <AppText variant="label" color={colors.textSubtle} align="right">
           {body.length}/2000
         </AppText>
         {(photo?.uri || post?.image_url) && (
-          <Image
-            source={{ uri: photo?.uri ?? post!.image_url! }}
+          <FullPhoto
+            uri={photo?.uri ?? post!.image_url!}
             style={styles.postImage}
           />
         )}
@@ -897,7 +901,6 @@ function Composer({
                 label="사진 선택"
                 size="md"
                 variant="secondary"
-                disabled={busy}
                 onPress={() => selectPhoto(false)}
                 style={styles.grow}
               />
@@ -905,7 +908,6 @@ function Composer({
                 label="사진 촬영"
                 size="md"
                 variant="secondary"
-                disabled={busy}
                 onPress={() => selectPhoto(true)}
                 style={styles.grow}
               />
@@ -913,7 +915,6 @@ function Composer({
                 <IconButton
                   icon={X}
                   accessibilityLabel="첨부 사진 제거"
-                  disabled={busy}
                   onPress={() => setPhoto(null)}
                 />
               )}
@@ -934,9 +935,7 @@ function Composer({
                   accessibilityRole="radio"
                   accessibilityState={{
                     selected: runId === run.run_id,
-                    disabled: busy,
                   }}
-                  disabled={busy}
                   onPress={() =>
                     setRunId(old => (old === run.run_id ? null : run.run_id))
                   }
@@ -966,7 +965,7 @@ function Composer({
               label={label}
               selected={visibility === value}
               onPress={() => {
-                if (!busy) setVisibility(value);
+                setVisibility(value);
               }}
             />
           ))}
@@ -976,12 +975,8 @@ function Composer({
             {error}
           </AppText>
         )}
-        {busy && photo && (
-          <AppText variant="caption">사진 업로드 {percent}%</AppText>
-        )}
         <Button
-          label={busy ? '저장 중…' : post ? '수정 저장' : '게시물 올리기'}
-          disabled={busy}
+          label={post ? '수정 저장' : '게시물 올리기'}
           onPress={submit}
         />
       </ScrollView>
@@ -1143,7 +1138,7 @@ function PeoplePage({
     </Page>
   );
 }
-function ProfilePage({
+export function ProfilePage({
   uid,
   onBack,
   onPost,
@@ -1165,7 +1160,7 @@ function ProfilePage({
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>(
     'loading',
   );
-  const [busy, setBusy] = useState(false);
+  const followInFlight = useRef(false);
   const [revision, setRevision] = useState(0);
   useEffect(() => {
     let live = true;
@@ -1196,18 +1191,29 @@ function ProfilePage({
       live = false;
     };
   }, [uid, revision]);
-  const follow = async () => {
-    if (busy) return;
-    setBusy(true);
-    try {
-      await socialRequest('follow', { uid, following: !following });
-      setFollowing(v => !v);
-      setRevision(v => v + 1);
-    } catch (error) {
-      errorAlert(error);
-    } finally {
-      setBusy(false);
-    }
+  const follow = () => {
+    if (followInFlight.current) return;
+    followInFlight.current = true;
+    const next = !following;
+    // 서버 응답을 기다리지 않고 버튼을 바로 바꾸고, 실패하면 되돌린다
+    setFollowing(next);
+    runInBackground({
+      label: '',
+      failureLabel: next ? '팔로우하지 못했어요' : '팔로우를 취소하지 못했어요',
+      silent: true,
+      retryable: false,
+      describeError: socialError,
+      task: () => socialRequest('follow', { uid, following: next }),
+      onSuccess: () => {
+        followInFlight.current = false;
+        // 팔로워 수 등을 다시 불러온다
+        setRevision(v => v + 1);
+      },
+      onFailure: () => {
+        followInFlight.current = false;
+        setFollowing(!next);
+      },
+    });
   };
   return (
     <Page title="러너 프로필" onBack={onBack}>
@@ -1234,7 +1240,6 @@ function ProfilePage({
                     label={following ? '팔로잉' : '팔로우'}
                     size="md"
                     variant={following ? 'secondary' : 'primary'}
-                    disabled={busy}
                     onPress={follow}
                   />
                 )}
@@ -1251,7 +1256,6 @@ function ProfilePage({
                   <Button
                     label="같이 달리기 요청"
                     size="md"
-                    disabled={busy}
                     onPress={() => onTogether(uid)}
                   />
                 )}
@@ -1497,7 +1501,6 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     gap: 8,
   },
-  feedPhoto: { width: '100%', aspectRatio: 1 },
   postActions: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1563,8 +1566,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   postImage: {
-    width: '100%',
-    aspectRatio: 1,
     borderRadius: radius.md,
     marginTop: spacing.md,
   },

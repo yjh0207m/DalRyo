@@ -160,7 +160,7 @@ export function MainAppScreen({user, character}: Props) {
     }
 
     return <CompletedRunScreen run={runFlow.run} before={runFlow.before} character={character}
-      onRecordBack={() => closeRunFlow('records')} onClose={() => closeRunFlow('home')}/>;
+      onRecordBack={() => closeRunFlow('records')} onClose={() => closeRunFlow('home')} onPosted={() => closeRunFlow('community')}/>;
   }
 
   if (recovery.status !== 'ready') return <View style={styles.savingScreen}>
@@ -191,7 +191,7 @@ export function MainAppScreen({user, character}: Props) {
       />
     );
   if (together && user && character)
-    return <TogetherScreen user={user} character={character} initialFriendUid={together.friendUid} onBack={() => setTogether(null)} />;
+    return <TogetherScreen user={user} character={character} initialFriendUid={together.friendUid} onBack={() => setTogether(null)} onPosted={() => {setTogether(null); setActiveTab('community');}} />;
 
   const header = {onNotificationPress: () => setNotificationsOpen(true), onSettingsPress: () => setActiveTab('my'), hasUnread};
 
@@ -200,10 +200,10 @@ export function MainAppScreen({user, character}: Props) {
       <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
       {recovery.pending > 0 && <View style={styles.pendingBanner}><AppText variant="caption">기기에 보관한 기록 {recovery.pending}개 · {recovery.syncing ? '저장 중' : '연결되면 자동 저장'}</AppText><Button label="다시 저장" size="md" variant="ghost" disabled={recovery.syncing} onPress={recovery.sync}/></View>}
       <View style={styles.body}>
-        {activeTab === 'home' && <HomeScreen user={user} character={character} onRunPress={openRunSheet} {...header} />}
+        {activeTab === 'home' && <HomeScreen user={user} character={character} {...header} />}
         {activeTab === 'growth' && <GrowthScreen user={user} character={character} {...header} />}
         {activeTab === 'community' && <CommunityScreen {...header} onSubpageChange={setCommunitySubpage} onTogetherPress={friendUid => setTogether({friendUid})}/>}
-        {activeTab === 'records' && <RecordScreen {...header} character={character} onSubpageChange={setRecordSubpage}/>}
+        {activeTab === 'records' && <RecordScreen {...header} character={character} onSubpageChange={setRecordSubpage} onPosted={() => setActiveTab('community')}/>}
         {activeTab === 'my' && <MyPageScreen user={user} character={character} onBack={() => setActiveTab('home')} onOpenSettings={() => setSettingsOpen(true)} onOpenInventory={setInventoryMode} onPreviewCharacter={() => setCharacterPreviewOpen(true)} />}
       </View>
       {!(activeTab === 'community' && communitySubpage) && !(activeTab === 'records' && recordSubpage) && <BottomTabBar activeTab={activeTab} onChange={tab => (tab === 'run' ? openRunSheet() : setActiveTab(tab))} />}

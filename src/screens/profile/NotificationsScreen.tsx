@@ -1,10 +1,11 @@
-import React, {useEffect, useRef, useState} from 'react';
+import React, {useEffect} from 'react';
 import {ActivityIndicator, Alert, BackHandler, FlatList, Pressable, StatusBar, StyleSheet, View} from 'react-native';
 import {SafeAreaView, useSafeAreaInsets} from 'react-native-safe-area-context';
 import {Bell, ChevronLeft, ChevronRight} from 'lucide-react-native';
 import {AppText, Badge, Button, Card, IconButton} from '../../components/ui';
 import {useNotifications} from '../../hooks/useNotifications';
 import {useDialect} from '../../locales/DialectProvider';
+import {runInBackground} from '../../services/backgroundTask.service';
 import {markNotificationRead} from '../../services/notification.service';
 import {colors, radius, spacing} from '../../theme';
 import type {AppNotification} from '../../types/notification.types';
@@ -13,14 +14,6 @@ import {describeNotification, notificationTime} from '../../utils/notifications'
 // 같이 달리기 요청 알림을 누르면 onOpenTogether로 요청 목록을 연다
 export function NotificationsScreen({onBack, onOpenTogether}: {onBack: () => void; onOpenTogether?: () => void}) {
   const {items, status, retry, loadMore, loadingMore, moreError, hasMore, setRead} = useNotifications();
-  const [pendingId, setPendingId] = useState<string | null>(null);
-  const active = useRef(true);
-  useEffect(() => {
-    active.current = true;
-    return () => {
-      active.current = false;
-    };
-  }, []);
   const t = useDialect();
   const insets = useSafeAreaInsets();
   useEffect(() => {
@@ -31,27 +24,24 @@ export function NotificationsScreen({onBack, onOpenTogether}: {onBack: () => voi
     return () => subscription.remove();
   }, [onBack]);
 
-  const openNotification = async (item: AppNotification) => {
-    if (pendingId) return;
-    setPendingId(item.id);
-    try {
-      if (!item.is_read) {
-        await markNotificationRead(item.id);
-        if (!active.current) return;
-        setRead(item.id);
-      }
-      if (!active.current) return;
-      if (item.type === 'room_invite' && onOpenTogether) {
-        onOpenTogether();
-        return;
-      }
-      const {title, body} = describeNotification(item, t);
-      Alert.alert(title, body, [{text: '확인'}]);
-    } catch {
-      if (active.current) Alert.alert('알림을 열지 못했어요', '연결을 확인하고 다시 눌러 주세요.');
-    } finally {
-      if (active.current) setPendingId(null);
+  const openNotification = (item: AppNotification) => {
+    if (!item.is_read) {
+      // 읽음 표시는 서버에 알리는 일일 뿐이라 기다리지 않고 바로 열고, 실패하면 작은 팝업으로만 알린다
+      setRead(item.id);
+      runInBackground({
+        label: '',
+        failureLabel: '알림을 읽음으로 표시하지 못했어요',
+        silent: true,
+        retryable: false,
+        task: () => markNotificationRead(item.id),
+      });
     }
+    if (item.type === 'room_invite' && onOpenTogether) {
+      onOpenTogether();
+      return;
+    }
+    const {title, body} = describeNotification(item, t);
+    Alert.alert(title, body, [{text: '확인'}]);
   };
 
   return (
@@ -96,8 +86,6 @@ export function NotificationsScreen({onBack, onOpenTogether}: {onBack: () => voi
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={`${item.is_read ? '읽은 알림' : '안 읽은 알림'}, ${title}, ${body}`}
-                accessibilityState={{disabled: !!pendingId}}
-                disabled={!!pendingId}
                 onPress={() => openNotification(item)}
                 style={({pressed}) => [styles.item, !item.is_read && styles.unread, pressed && styles.pressed]}
               >
@@ -118,11 +106,7 @@ export function NotificationsScreen({onBack, onOpenTogether}: {onBack: () => voi
                         ).padStart(2, '0')}`
                       : '방금'}
                   </AppText>
-                  {pendingId === item.id ? (
-                    <ActivityIndicator size="small" color={colors.primary} />
-                  ) : (
-                    <ChevronRight size={16} color={colors.textMuted} />
-                  )}
+                  <ChevronRight size={16} color={colors.textMuted} />
                 </View>
               </Pressable>
             );
