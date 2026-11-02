@@ -78,6 +78,36 @@ async function call(user, action, data = {}, name = 'socialAction') {
       await call(b,'follow',{uid:a.uid,following:false});await call(b,'follow',{uid:a.uid,following:false});
       assert.equal((await read(`users/${a.uid}`)).follower_count,0);
     });
+    await test('profile exposes pet and brief runs without locations or private account fields', async () => {
+      await env.withSecurityRulesDisabled(async ctx => {
+        await updateDoc(doc(ctx.firestore(),`users/${a.uid}/character/${a.uid}`),{stage:'child',exp:100,private_note:'not-public'});
+        await setDoc(doc(ctx.firestore(),'runs/profile-summary-run'),{uid:a.uid,started_at:Timestamp.now(),distance_km:3,duration_sec:1200,avg_pace_sec:400,route:[{lat:37.5,lng:127}],private_note:'not-public'});
+      });
+      const response=await call(b,'profile',{uid:a.uid});
+      assert.equal(response.pet.character_type,'rabbit');assert.equal(response.pet.stage,'child');
+      assert.equal(response.run_count,1);assert.equal(response.recent_runs[0].distance_km,3);
+      const json=JSON.stringify(response);assert.ok(!json.includes('not-public'));assert.ok(!json.includes('route'));assert.ok(!json.includes('lat'));assert.ok(!json.includes('private@example'));
+    });
+    await test('connections paginate real follows and return only public users', async () => {
+      await env.withSecurityRulesDisabled(async ctx => {
+        const db=ctx.firestore();
+        await Promise.all(Array.from({length:32},async (_,i)=>{
+          const peer=`list-peer-${String(i).padStart(2,'0')}`;
+          await setDoc(doc(db,`users/${peer}`),{display_name:peer,total_km:i,email:'not-public@example.test',phone:'not-public',fcm_token:'not-public',following_count:0,follower_count:1});
+          await setDoc(doc(db,`follows/${c.uid}_${peer}`),{follower_id:c.uid,following_id:peer,created_at:Timestamp.now()});
+        }));
+      });
+      const first=await call(b,'connections',{uid:c.uid,kind:'following'});
+      assert.equal(first.users.length,30);assert.ok(first.cursor);
+      const second=await call(b,'connections',{uid:c.uid,kind:'following',cursor:first.cursor});
+      assert.equal(second.users.length,2);assert.equal(second.cursor,null);
+      assert.equal(new Set([...first.users,...second.users].map(p=>p.uid)).size,32);
+      assert.ok(!JSON.stringify(first).includes('not-public'));
+      const followers=await call(b,'connections',{uid:'list-peer-00',kind:'followers'});
+      assert.equal(followers.users[0].uid,c.uid);
+      await assert.rejects(call(b,'connections',{uid:c.uid,kind:'unknown'}));
+      await assert.rejects(call(b,'connections',{uid:c.uid,kind:'following',cursor:'../../users'}));
+    });
     await test('public profile DTO excludes account PII', async () => {
       const response=await call(b,'profile',{uid:a.uid});
       const json=JSON.stringify(response);assert.ok(!json.includes('private@example.test'));assert.ok(!json.includes('phone'));assert.ok(!json.includes('notification_settings'));

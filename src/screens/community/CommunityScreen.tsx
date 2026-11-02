@@ -42,6 +42,12 @@ import {
 import { RunningShoeIcon } from '../../components/ui/RunningShoeIcon';
 import { ChatScreen } from './ChatScreen';
 import { CommentsSheet } from './CommentsSheet';
+import { ConnectionsScreen, type ConnectionKind } from './ConnectionsScreen';
+import { CharacterView } from '../../components/character/CharacterView';
+import {
+  CHARACTER_TYPES,
+  CHARACTER_STAGE_ORDER,
+} from '../../types/character.types';
 import { hasUnread, watchConversations } from '../../services/chat.service';
 import { TAB_BAR_HEIGHT } from '../../navigation/BottomTabBar';
 import { colors, fonts, radius, spacing } from '../../theme';
@@ -60,6 +66,7 @@ import {
   type FeedScope,
   type PublicProfile,
   type SocialPost,
+  type RunnerProfile,
 } from '../../services/social.service';
 import { formatDuration, formatPace } from '../../utils/pace';
 import type { Asset } from 'react-native-image-picker';
@@ -78,6 +85,7 @@ type Route =
   | { page: 'compose'; post?: SocialPost }
   | { page: 'post'; id: string }
   | { page: 'profile'; uid: string }
+  | { page: 'connections'; uid: string; kind: ConnectionKind }
   | { page: 'search' }
   | { page: 'rankings' }
   | { page: 'saved' }
@@ -144,7 +152,35 @@ function CommunityContent(
     feed.refresh();
   };
   if (route.page === 'chat')
-    return <ChatScreen initialPeer={route.peer} onBack={back} />;
+    return (
+      <ChatScreen
+        initialPeer={route.peer}
+        onBack={back}
+        onProfile={showProfile}
+        onConnections={() =>
+          push({ page: 'connections', uid: myUid(), kind: 'following' })
+        }
+      />
+    );
+  if (route.page === 'connections')
+    return (
+      <ConnectionsScreen
+        uid={route.uid}
+        initialKind={route.kind}
+        onKindChange={kind =>
+          setStack(old =>
+            old.map((item, index) =>
+              index === old.length - 1 && item.page === 'connections'
+                ? { ...item, kind }
+                : item,
+            ),
+          )
+        }
+        onBack={back}
+        onProfile={showProfile}
+        onMessage={uid => push({ page: 'chat', peer: uid })}
+      />
+    );
   if (route.page === 'compose')
     return (
       <Composer
@@ -174,12 +210,16 @@ function CommunityContent(
   if (route.page === 'profile')
     return (
       <ProfilePage
+        key={route.uid}
         uid={route.uid}
         onBack={back}
         onPost={showPost}
         onTogether={props.onTogetherPress}
         onComments={showComments}
         onMessage={uid => push({ page: 'chat', peer: uid })}
+        onConnections={kind =>
+          push({ page: 'connections', uid: route.uid, kind })
+        }
       />
     );
   if (route.page === 'search' || route.page === 'rankings')
@@ -209,6 +249,13 @@ function CommunityContent(
           </AppText>
         </View>
         <View style={styles.headerActions}>
+          <IconButton
+            icon={UserRound}
+            size={36}
+            variant="surface"
+            accessibilityLabel="내 러너 프로필"
+            onPress={() => showProfile(myUid())}
+          />
           <IconButton
             icon={Search}
             size={36}
@@ -528,7 +575,9 @@ export function PostCard({
     runInBackground({
       label: '',
       failureLabel:
-        kind === 'like' ? '응원을 처리하지 못했어요' : '저장을 처리하지 못했어요',
+        kind === 'like'
+          ? '응원을 처리하지 못했어요'
+          : '저장을 처리하지 못했어요',
       silent: true,
       retryable: false,
       describeError: socialError,
@@ -975,10 +1024,7 @@ export function Composer({
             {error}
           </AppText>
         )}
-        <Button
-          label={post ? '수정 저장' : '게시물 올리기'}
-          onPress={submit}
-        />
+        <Button label={post ? '수정 저장' : '게시물 올리기'} onPress={submit} />
       </ScrollView>
     </Page>
   );
@@ -1145,6 +1191,7 @@ export function ProfilePage({
   onTogether,
   onComments,
   onMessage,
+  onConnections,
 }: {
   uid: string;
   onBack: () => void;
@@ -1152,8 +1199,10 @@ export function ProfilePage({
   onTogether?: (friendUid: string) => void;
   onMessage: (uid: string) => void;
   onComments: (id: string) => void;
+  onConnections?: (kind: ConnectionKind) => void;
 }) {
   const [profile, setProfile] = useState<PublicProfile | null>(null);
+  const [runner, setRunner] = useState<RunnerProfile | null>(null);
   const [following, setFollowing] = useState(false);
   const [friend, setFriend] = useState(false);
   const [posts, setPosts] = useState<SocialPost[]>([]);
@@ -1166,11 +1215,7 @@ export function ProfilePage({
     let live = true;
     setStatus('loading');
     Promise.all([
-      socialRequest<{
-        profile: PublicProfile;
-        following: boolean;
-        friend?: boolean;
-      }>('profile', {
+      socialRequest<RunnerProfile>('profile', {
         uid,
       }),
       socialRequest<{ posts: SocialPost[] }>('profilePosts', { uid }),
@@ -1178,6 +1223,7 @@ export function ProfilePage({
       .then(([data, feed]) => {
         if (live) {
           setProfile(data.profile);
+          setRunner(data);
           setFollowing(data.following);
           setFriend(data.friend === true);
           setPosts(feed.posts);
@@ -1225,39 +1271,134 @@ export function ProfilePage({
         ) : (
           profile && (
             <>
-              <Card style={styles.empty}>
-                <Avatar uri={profile.profile_image} size={80} />
-                <AppText variant="heading">{profile.display_name}</AppText>
-                <AppText color={colors.textMuted}>
-                  {profile.region} · 누적 {profile.total_km.toFixed(1)}km
-                </AppText>
-                <AppText variant="caption">
-                  팔로워 {profile.follower_count} · 팔로잉{' '}
-                  {profile.following_count}
-                </AppText>
-                {uid !== myUid() && (
-                  <Button
-                    label={following ? '팔로잉' : '팔로우'}
-                    size="md"
-                    variant={following ? 'secondary' : 'primary'}
-                    onPress={follow}
-                  />
-                )}
-                {uid !== myUid() && (
-                  <Button
-                    icon={MessageSquare}
-                    label="메시지 보내기"
-                    size="md"
-                    variant="secondary"
-                    onPress={() => onMessage(uid)}
-                  />
-                )}
+              <Card style={styles.runnerHero}>
+                <View style={styles.runnerIdentity}>
+                  <Avatar uri={profile.profile_image} size={64} />
+                  <View style={styles.runnerIdentityText}>
+                    <AppText variant="label" color={colors.primaryInk}>
+                      DALRYO RUNNER
+                    </AppText>
+                    <AppText variant="heading" numberOfLines={1}>
+                      {profile.display_name}
+                    </AppText>
+                    <AppText variant="caption" color={colors.textMuted}>
+                      {profile.region}에서 함께 달려요
+                    </AppText>
+                  </View>
+                </View>
+                <View style={styles.runnerCounts}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="팔로워 목록"
+                    style={styles.runnerCount}
+                    onPress={() => onConnections?.('followers')}
+                  >
+                    <AppText variant="subheading">
+                      {profile.follower_count}
+                    </AppText>
+                    <AppText variant="caption">팔로워</AppText>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="팔로잉 목록"
+                    style={styles.runnerCount}
+                    onPress={() => onConnections?.('following')}
+                  >
+                    <AppText variant="subheading">
+                      {profile.following_count}
+                    </AppText>
+                    <AppText variant="caption">팔로잉</AppText>
+                  </Pressable>
+                </View>
+                <View style={styles.runnerActions}>
+                  {uid !== myUid() && (
+                    <Button
+                      style={styles.runnerAction}
+                      label={following ? '팔로잉' : '팔로우'}
+                      size="md"
+                      variant={following ? 'secondary' : 'primary'}
+                      onPress={follow}
+                    />
+                  )}
+                  {uid !== myUid() && (
+                    <Button
+                      style={styles.runnerAction}
+                      icon={MessageSquare}
+                      label="메시지 보내기"
+                      size="md"
+                      variant="secondary"
+                      onPress={() => onMessage(uid)}
+                    />
+                  )}
+                </View>
                 {friend && onTogether && (
                   <Button
                     label="같이 달리기 요청"
                     size="md"
                     onPress={() => onTogether(uid)}
                   />
+                )}
+              </Card>
+              {runner?.pet &&
+                CHARACTER_TYPES.includes(runner.pet.character_type) &&
+                CHARACTER_STAGE_ORDER.includes(runner.pet.stage) && (
+                  <Card style={styles.runnerPet}>
+                    <AppText variant="label" color={colors.primaryInk}>
+                      RUNNING MATE
+                    </AppText>
+                    <AppText variant="heading">{runner.pet.pet_name}</AppText>
+                    <AppText variant="caption" color={colors.primaryInk}>
+                      {
+                        ['알', '아기', '어린이', '러너'][
+                          CHARACTER_STAGE_ORDER.indexOf(runner.pet.stage)
+                        ]
+                      }
+                    </AppText>
+                    <CharacterView
+                      type={runner.pet.character_type}
+                      stage={runner.pet.stage}
+                      motion={runner.pet.is_frozen ? 'stone' : 'idle'}
+                      size={190}
+                    />
+                    <AppText variant="caption" color={colors.textMuted}>
+                      {runner.pet.is_frozen
+                        ? '다음 달리기를 기다리는 중'
+                        : '함께 달리며 자라고 있어요'}
+                    </AppText>
+                  </Card>
+                )}
+              <Card style={styles.runnerRecords}>
+                <AppText variant="subheading">러닝 발자국</AppText>
+                <View style={styles.runnerStats}>
+                  <View>
+                    <AppText variant="heading">
+                      {profile.total_km.toFixed(1)} km
+                    </AppText>
+                    <AppText variant="caption">누적 거리</AppText>
+                  </View>
+                  <View>
+                    <AppText variant="heading">
+                      {runner?.run_count ?? '—'}
+                    </AppText>
+                    <AppText variant="caption">완료한 러닝</AppText>
+                  </View>
+                </View>
+                {(runner?.recent_runs ?? []).map((run, index) => (
+                  <View key={index} style={styles.runnerRecordRow}>
+                    <AppText variant="caption" color={colors.textMuted}>
+                      {run.day}
+                    </AppText>
+                    <AppText variant="caption">
+                      {run.distance_km.toFixed(2)}km ·{' '}
+                      {formatDuration(run.duration_sec)} ·{' '}
+                      {run.avg_pace_sec ? formatPace(run.avg_pace_sec) : '—'}
+                    </AppText>
+                  </View>
+                ))}
+                {!runner?.recent_runs?.length && (
+                  <AppText color={colors.textMuted}>
+                    아직 완료한 러닝이 없어요.
+                  </AppText>
                 )}
               </Card>
               <AppText variant="subheading">최근 게시물</AppText>
@@ -1346,6 +1487,40 @@ function SavedPage({
 }
 
 const styles = StyleSheet.create({
+  runnerHero: { gap: 16 },
+  runnerIdentity: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  runnerIdentityText: { flex: 1, gap: 4 },
+  runnerCounts: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingVertical: 10,
+    borderRadius: 18,
+    backgroundColor: colors.primarySoft,
+  },
+  runnerCount: {
+    alignItems: 'center',
+    gap: 4,
+    minWidth: 100,
+    minHeight: 48,
+    justifyContent: 'center',
+  },
+  runnerActions: { flexDirection: 'row', gap: 10 },
+  runnerAction: { flex: 1 },
+  runnerPet: {
+    alignItems: 'center',
+    backgroundColor: colors.primarySoft,
+    gap: 8,
+  },
+  runnerRecords: { gap: 14 },
+  runnerStats: { flexDirection: 'row', justifyContent: 'space-between' },
+  runnerRecordRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 8,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
   screen: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: 'row',
