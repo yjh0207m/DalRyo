@@ -1,4 +1,5 @@
 import React from 'react';
+jest.mock('../src/components/character/CharacterView', () => ({CharacterView: () => null}));
 import { Alert, TextInput, View as MockView } from 'react-native';
 import Renderer, { act } from 'react-test-renderer';
 import {

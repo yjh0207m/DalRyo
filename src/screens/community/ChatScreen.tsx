@@ -1,17 +1,26 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   ActivityIndicator,
   Alert,
   AppState,
   BackHandler,
+  Dimensions,
   FlatList,
   Image,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
   Pressable,
   StyleSheet,
   TextInput,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -79,10 +88,12 @@ function Header({
   title,
   onBack,
   right,
+  onTitlePress,
 }: {
   title: string;
   onBack: () => void;
   right?: React.ReactNode;
+  onTitlePress?: () => void;
 }) {
   return (
     <View style={s.header}>
@@ -92,9 +103,17 @@ function Header({
         accessibilityLabel="대화에서 뒤로"
         onPress={onBack}
       />
-      <AppText variant="heading" numberOfLines={1} style={s.headerTitle}>
-        {title}
-      </AppText>
+      <Pressable
+        style={s.headerTitle}
+        disabled={!onTitlePress}
+        accessibilityRole="button"
+        accessibilityLabel={`${title} 프로필 보기`}
+        onPress={onTitlePress}
+      >
+        <AppText variant="heading" numberOfLines={1}>
+          {title}
+        </AppText>
+      </Pressable>
       {right ?? <View style={s.spacer} />}
     </View>
   );
@@ -122,9 +141,13 @@ function Failure({ error, retry }: { error: string; retry: () => void }) {
 export function ChatScreen({
   onBack,
   initialPeer,
+  onProfile,
+  onConnections,
 }: {
   onBack: () => void;
   initialPeer?: string;
+  onProfile?: (uid: string) => void;
+  onConnections?: () => void;
 }) {
   const [roomId, setRoomId] = useState<string | null>(null);
   const [opening, setOpening] = useState(!!initialPeer);
@@ -216,7 +239,14 @@ export function ChatScreen({
     }
   };
   if (roomId)
-    return <ConversationView key={roomId} id={roomId} onBack={back} />;
+    return (
+      <ConversationView
+        key={roomId}
+        id={roomId}
+        onBack={back}
+        onProfile={onProfile}
+      />
+    );
   if (opening)
     return (
       <SafeAreaView style={s.screen}>
@@ -243,6 +273,17 @@ export function ChatScreen({
           />
         }
       />
+      {onConnections && (
+        <View style={s.connections}>
+          <Button
+            size="md"
+            variant="secondary"
+            icon={UserRound}
+            label="팔로잉·팔로워에서 찾기"
+            onPress={onConnections}
+          />
+        </View>
+      )}
       <View style={s.intro}>
         <AppText style={s.eyebrow} color={colors.primaryInk}>
           RUN TOGETHER, TALK TOGETHER
@@ -434,11 +475,23 @@ function NewChat({
 export function ConversationView({
   id,
   onBack,
+  onProfile,
 }: {
   id: string;
   onBack: () => void;
+  onProfile?: (uid: string) => void;
 }) {
   const uid = myUid();
+  const { height: windowHeight } = useWindowDimensions();
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const keyboardInset =
+    Platform.OS === 'android'
+      ? Math.max(
+          0,
+          keyboardHeight -
+            Math.max(0, Dimensions.get('screen').height - windowHeight),
+        )
+      : 0;
   const [room, setRoom] = useState<Conversation | null>(null),
     [messages, setMessages] = useState<ChatMessage[]>([]),
     [body, setBody] = useState(''),
@@ -452,6 +505,8 @@ export function ConversationView({
     [foreground, setForeground] = useState(AppState.currentState === 'active');
   const historyLoaded = useRef(false);
   const [atLatest, setAtLatest] = useState(true);
+  const atLatestRef = useRef(true);
+  const initialScroll = useRef(true);
   const cursor = useRef<ChatCursor | null>(null),
     pending = useRef<{ id: string; text: string } | null>(null),
     sending = useRef(false),
@@ -470,6 +525,24 @@ export function ConversationView({
     );
     return () => sub.remove();
   }, []);
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardDidShow', event =>
+      setKeyboardHeight(event.endCoordinates.height),
+    );
+    const hide = Keyboard.addListener('keyboardDidHide', () =>
+      setKeyboardHeight(0),
+    );
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+  useEffect(() => {
+    if (atLatestRef.current)
+      requestAnimationFrame(() =>
+        list.current?.scrollToEnd({ animated: false }),
+      );
+  }, [keyboardInset]);
   useEffect(() => {
     setError('');
     setLoading(true);
@@ -506,6 +579,7 @@ export function ConversationView({
     };
   }, [id, revision]);
   const newest = messages[0]?.id;
+  const chronological = useMemo(() => [...messages].reverse(), [messages]);
   useEffect(() => {
     if (
       !room?.last_message_id ||
@@ -542,7 +616,9 @@ export function ConversationView({
       if (alive.current) {
         setBody('');
         pending.current = null;
-        list.current?.scrollToOffset({ offset: 0, animated: true });
+        atLatestRef.current = true;
+        setAtLatest(true);
+        list.current?.scrollToEnd({ animated: true });
       }
     } catch (e) {
       if (alive.current) setSendError(chatError(e));
@@ -555,6 +631,8 @@ export function ConversationView({
     if (!cursor.current || loadingMore) return;
     setLoadingMore(true);
     historyLoaded.current = true;
+    atLatestRef.current = false;
+    setAtLatest(false);
     try {
       const page = await earlierMessages(id, cursor.current);
       if (alive.current) {
@@ -598,6 +676,7 @@ export function ConversationView({
       <Header
         title={profile?.display_name ?? '대화'}
         onBack={onBack}
+        onTitlePress={peer && onProfile ? () => onProfile(peer) : undefined}
         right={
           <IconButton
             icon={MoreHorizontal}
@@ -611,158 +690,186 @@ export function ConversationView({
         style={s.grow}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        {error ? (
-          <Failure error={error} retry={() => setRevision(v => v + 1)} />
-        ) : loading ? (
-          <ActivityIndicator style={s.loader} color={colors.primary} />
-        ) : messages.length === 0 ? (
-          <View style={[s.grow, s.empty]}>
-            <Avatar profile={profile} />
-            <AppText variant="subheading">
-              {profile?.display_name}님과의 대화
-            </AppText>
-            <AppText color={colors.textMuted}>
-              러닝 이야기로 인사를 나눠 보세요.
-            </AppText>
-          </View>
-        ) : (
-          <FlatList
-            ref={list}
-            inverted
-            onScroll={event =>
-              setAtLatest(event.nativeEvent.contentOffset.y < 60)
-            }
-            scrollEventThrottle={150}
-            data={messages}
-            keyExtractor={m => m.id}
-            contentContainerStyle={s.messageList}
-            keyboardShouldPersistTaps="handled"
-            maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
-            ListFooterComponent={
-              more ? (
-                <Button
-                  variant="secondary"
-                  size="md"
-                  label={loadingMore ? '불러오는 중…' : '이전 메시지 더 보기'}
-                  disabled={loadingMore}
-                  onPress={loadMore}
-                />
-              ) : null
-            }
-            renderItem={({ item, index }) => {
-              const own = item.sender_uid === uid;
-              const previous = messages[index + 1];
-              const day = new Date(item.createdAt).toLocaleDateString('ko-KR', {
-                month: 'long',
-                day: 'numeric',
-                weekday: 'short',
-              });
-              const showDay =
-                !previous ||
-                new Date(previous.createdAt).toDateString() !==
-                  new Date(item.createdAt).toDateString();
-              const read =
-                own &&
-                index === 0 &&
-                peer &&
-                (room?.read_at[peer] ?? 0) >= item.createdAt;
-              return (
-                <View>
-                  {showDay && (
-                    <AppText
-                      align="center"
-                      variant="label"
-                      color={colors.textSubtle}
-                      style={s.day}
-                    >
-                      {day}
-                    </AppText>
-                  )}
-                  <View style={[s.messageRow, own && s.ownRow]}>
-                    {!own && <Avatar profile={profile} />}
-                    <View style={[s.bubble, own ? s.ownBubble : s.otherBubble]}>
+        <View
+          testID="dm-keyboard-region"
+          style={[s.grow, { paddingBottom: keyboardInset }]}
+        >
+          {error ? (
+            <Failure error={error} retry={() => setRevision(v => v + 1)} />
+          ) : loading ? (
+            <ActivityIndicator style={s.loader} color={colors.primary} />
+          ) : messages.length === 0 ? (
+            <View style={[s.grow, s.empty]}>
+              <Avatar profile={profile} />
+              <AppText variant="subheading">
+                {profile?.display_name}님과의 대화
+              </AppText>
+              <AppText color={colors.textMuted}>
+                러닝 이야기로 인사를 나눠 보세요.
+              </AppText>
+            </View>
+          ) : (
+            <FlatList
+              ref={list}
+              onScroll={event => {
+                const { contentOffset, layoutMeasurement, contentSize } =
+                  event.nativeEvent;
+                const latest =
+                  contentOffset.y + layoutMeasurement.height >=
+                  contentSize.height - 60;
+                atLatestRef.current = latest;
+                setAtLatest(latest);
+              }}
+              scrollEventThrottle={150}
+              data={chronological}
+              onContentSizeChange={() => {
+                if (initialScroll.current || atLatestRef.current) {
+                  initialScroll.current = false;
+                  list.current?.scrollToEnd({ animated: false });
+                }
+              }}
+              keyExtractor={m => m.id}
+              contentContainerStyle={s.messageList}
+              keyboardShouldPersistTaps="handled"
+              maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+              ListHeaderComponent={
+                more ? (
+                  <Button
+                    variant="secondary"
+                    size="md"
+                    label={loadingMore ? '불러오는 중…' : '이전 메시지 더 보기'}
+                    disabled={loadingMore}
+                    onPress={loadMore}
+                  />
+                ) : null
+              }
+              renderItem={({ item, index }) => {
+                const own = item.sender_uid === uid;
+                const previous = chronological[index - 1];
+                const day = new Date(item.createdAt).toLocaleDateString(
+                  'ko-KR',
+                  {
+                    month: 'long',
+                    day: 'numeric',
+                    weekday: 'short',
+                  },
+                );
+                const showDay =
+                  !previous ||
+                  new Date(previous.createdAt).toDateString() !==
+                    new Date(item.createdAt).toDateString();
+                const read =
+                  own &&
+                  index === chronological.length - 1 &&
+                  peer &&
+                  (room?.read_at[peer] ?? 0) >= item.createdAt;
+                return (
+                  <View>
+                    {showDay && (
                       <AppText
-                        selectable
-                        style={s.messageText}
-                        color={colors.text}
+                        align="center"
+                        variant="label"
+                        color={colors.textSubtle}
+                        style={s.day}
                       >
-                        {item.text}
+                        {day}
                       </AppText>
+                    )}
+                    <View style={[s.messageRow, own && s.ownRow]}>
+                      {!own && <Avatar profile={profile} />}
+                      <View
+                        style={[s.bubble, own ? s.ownBubble : s.otherBubble]}
+                      >
+                        <AppText
+                          selectable
+                          style={s.messageText}
+                          color={colors.text}
+                        >
+                          {item.text}
+                        </AppText>
+                      </View>
                     </View>
+                    <AppText
+                      variant="label"
+                      align={own ? 'right' : 'left'}
+                      color={colors.textSubtle}
+                      style={s.messageMeta}
+                    >
+                      {new Date(item.createdAt).toLocaleTimeString('ko-KR', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                      {read ? ' · 읽음' : ''}
+                    </AppText>
                   </View>
-                  <AppText
-                    variant="label"
-                    align={own ? 'right' : 'left'}
-                    color={colors.textSubtle}
-                    style={s.messageMeta}
-                  >
-                    {new Date(item.createdAt).toLocaleTimeString('ko-KR', {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                    {read ? ' · 읽음' : ''}
-                  </AppText>
-                </View>
-              );
-            }}
-          />
-        )}
-        {blocked && (
-          <AppText align="center" color={colors.textMuted} style={s.notice}>
-            {room?.blocked_by.includes(uid)
-              ? '내가 차단한 대화예요. 설정에서 해제할 수 있어요.'
-              : '현재 메시지를 보낼 수 없는 대화예요.'}
-          </AppText>
-        )}
-        {!!sendError && (
-          <AppText
-            accessibilityRole="alert"
-            color={colors.danger}
-            style={s.notice}
-          >
-            {sendError} 입력 내용은 유지돼요. 다시 전송해 주세요.
-          </AppText>
-        )}
-        <View style={s.composer}>
-          <TextInput
-            multiline
-            maxLength={2000}
-            value={body}
-            editable={!busy && !blocked && !error}
-            onChangeText={setBody}
-            placeholder={blocked ? '메시지를 보낼 수 없어요' : '메시지 보내기…'}
-            placeholderTextColor={colors.textSubtle}
-            accessibilityLabel="메시지 내용"
-            style={s.input}
-          />
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="메시지 전송"
-            accessibilityState={{
-              disabled:
-                busy || blocked || !body.trim() || !room || !!error || loading,
-            }}
-            disabled={
-              busy || blocked || !body.trim() || !room || !!error || loading
-            }
-            onPress={send}
-            style={[
-              s.send,
-              (!body.trim() ||
-                blocked ||
-                busy ||
-                !room ||
-                !!error ||
-                loading) &&
-                s.disabled,
-            ]}
-          >
-            {busy ? (
-              <ActivityIndicator color="white" />
-            ) : (
-              <ArrowUp size={24} color="white" />
-            )}
-          </Pressable>
+                );
+              }}
+            />
+          )}
+          {blocked && (
+            <AppText align="center" color={colors.textMuted} style={s.notice}>
+              {room?.blocked_by.includes(uid)
+                ? '내가 차단한 대화예요. 설정에서 해제할 수 있어요.'
+                : '현재 메시지를 보낼 수 없는 대화예요.'}
+            </AppText>
+          )}
+          {!!sendError && (
+            <AppText
+              accessibilityRole="alert"
+              color={colors.danger}
+              style={s.notice}
+            >
+              {sendError} 입력 내용은 유지돼요. 다시 전송해 주세요.
+            </AppText>
+          )}
+          <View style={s.composer}>
+            <TextInput
+              multiline
+              maxLength={2000}
+              value={body}
+              editable={!busy && !blocked && !error}
+              onChangeText={setBody}
+              placeholder={
+                blocked ? '메시지를 보낼 수 없어요' : '메시지 보내기…'
+              }
+              placeholderTextColor={colors.textSubtle}
+              accessibilityLabel="메시지 내용"
+              style={s.input}
+            />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="메시지 전송"
+              accessibilityState={{
+                disabled:
+                  busy ||
+                  blocked ||
+                  !body.trim() ||
+                  !room ||
+                  !!error ||
+                  loading,
+              }}
+              disabled={
+                busy || blocked || !body.trim() || !room || !!error || loading
+              }
+              onPress={send}
+              style={[
+                s.send,
+                (!body.trim() ||
+                  blocked ||
+                  busy ||
+                  !room ||
+                  !!error ||
+                  loading) &&
+                  s.disabled,
+              ]}
+            >
+              {busy ? (
+                <ActivityIndicator color="white" />
+              ) : (
+                <ArrowUp size={24} color="white" />
+              )}
+            </Pressable>
+          </View>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -770,6 +877,7 @@ export function ConversationView({
 }
 
 const s = StyleSheet.create({
+  connections: { paddingHorizontal: 20, paddingBottom: 8 },
   screen: { flex: 1, backgroundColor: colors.surface },
   grow: { flex: 1 },
   header: {
@@ -834,7 +942,12 @@ const s = StyleSheet.create({
     fontSize: 15,
     minHeight: 48,
   },
-  messageList: { paddingHorizontal: 20, paddingVertical: 16, flexGrow: 1 },
+  messageList: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    flexGrow: 1,
+    justifyContent: 'flex-end',
+  },
   messageRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
   ownRow: { justifyContent: 'flex-end' },
   bubble: {

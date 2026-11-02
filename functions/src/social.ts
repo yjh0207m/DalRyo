@@ -147,11 +147,25 @@ export const socialAction = onCall(
       }
       if (input.action === 'profile') {
         const target = documentId(input.uid);
-        const [profile, follow, followBack] = await Promise.all([
-          db().collection('users').doc(target).get(),
-          db().collection('follows').doc(`${uid}_${target}`).get(),
-          db().collection('follows').doc(`${target}_${uid}`).get(),
-        ]);
+        const [profile, follow, followBack, pet, runCount, recentRuns] =
+          await Promise.all([
+            db().collection('users').doc(target).get(),
+            db().collection('follows').doc(`${uid}_${target}`).get(),
+            db().collection('follows').doc(`${target}_${uid}`).get(),
+            db()
+              .collection('users')
+              .doc(target)
+              .collection('character')
+              .doc(target)
+              .get(),
+            db().collection('runs').where('uid', '==', target).count().get(),
+            db()
+              .collection('runs')
+              .where('uid', '==', target)
+              .orderBy('started_at', 'desc')
+              .limit(5)
+              .get(),
+          ]);
         if (!profile.exists)
           throw new HttpsError('not-found', '사용자를 찾을 수 없어요.');
         return {
@@ -159,6 +173,61 @@ export const socialAction = onCall(
           following: follow.exists,
           // 서로 팔로우하면 친구 → 같이 달리기 요청 가능
           friend: follow.exists && followBack.exists,
+          pet: pet.exists
+            ? {
+                character_type: String(pet.get('character_type') ?? ''),
+                stage: String(pet.get('stage') ?? 'egg'),
+                pet_name: String(pet.get('pet_name') ?? '달료').slice(0, 20),
+                exp: count(pet.get('exp')),
+                is_frozen: profile.get('is_frozen') === true,
+              }
+            : null,
+          run_count: runCount.data().count,
+          recent_runs: recentRuns.docs.map(run => ({
+            day:
+              run
+                .get('started_at')
+                ?.toDate?.()
+                .toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' }) ?? '',
+            distance_km: Math.max(0, Number(run.get('distance_km')) || 0),
+            duration_sec: count(run.get('duration_sec')),
+            avg_pace_sec: count(run.get('avg_pace_sec')),
+          })),
+        };
+      }
+      if (input.action === 'connections') {
+        const target = documentId(input.uid ?? uid);
+        if (!['followers', 'following'].includes(input.kind))
+          throw new Error('목록 종류를 확인해 주세요.');
+        const field =
+          input.kind === 'followers' ? 'following_id' : 'follower_id';
+        const otherField =
+          input.kind === 'followers' ? 'follower_id' : 'following_id';
+        let query = db()
+          .collection('follows')
+          .where(field, '==', target)
+          .orderBy(FieldPath.documentId());
+        if (input.cursor != null) {
+          if (
+            typeof input.cursor !== 'string' ||
+            !/^[A-Za-z0-9_-]{1,257}$/.test(input.cursor)
+          )
+            throw new Error('목록 위치를 확인해 주세요.');
+          query = query.startAfter(input.cursor);
+        }
+        const page = await query.limit(31).get();
+        const edges = page.docs.slice(0, 30);
+        const refs = edges.map(edge =>
+          db()
+            .collection('users')
+            .doc(documentId(edge.get(otherField))),
+        );
+        const people = refs.length ? await db().getAll(...refs) : [];
+        return {
+          users: people
+            .filter(person => person.exists)
+            .map(person => publicUser(person.id, person.data()!)),
+          cursor: page.size > 30 ? edges[edges.length - 1].id : null,
         };
       }
       if (input.action === 'followingFeed' || input.action === 'profilePosts') {

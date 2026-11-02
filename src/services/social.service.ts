@@ -1,7 +1,32 @@
 import { getApp } from '@react-native-firebase/app';
 import { getFunctions, httpsCallable } from '@react-native-firebase/functions';
-import { documentId, type FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
+import {
+  documentId,
+  type FirebaseFirestoreTypes,
+} from '@react-native-firebase/firestore';
 import { auth, firestore } from '../lib/firebase';
+import type { CharacterType, CharacterStage } from '../types/character.types';
+
+export type RunnerProfile = {
+  profile: PublicProfile;
+  following: boolean;
+  friend?: boolean;
+  pet?: {
+    character_type: CharacterType;
+    stage: CharacterStage;
+    pet_name: string;
+    exp: number;
+    is_frozen: boolean;
+  } | null;
+  run_count?: number;
+  recent_runs?: {
+    day: string;
+    distance_km: number;
+    duration_sec: number;
+    avg_pace_sec: number;
+  }[];
+};
+export type ConnectionPage = { users: PublicProfile[]; cursor: string | null };
 
 export type PublicProfile = {
   uid: string;

@@ -1,5 +1,13 @@
 import React from 'react';
-import { AppState, FlatList, TextInput, View as MockView } from 'react-native';
+import {
+  AppState,
+  FlatList,
+  Keyboard,
+  Platform,
+  StyleSheet,
+  TextInput,
+  View as MockView,
+} from 'react-native';
 import Renderer, { act } from 'react-test-renderer';
 import {
   ChatScreen,
@@ -78,6 +86,7 @@ beforeEach(() => {
 });
 afterEach(async () => {
   await act(() => tree?.unmount());
+  jest.restoreAllMocks();
 });
 async function render() {
   await act(async () => {
@@ -166,7 +175,13 @@ test('read receipt requires the latest message to be loaded and the list at the 
   await render();
   const list = tree.root.findByType(FlatList);
   await act(() =>
-    list.props.onScroll({ nativeEvent: { contentOffset: { y: 200 } } }),
+    list.props.onScroll({
+      nativeEvent: {
+        contentOffset: { y: 0 },
+        layoutMeasurement: { height: 400 },
+        contentSize: { height: 1000 },
+      },
+    }),
   );
   mockRead.mockClear();
   const two = { ...one, id: 'two', createdAt: 2000 };
@@ -180,7 +195,13 @@ test('read receipt requires the latest message to be loaded and the list at the 
   });
   expect(mockRead).not.toHaveBeenCalled();
   await act(async () => {
-    list.props.onScroll({ nativeEvent: { contentOffset: { y: 0 } } });
+    list.props.onScroll({
+      nativeEvent: {
+        contentOffset: { y: 600 },
+        layoutMeasurement: { height: 400 },
+        contentSize: { height: 1000 },
+      },
+    });
   });
   expect(mockRead).toHaveBeenCalledWith('room', 'two');
 });
@@ -211,4 +232,48 @@ test('realtime updates do not rewind the older-message pagination cursor', async
       .props.onPress();
   });
   expect(mockEarlier).toHaveBeenLastCalledWith('room', olderCursor);
+});
+
+test('messages use normal orientation and chronological order on the first render', async () => {
+  await render();
+  const old = { ...one, id: 'old', text: '먼저 보낸 메시지', createdAt: 100 };
+  await act(() =>
+    mockMessageNext({ items: [one, old], cursor: null, more: false }),
+  );
+  const list = tree.root.findByType(FlatList);
+  expect(list.props.inverted).not.toBe(true);
+  expect(list.props.data.map((message: ChatMessage) => message.id)).toEqual([
+    'old',
+    'one',
+  ]);
+  expect(list.props.ListHeaderComponent).toBeNull();
+});
+
+test('composer reserves space when the keyboard opens and restores it on close', async () => {
+  jest.replaceProperty(Platform, 'OS', 'android');
+  const listeners: Record<string, (event: any) => void> = {};
+  const spy = jest
+    .spyOn(Keyboard, 'addListener')
+    .mockImplementation((name, listener) => {
+      listeners[name] = listener;
+      return { remove: jest.fn() } as unknown as ReturnType<
+        typeof Keyboard.addListener
+      >;
+    });
+  await render();
+  await act(() =>
+    listeners.keyboardDidShow({ endCoordinates: { height: 300 } }),
+  );
+  expect(
+    StyleSheet.flatten(
+      tree.root.findByProps({ testID: 'dm-keyboard-region' }).props.style,
+    ).paddingBottom,
+  ).toBeGreaterThan(0);
+  await act(() => listeners.keyboardDidHide({}));
+  expect(
+    StyleSheet.flatten(
+      tree.root.findByProps({ testID: 'dm-keyboard-region' }).props.style,
+    ).paddingBottom,
+  ).toBe(0);
+  spy.mockRestore();
 });
