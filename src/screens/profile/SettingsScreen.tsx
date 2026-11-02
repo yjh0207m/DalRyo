@@ -20,6 +20,7 @@ import {
 } from 'react-native-safe-area-context';
 import {
   Bell,
+  Bookmark,
   Camera,
   ChevronLeft,
   ChevronRight,
@@ -50,11 +51,14 @@ import {
   validateProfile,
   type ProfileForm,
 } from '../../utils/profile';
+import { normalizeUserId } from '../../utils/userId';
 
 type Props = {
   user: UserDocument;
   onBack: () => void;
   onPreviewCharacter?: () => void;
+  // 있으면 목록에 "저장한 게시물"을 보여 주고, 누르면 커뮤니티의 저장한 게시물로 간다
+  onOpenSaved?: () => void;
 };
 
 // 설정 목록의 항목. 항목을 누르면 그 항목만 바꾸는 화면이 밀려 들어온다
@@ -74,6 +78,7 @@ const SECTION_ICON: Record<Section, LucideIcon> = {
 const SECTIONS: Section[] = ['profile', 'notifications', 'region', 'dialect'];
 const PROFILE_KEYS = [
   'displayName',
+  'userId',
   'website',
   'height',
   'weight',
@@ -86,10 +91,16 @@ const NOTIFICATION_LABELS: Array<[keyof NotificationPreferences, string]> = [
   ['stone', '달리기 리마인더'],
 ];
 
-export function SettingsScreen({ user, onBack, onPreviewCharacter }: Props) {
+export function SettingsScreen({
+  user,
+  onBack,
+  onPreviewCharacter,
+  onOpenSaved,
+}: Props) {
   const insets = useSafeAreaInsets();
   const [initial, setInitial] = useState<ProfileForm>(() => ({
     displayName: user.display_name,
+    userId: user.user_id ?? '',
     website: user.website ?? '',
     height: user.height_cm?.toString() ?? '',
     weight: user.weight_kg?.toString() ?? '',
@@ -161,6 +172,8 @@ export function SettingsScreen({ user, onBack, onPreviewCharacter }: Props) {
     if (busy) return false;
     try {
       validateProfile(form);
+      if (initial.userId && !normalizeUserId(form.userId ?? ''))
+        throw new Error('아이디는 비울 수 없어요. 다른 아이디로 바꿔 주세요.');
       if (!petName.trim() || petName.trim().length > 20)
         throw new Error('캐릭터 이름은 1~20자로 입력해 주세요.');
       setBusy('save');
@@ -180,6 +193,7 @@ export function SettingsScreen({ user, onBack, onPreviewCharacter }: Props) {
       const next = {
         ...form,
         displayName: form.displayName.trim(),
+        userId: normalizeUserId(form.userId ?? ''),
         website: form.website.trim(),
       };
       setInitial(next);
@@ -295,6 +309,17 @@ export function SettingsScreen({ user, onBack, onPreviewCharacter }: Props) {
             editable={!busy}
             maxLength={20}
           />
+          <Field
+            label="아이디"
+            value={form.userId ?? ''}
+            onChangeText={value => change('userId', value.toLowerCase())}
+            editable={!busy}
+            placeholder="영문 소문자·숫자·_ 4~20자"
+            maxLength={21}
+          />
+          <AppText variant="caption" color={colors.textMuted}>
+            내 프로필 맨 위에 @아이디로 보여요. 다른 사람과 겹칠 수 없어요.
+          </AppText>
           <Field
             label="닉네임"
             value={form.displayName}
@@ -446,6 +471,7 @@ export function SettingsScreen({ user, onBack, onPreviewCharacter }: Props) {
         onBack={onBack}
         onSignOut={requestSignOut}
         onPreviewCharacter={onPreviewCharacter}
+        onOpenSaved={onOpenSaved}
       />
       {section && (
         <SlideScreen key={section} onBack={() => setSection(null)}>
@@ -484,6 +510,7 @@ function List({
   onBack,
   onSignOut,
   onPreviewCharacter,
+  onOpenSaved,
 }: {
   insetsBottom: number;
   busy: boolean;
@@ -494,6 +521,7 @@ function List({
   onBack: () => void;
   onSignOut: () => void;
   onPreviewCharacter?: () => void;
+  onOpenSaved?: () => void;
 }) {
   useEffect(() => {
     const subscription = BackHandler.addEventListener(
@@ -570,6 +598,35 @@ function List({
             );
           })}
         </Card>
+        {onOpenSaved && (
+          <Card style={styles.listCard} padded={false}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="저장한 게시물"
+              disabled={busy}
+              onPress={onOpenSaved}
+              style={({ pressed }) => [
+                styles.listRow,
+                pressed && styles.listPressed,
+              ]}
+            >
+              <View style={styles.listIcon}>
+                <Bookmark color={colors.primaryInk} size={20} strokeWidth={2} />
+              </View>
+              <View style={styles.flex}>
+                <AppText variant="subheading">저장한 게시물</AppText>
+                <AppText
+                  variant="caption"
+                  color={colors.textMuted}
+                  numberOfLines={1}
+                >
+                  북마크한 게시물을 모아 봐요
+                </AppText>
+              </View>
+              <ChevronRight color={colors.textSubtle} size={18} />
+            </Pressable>
+          </Card>
+        )}
         {error && (
           <AppText
             variant="caption"

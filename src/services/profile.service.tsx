@@ -8,7 +8,9 @@ import firestore from '@react-native-firebase/firestore';
 export async function updateMyProfile(form: ProfileForm) {
   const currentUser = auth().currentUser;
   if (!currentUser) throw new Error('로그인이 필요해요. 다시 로그인해 주세요.');
+  // 아이디는 중복 확인이 필요해서 서버(saveAccountSettings)로만 바꾼다. 여기서는 쓰지 않는다
   const changes = validateProfile(form);
+  delete (changes as {user_id?: string | null}).user_id;
   await db().collection('users').doc(currentUser.uid).update({
     ...changes,
     updated_at: firestore.FieldValue.serverTimestamp(),

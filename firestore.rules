@@ -2,6 +2,7 @@ rules_version = '2';
 // Access/model audit: docs/firestore-access-review.md.
 // users are private PII. Growth, counters, social writes and memberships are server-owned.
 // Public/followers/private posts use canonical author + relationship authorization.
+// handles/{userId}: {uid,created_at}. 아이디를 겹치지 않게 차지하는 문서. 가입 때 사용자 문서와 함께 만들고, 이후 변경은 서버(saveAccountSettings)만 한다.
 // conversations: server-owned {members:[uid,uid],profiles:{uid:{display_name,profile_image}},
 // blocked_by:[uid],read_at:{uid:timestamp},last_text:string,last_sender_uid:string|null,
 // last_message_id:string|null,last_sent_at:timestamp|null,created_at:timestamp,updated_at:timestamp}.
@@ -18,8 +19,9 @@ service cloud.firestore {
     }
     function validUser(d) {
       return d.keys().hasAll(['uid','display_name','pet_name','region','dialect','total_km','total_exp','is_frozen','follower_count','following_count','influencer_tier','created_at','updated_at'])
-        && d.keys().hasOnly(['uid','email','phone','display_name','pet_name','profile_image','website','height_cm','weight_kg','gender','region','total_km','total_exp','last_run_at','is_frozen','influencer_tier','follower_count','following_count','dialect','fcm_token','notification_settings','created_at','updated_at'])
+        && d.keys().hasOnly(['uid','email','phone','display_name','user_id','pet_name','profile_image','website','height_cm','weight_kg','gender','region','total_km','total_exp','last_run_at','is_frozen','influencer_tier','follower_count','following_count','dialect','fcm_token','notification_settings','created_at','updated_at'])
         && d.uid is string && validName(d.display_name) && validName(d.pet_name)
+        && (!('user_id' in d) || (d.user_id is string && d.user_id.matches('^[a-z0-9_]{4,20}$')))
         && nullableString(d.get('email',null),320) && nullableString(d.get('phone',null),30)
         && nullableString(d.get('profile_image',null),3000) && nullableString(d.get('website',null),500)
         && (d.get('height_cm',null) == null || (d.height_cm is number && d.height_cm >= 50 && d.height_cm <= 250))
@@ -85,7 +87,9 @@ service cloud.firestore {
       allow create: if isOwner(uid) && validUser(request.resource.data) && request.resource.data.uid == uid
         && request.resource.data.total_km == 0 && request.resource.data.total_exp == 0
         && request.resource.data.is_frozen == false && request.resource.data.follower_count == 0
-        && request.resource.data.following_count == 0 && request.resource.data.influencer_tier == 'none';
+        && request.resource.data.following_count == 0 && request.resource.data.influencer_tier == 'none'
+        && (!('user_id' in request.resource.data)
+          || getAfter(/databases/$(database)/documents/handles/$(request.resource.data.user_id)).data.uid == uid);
       allow update: if isOwner(uid) && validUser(request.resource.data)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['display_name','profile_image','website','height_cm','weight_kg','gender','region','dialect','fcm_token','updated_at']);
       allow delete: if false;
@@ -103,6 +107,16 @@ service cloud.firestore {
       match /inventory/{id} { allow read: if isOwner(uid); allow write: if false; }
       match /room/{id} { allow read: if isOwner(uid); allow write: if false; }
       match /room_invites/{id} { allow read: if isOwner(uid); allow write: if false; }
+    }
+    // 아이디 중복 확인용. 하나씩 읽을 수만 있고 목록은 볼 수 없다
+    match /handles/{handle} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn() && handle.matches('^[a-z0-9_]{4,20}$')
+        && request.resource.data.keys().hasOnly(['uid','created_at'])
+        && request.resource.data.uid == request.auth.uid && request.resource.data.created_at == request.time
+        && getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('user_id',null) == handle;
+      allow update, delete: if false;
     }
     match /runs/{id} {
       allow create: if signedIn() && validRun(request.resource.data,id);

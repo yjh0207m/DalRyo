@@ -10,7 +10,13 @@ import {
 import { getMessaging } from 'firebase-admin/messaging';
 import { logger } from 'firebase-functions';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
-import { documentId, scopedImageUrl, text } from './validation';
+import {
+  documentId,
+  scopedImageUrl,
+  text,
+  USER_ID_PATTERN,
+} from './validation';
+import { mixHome, rankByRelation, recommendations } from './explore';
 import { chatAction } from './chat';
 
 const db = () => getFirestore();
@@ -33,6 +39,11 @@ function publicUser(uid: string, data: DocumentData) {
       typeof data.display_name === 'string'
         ? data.display_name.slice(0, 20)
         : '달리너',
+    // 아이디가 생기기 전에 가입한 사용자는 null
+    user_id:
+      typeof data.user_id === 'string' && USER_ID_PATTERN.test(data.user_id)
+        ? data.user_id
+        : null,
     profile_image:
       typeof data.profile_image === 'string' &&
       data.profile_image.startsWith('https://')
@@ -45,9 +56,21 @@ function publicUser(uid: string, data: DocumentData) {
     influencer_tier: data.influencer_tier ?? 'none',
   };
 }
-function postDto(id: string, data: DocumentData) {
+type PostDto = DocumentData & {
+  post_id: string;
+  uid: string;
+  createdAtMs: number;
+  visibility?: string;
+  deleted?: boolean;
+};
+function postDto(id: string, data: DocumentData): PostDto {
   const { created_at, updated_at, ...rest } = data;
-  return { ...rest, post_id: id, createdAtMs: created_at?.toMillis?.() ?? 0 };
+  return {
+    ...rest,
+    uid: rest.uid,
+    post_id: id,
+    createdAtMs: created_at?.toMillis?.() ?? 0,
+  };
 }
 async function readable(uid: string, post: DocumentData, tx?: Transaction) {
   if (post.deleted) return false;
@@ -130,21 +153,48 @@ export const socialAction = onCall(
       )
         return await chatAction(uid, input);
       if (input.action === 'search' || input.action === 'rankings') {
+        // 검색어가 @로 시작하면 아이디로, 아니면 닉네임으로 찾는다
+        const byId =
+          input.action === 'search' &&
+          typeof input.query === 'string' &&
+          input.query.trim().startsWith('@');
         let query = db()
           .collection('users')
           .orderBy(
-            input.action === 'search' ? 'display_name' : 'total_km',
-            input.action === 'search' ? 'asc' : 'desc',
+            input.action === 'rankings'
+              ? 'total_km'
+              : byId
+              ? 'user_id'
+              : 'display_name',
+            input.action === 'rankings' ? 'desc' : 'asc',
           );
         if (input.action === 'search') {
-          const prefix = text(input.query, '닉네임', 1, 20);
+          const prefix = byId
+            ? text(input.query.trim().slice(1).toLowerCase(), '아이디', 1, 20)
+            : text(input.query, '닉네임', 1, 20);
           query = query.startAt(prefix).endAt(`${prefix}\uf8ff`);
         }
-        const snapshot = await query
-          .limit(input.action === 'search' ? 20 : 50)
-          .get();
+        const snapshot = await query.limit(50).get();
+        const users = snapshot.docs.map(doc => publicUser(doc.id, doc.data()));
+        if (input.action !== 'search') return { users };
+        // 검색 결과는 내가 팔로우한 사람 > 나를 팔로우한 사람 > 모르는 사람 순으로 보여 준다
+        const others = users;
+        const refs = others.flatMap(user => [
+          db().collection('follows').doc(`${uid}_${user.uid}`),
+          db().collection('follows').doc(`${user.uid}_${uid}`),
+        ]);
+        const edges = refs.length ? await db().getAll(...refs) : [];
         return {
-          users: snapshot.docs.map(doc => publicUser(doc.id, doc.data())),
+          users: rankByRelation(
+            others.map((user, i) => ({
+              ...user,
+              relation: edges[i * 2].exists
+                ? ('following' as const)
+                : edges[i * 2 + 1].exists
+                ? ('follower' as const)
+                : ('none' as const),
+            })),
+          ),
         };
       }
       if (input.action === 'profile') {
@@ -230,6 +280,74 @@ export const socialAction = onCall(
             .filter(person => person.exists)
             .map(person => publicUser(person.id, person.data()!)),
           cursor: page.size > 30 ? edges[edges.length - 1].id : null,
+        };
+      }
+      if (input.action === 'exploreFeed' || input.action === 'homeFeed') {
+        // 탐색: 내가 팔로우하지 않은 사람들의 공개 글(지금은 무작위).
+        // 피드: 내가 팔로우한 사람과 내 글을 최신순으로, 중간중간 추천 글(탐색과 같은 후보)을 끼워서.
+        // 앱이 새로고침할 때마다 보내는 seed로 순서를 정하고, 10개씩 offset부터 나눠 준다.
+        const offset =
+          Number.isInteger(input.offset) &&
+          input.offset >= 0 &&
+          input.offset <= 90
+            ? input.offset
+            : 0;
+        const seed =
+          Number.isInteger(input.seed) &&
+          input.seed >= 0 &&
+          input.seed < 2 ** 31
+            ? input.seed
+            : 0;
+        const home = input.action === 'homeFeed';
+        const [recent, followDocs] = await Promise.all([
+          db()
+            .collection('posts')
+            .where('visibility', '==', 'public')
+            .orderBy('created_at', 'desc')
+            .limit(200)
+            .get(),
+          db()
+            .collection('follows')
+            .where('follower_id', '==', uid)
+            .limit(300)
+            .get(),
+        ]);
+        const following = new Set<string>(
+          followDocs.docs.map(d => d.get('following_id')),
+        );
+        const recommended = recommendations(
+          recent.docs.map(doc => postDto(doc.id, doc.data())),
+          { uid, following, seed },
+        );
+        let list: Array<ReturnType<typeof postDto>> = recommended;
+        if (home) {
+          const authors = [uid, ...following];
+          const snapshots = await Promise.all(
+            Array.from({ length: Math.ceil(authors.length / 10) }, (_, i) =>
+              db()
+                .collection('posts')
+                .where('uid', 'in', authors.slice(i * 10, i * 10 + 10))
+                .where('visibility', 'in', ['public', 'followers'])
+                .orderBy('created_at', 'desc')
+                .orderBy(FieldPath.documentId(), 'desc')
+                .limit(20)
+                .get(),
+            ),
+          );
+          const mine = snapshots
+            .flatMap(snap => snap.docs.map(doc => postDto(doc.id, doc.data())))
+            .filter(post => !post.deleted)
+            .sort(
+              (a, b) =>
+                b.createdAtMs - a.createdAtMs ||
+                (a.post_id < b.post_id ? 1 : -1),
+            )
+            .slice(0, 60);
+          list = mixHome(mine, recommended.slice(0, 30));
+        }
+        return {
+          posts: list.slice(offset, offset + 10),
+          hasMore: list.length > offset + 10,
         };
       }
       if (input.action === 'followingFeed' || input.action === 'profilePosts') {

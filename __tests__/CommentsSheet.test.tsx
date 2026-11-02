@@ -75,8 +75,8 @@ jest.mock('../src/hooks/useComments', () => ({
     loadMore: mockLoadMore,
   }),
 }));
-jest.mock('../src/hooks/useSocialFeed', () => ({
-  useSocialFeed: () => ({
+jest.mock('../src/hooks/useServerFeed', () => ({
+  useServerFeed: () => ({
     posts: [mockPost],
     status: 'success',
     more: false,

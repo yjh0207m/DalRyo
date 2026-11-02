@@ -5,6 +5,7 @@ const form: ProfileForm = {displayName: ' 달리너 ', website: '', height: '', 
 test('선택 입력값은 비울 수 있고 닉네임은 정리한다', () => {
   expect(validateProfile(form)).toEqual({
     display_name: '달리너',
+    user_id: null,
     website: null,
     height_cm: null,
     weight_kg: null,

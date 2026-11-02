@@ -10,9 +10,11 @@ import {
 } from 'react-native';
 import Renderer, { act } from 'react-test-renderer';
 import {
+  byRelation,
   ChatScreen,
   ConversationView,
 } from '../src/screens/community/ChatScreen';
+import { socialRequest } from '../src/services/social.service';
 import type {
   Conversation,
   ChatMessage,
@@ -68,10 +70,17 @@ jest.mock('../src/services/chat.service', () => ({
     ...new Map([...old, ...fresh].map(m => [m.id, m])).values(),
   ],
 }));
-jest.mock(
-  'lucide-react-native',
-  () => new Proxy({}, { get: () => () => null }),
-);
+jest.mock('lucide-react-native', () => {
+  // 아이콘마다 이름을 붙여 두면 테스트에서 어떤 아이콘인지 알아볼 수 있다
+  const cache: Record<string, () => null> = {};
+  return new Proxy(
+    {},
+    {
+      get: (_target, name: string) =>
+        (cache[name] ??= Object.assign(() => null, { displayName: name })),
+    },
+  );
+});
 jest.mock('react-native-safe-area-context', () => ({ SafeAreaView: MockView }));
 let tree: Renderer.ReactTestRenderer;
 beforeEach(() => {
@@ -120,6 +129,27 @@ test('returning from runner search reconnects the inbox after a listener error',
     press('대화에서 뒤로');
   });
   expect(mockWatchInbox).toHaveBeenCalledTimes(2);
+});
+
+test('tells the parent when it is inside a sub screen, so the bottom bars can be hidden there', async () => {
+  const onDetailChange = jest.fn();
+  await act(async () => {
+    tree = Renderer.create(
+      <ChatScreen onBack={jest.fn()} onDetailChange={onDetailChange} />,
+    );
+  });
+  expect(onDetailChange).toHaveBeenLastCalledWith(false);
+  const press = (label: string) =>
+    tree.root
+      .findAll(n => typeof n.type === 'function' && n.type.name === 'Pressable')
+      .find(n => n.props.accessibilityLabel === label)!
+      .props.onPress();
+  await act(() => press('새 대화'));
+  expect(onDetailChange).toHaveBeenLastCalledWith(true);
+  await act(async () => {
+    press('대화에서 뒤로');
+  });
+  expect(onDetailChange).toHaveBeenLastCalledWith(false);
 });
 
 test('send failure keeps draft and retries with the same message id', async () => {
@@ -276,4 +306,154 @@ test('composer reserves space when the keyboard opens and restores it on close',
     ).paddingBottom,
   ).toBe(0);
   spy.mockRestore();
+});
+
+describe('the messages list page', () => {
+  const textsOf = () =>
+    tree.root
+      .findAll(n => String(n.type) === 'Text')
+      .map(n => ([] as unknown[]).concat(n.props.children).join(''));
+  const pressable = (label: string) =>
+    tree.root.find(
+      n =>
+        typeof n.type === 'function' &&
+        n.type.name === 'Pressable' &&
+        n.props.accessibilityLabel === label,
+    );
+  async function renderList(
+    props: Partial<React.ComponentProps<typeof ChatScreen>> = {},
+  ) {
+    mockWatchInbox.mockImplementation(next => {
+      next({ items: [room], cursor: null, more: false });
+      return () => {};
+    });
+    await act(async () => {
+      tree = Renderer.create(<ChatScreen onBack={jest.fn()} {...props} />);
+    });
+  }
+
+  test('has no tagline and no “find among followers” button', async () => {
+    await renderList({ onTogether: jest.fn() });
+    const all = textsOf();
+    expect(all).not.toContain('RUN TOGETHER, TALK TOGETHER');
+    expect(all).not.toContain('러닝 이야기도, 다음 약속도 여기서.');
+    expect(all).not.toContain('팔로잉·팔로워에서 찾기');
+  });
+
+  test('has a “같이 달리기” button above the conversations', async () => {
+    const onTogether = jest.fn();
+    await renderList({ onTogether });
+    const button = tree.root.find(n => n.props?.label === '같이 달리기');
+    await act(async () => button.props.onPress());
+    expect(onTogether).toHaveBeenCalledTimes(1);
+    const order = tree.root.findAll(() => true);
+    const together = order.indexOf(button);
+    const firstRoom = order.indexOf(
+      order.find(n => n.props?.accessibilityLabel === '친구 대화, 새 메시지')!,
+    );
+    expect(together).toBeGreaterThan(-1);
+    expect(together).toBeLessThan(firstRoom);
+  });
+
+  test('does not show the button when the app gives no handler', async () => {
+    await renderList();
+    expect(
+      tree.root.findAll(n => n.props?.label === '같이 달리기'),
+    ).toHaveLength(0);
+  });
+
+  test('starts a new chat with a plus icon instead of a message icon', async () => {
+    await renderList();
+    const icons = pressable('새 대화').findAll(
+      n =>
+        typeof n.type === 'function' &&
+        !!(n.type as { displayName?: string }).displayName,
+    );
+    const names = icons.map(
+      n => (n.type as { displayName: string }).displayName,
+    );
+    expect(names).toContain('Plus');
+    expect(names).not.toContain('MessageSquare');
+  });
+});
+
+describe('searching for someone to start a chat with', () => {
+  const person = (
+    uid: string,
+    name: string,
+    relation?: 'following' | 'follower' | 'none',
+  ) => ({
+    uid,
+    display_name: name,
+    profile_image: null,
+    total_km: 0,
+    region: '서울',
+    follower_count: 0,
+    following_count: 0,
+    influencer_tier: 'none',
+    relation,
+  });
+
+  test('lists people I follow first, then people who follow me, then strangers, and says which is which', async () => {
+    jest.useFakeTimers();
+    (socialRequest as jest.Mock).mockResolvedValue({
+      users: [
+        person('s1', '민아', 'none'),
+        person('f1', '민준', 'follower'),
+        person('me', '민나(나)', 'none'),
+        person('g1', '민서', 'following'),
+        person('s2', '민호', 'none'),
+      ],
+    });
+    await act(async () => {
+      tree = Renderer.create(<ChatScreen onBack={jest.fn()} />);
+    });
+    const press = (label: string) =>
+      tree.root
+        .findAll(
+          n => typeof n.type === 'function' && n.type.name === 'Pressable',
+        )
+        .find(n => n.props.accessibilityLabel === label)!
+        .props.onPress();
+    await act(async () => press('새 대화'));
+    await act(async () => {
+      tree.root
+        .findByProps({ accessibilityLabel: '대화 상대 검색' })
+        .props.onChangeText('민');
+    });
+    await act(async () => {
+      jest.advanceTimersByTime(400);
+    });
+    const rows = tree.root
+      .findAll(
+        n =>
+          typeof n.type === 'function' &&
+          n.type.name === 'Pressable' &&
+          String(n.props.accessibilityLabel).endsWith('에게 메시지'),
+      )
+      .map(n => n.props.accessibilityLabel);
+    expect(rows).toEqual([
+      '민서에게 메시지',
+      '민준에게 메시지',
+      '민아에게 메시지',
+      '민호에게 메시지',
+    ]);
+    const labels = tree.root
+      .findAll(n => String(n.type) === 'Text')
+      .map(n => ([] as unknown[]).concat(n.props.children).join(''));
+    expect(labels).toContain('팔로잉');
+    expect(labels).toContain('나를 팔로우');
+    jest.useRealTimers();
+  });
+
+  test('the order rule keeps the server order inside each group', () => {
+    const sorted = byRelation([
+      person('a', 'a', 'none'),
+      person('b', 'b', 'following'),
+      person('c', 'c', 'follower'),
+      person('d', 'd', 'following'),
+      person('e', 'e'),
+    ]);
+    expect(sorted.map(p => p.uid)).toEqual(['b', 'd', 'c', 'a', 'e']);
+  });
 });

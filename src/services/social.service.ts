@@ -31,12 +31,16 @@ export type ConnectionPage = { users: PublicProfile[]; cursor: string | null };
 export type PublicProfile = {
   uid: string;
   display_name: string;
+  // 아이디. 이 기능이 생기기 전에 가입한 사용자는 없다
+  user_id?: string | null;
   profile_image: string | null;
   total_km: number;
   region: string;
   follower_count: number;
   following_count: number;
   influencer_tier: string;
+  // 검색 결과에서만 온다: 내가 팔로우한 사람, 나를 팔로우한 사람, 그 외
+  relation?: 'following' | 'follower' | 'none';
 };
 export type SocialPost = {
   post_id: string;

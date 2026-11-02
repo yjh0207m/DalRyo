@@ -28,8 +28,10 @@ import {
   ChevronLeft,
   MessageSquare,
   MoreHorizontal,
+  Plus,
   Search,
   UserRound,
+  Users,
 } from 'lucide-react-native';
 import { AppText, Button, IconButton } from '../../components/ui';
 import { colors, fonts } from '../../theme';
@@ -142,12 +144,19 @@ export function ChatScreen({
   onBack,
   initialPeer,
   onProfile,
-  onConnections,
+  onTogether,
+  onDetailChange,
+  bottomInset = 0,
 }: {
   onBack: () => void;
   initialPeer?: string;
   onProfile?: (uid: string) => void;
-  onConnections?: () => void;
+  // 있으면 목록 맨 위에 "같이 달리기" 버튼을 보여 준다
+  onTogether?: () => void;
+  // 대화방이나 새 대화 화면처럼 목록 아래로 들어가 있는지 알린다. 부모가 하단 바를 가릴 때 쓴다
+  onDetailChange?: (detail: boolean) => void;
+  // 화면 아래에 떠 있는 바에 목록 끝이 가려지지 않도록 비워 둘 높이
+  bottomInset?: number;
 }) {
   const [roomId, setRoomId] = useState<string | null>(null);
   const [opening, setOpening] = useState(!!initialPeer);
@@ -158,6 +167,11 @@ export function ChatScreen({
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [more, setMore] = useState(false);
+  const detail = !!roomId || opening || choosing;
+  useEffect(() => {
+    onDetailChange?.(detail);
+    return () => onDetailChange?.(false);
+  }, [detail, onDetailChange]);
   const historyLoaded = useRef(false);
   const cursor = useRef<ChatCursor | null>(null);
   const alive = useRef(true);
@@ -257,13 +271,16 @@ export function ChatScreen({
   if (choosing)
     return <NewChat onBack={back} onSelect={open} openError={error} />;
   return (
-    <SafeAreaView style={s.screen} edges={['top', 'bottom']}>
+    <SafeAreaView
+      style={s.screen}
+      edges={bottomInset ? ['top'] : ['top', 'bottom']}
+    >
       <Header
         title="메시지"
         onBack={back}
         right={
           <IconButton
-            icon={MessageSquare}
+            icon={Plus}
             variant="plain"
             accessibilityLabel="새 대화"
             onPress={() => {
@@ -273,25 +290,17 @@ export function ChatScreen({
           />
         }
       />
-      {onConnections && (
-        <View style={s.connections}>
+      {onTogether && (
+        <View style={s.together}>
           <Button
             size="md"
             variant="secondary"
-            icon={UserRound}
-            label="팔로잉·팔로워에서 찾기"
-            onPress={onConnections}
+            icon={Users}
+            label="같이 달리기"
+            onPress={onTogether}
           />
         </View>
       )}
-      <View style={s.intro}>
-        <AppText style={s.eyebrow} color={colors.primaryInk}>
-          RUN TOGETHER, TALK TOGETHER
-        </AppText>
-        <AppText color={colors.textMuted}>
-          러닝 이야기도, 다음 약속도 여기서.
-        </AppText>
-      </View>
       {error ? (
         <Failure error={error} retry={() => setRevision(v => v + 1)} />
       ) : loading ? (
@@ -300,7 +309,10 @@ export function ChatScreen({
         <FlatList
           data={rooms.filter(r => r.last_message_id)}
           keyExtractor={r => r.id}
-          contentContainerStyle={s.list}
+          contentContainerStyle={[
+            s.list,
+            bottomInset ? { paddingBottom: bottomInset } : null,
+          ]}
           ListEmptyComponent={
             <View style={s.empty}>
               <MessageSquare size={44} color={colors.primary} />
@@ -374,6 +386,24 @@ export function ChatScreen({
   );
 }
 
+// 새 대화 검색 결과 순서: 내가 팔로우한 사람 > 나를 팔로우한 사람 > 모르는 사람. 서버가 정렬해 주지만 앱도 같은 순서를 지킨다
+const RELATION_RANK = { following: 0, follower: 1, none: 2 } as const;
+const RELATION_LABEL = {
+  following: '팔로잉',
+  follower: '나를 팔로우',
+  none: '',
+};
+export function byRelation(users: PublicProfile[]) {
+  return users
+    .map((user, index) => ({ user, index }))
+    .sort(
+      (a, b) =>
+        RELATION_RANK[a.user.relation ?? 'none'] -
+          RELATION_RANK[b.user.relation ?? 'none'] || a.index - b.index,
+    )
+    .map(item => item.user);
+}
+
 function NewChat({
   onBack,
   onSelect,
@@ -404,7 +434,7 @@ function NewChat({
       })
         .then(result => {
           if (live && version === request.current)
-            setPeople(result.users.filter(p => p.uid !== myUid()));
+            setPeople(byRelation(result.users.filter(p => p.uid !== myUid())));
         })
         .catch(e => {
           if (live && version === request.current) setError(chatError(e));
@@ -432,8 +462,8 @@ function NewChat({
           autoFocus
           value={query}
           onChangeText={setQuery}
-          maxLength={20}
-          placeholder="러너 닉네임 검색"
+          maxLength={21}
+          placeholder="닉네임 또는 @아이디 검색"
           placeholderTextColor={colors.textSubtle}
           style={s.searchInput}
           accessibilityLabel="대화 상대 검색"
@@ -463,7 +493,14 @@ function NewChat({
               style={s.roomRow}
             >
               <Avatar profile={item} />
-              <AppText variant="subheading">{item.display_name}</AppText>
+              <View style={s.grow}>
+                <AppText variant="subheading">{item.display_name}</AppText>
+                {!!RELATION_LABEL[item.relation ?? 'none'] && (
+                  <AppText variant="caption" color={colors.textMuted}>
+                    {RELATION_LABEL[item.relation ?? 'none']}
+                  </AppText>
+                )}
+              </View>
             </Pressable>
           )}
         />
@@ -877,7 +914,7 @@ export function ConversationView({
 }
 
 const s = StyleSheet.create({
-  connections: { paddingHorizontal: 20, paddingBottom: 8 },
+  together: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 8 },
   screen: { flex: 1, backgroundColor: colors.surface },
   grow: { flex: 1 },
   header: {
@@ -891,8 +928,6 @@ const s = StyleSheet.create({
   },
   headerTitle: { flex: 1 },
   spacer: { width: 44 },
-  intro: { padding: 24, gap: 9 },
-  eyebrow: { fontFamily: fonts.semibold, fontSize: 9, letterSpacing: 1.4 },
   list: { padding: 20, gap: 8, flexGrow: 1 },
   empty: {
     padding: 24,

@@ -367,3 +367,81 @@ describe('logging out', () => {
     expect(mockSignOut).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('the user id', () => {
+  const withId = { ...user, user_id: 'dalryo_jo' } as UserDocument;
+  async function renderAs(current: UserDocument) {
+    await act(async () => {
+      tree = Renderer.create(<SettingsScreen user={current} onBack={onBack} />);
+    });
+  }
+
+  test('is on the profile page, empty for someone who has none yet', async () => {
+    await render();
+    await press('내 프로필, 조현 · 달료');
+    expect(input('아이디').props.value).toBe('');
+    await act(async () => tree.unmount());
+    await renderAs(withId);
+    await press('내 프로필, 조현 · 달료');
+    expect(input('아이디').props.value).toBe('dalryo_jo');
+  });
+
+  test('is sent lower-cased with the rest of the profile', async () => {
+    await render();
+    await press('내 프로필, 조현 · 달료');
+    await type('아이디', 'Run_Jo');
+    expect(input('아이디').props.value).toBe('run_jo');
+    await pressText('저장');
+    expect(mockSave.mock.calls[0][0]).toMatchObject({ userId: 'run_jo' });
+  });
+
+  test('a badly formed id is explained and nothing is sent', async () => {
+    await render();
+    await press('내 프로필, 조현 · 달료');
+    await type('아이디', 'a b');
+    await pressText('저장');
+    expect(mockSave).not.toHaveBeenCalled();
+    expect(texts().some(text => text.includes('아이디는 영문 소문자'))).toBe(
+      true,
+    );
+  });
+
+  test('once it is set it cannot be emptied', async () => {
+    await renderAs(withId);
+    await press('내 프로필, 조현 · 달료');
+    await type('아이디', '');
+    await pressText('저장');
+    expect(mockSave).not.toHaveBeenCalled();
+    expect(texts().some(text => text.includes('아이디는 비울 수 없어요'))).toBe(
+      true,
+    );
+  });
+
+  test('leaving it untouched for someone with no id yet still saves the other changes', async () => {
+    await render();
+    await press('내 프로필, 조현 · 달료');
+    await type('닉네임', '새닉네임');
+    await pressText('저장');
+    expect(mockSave).toHaveBeenCalledTimes(1);
+    expect(mockSave.mock.calls[0][0].userId ?? '').toBe('');
+  });
+});
+
+describe('saved posts', () => {
+  test('are reached from the list when the app provides the entry', async () => {
+    const onOpenSaved = jest.fn();
+    await act(async () => {
+      tree = Renderer.create(
+        <SettingsScreen user={user} onBack={onBack} onOpenSaved={onOpenSaved} />,
+      );
+    });
+    await press('저장한 게시물');
+    expect(onOpenSaved).toHaveBeenCalledTimes(1);
+    expect(texts()).toContain('북마크한 게시물을 모아 봐요');
+  });
+
+  test('are not offered when nothing handles them', async () => {
+    await render();
+    expect(byLabel('저장한 게시물')).toBeUndefined();
+  });
+});

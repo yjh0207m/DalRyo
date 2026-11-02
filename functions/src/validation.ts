@@ -17,6 +17,20 @@ export function documentId(value: unknown): string {
   return value;
 }
 
+// 아이디: 영문 소문자·숫자·밑줄 4~20자. 앞의 @는 떼고 소문자로 맞춘다. 비어 있으면 null(바꾸지 않음)
+export const USER_ID_PATTERN = /^[a-z0-9_]{4,20}$/;
+export function userIdValue(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'string') throw new Error('아이디를 확인해 주세요.');
+  const id = value.trim().replace(/^@/, '').toLowerCase();
+  if (!id) return null;
+  if (!USER_ID_PATTERN.test(id))
+    throw new Error(
+      '아이디는 영문 소문자, 숫자, 밑줄(_)로 4~20자로 입력해 주세요.',
+    );
+  return id;
+}
+
 export function validateAccount(input: Record<string, unknown>) {
   const display_name = text(input.displayName, '닉네임', 1, 20);
   const pet_name = text(input.petName, '캐릭터 이름', 1, 20);
@@ -78,6 +92,7 @@ export function validateAccount(input: Record<string, unknown>) {
     throw new Error('알림 설정을 확인해 주세요.');
   return {
     display_name,
+    user_id: userIdValue(input.userId),
     pet_name,
     website: website || null,
     height_cm: nullableNumber(input.heightCm, 50, 250),

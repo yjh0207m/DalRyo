@@ -23,6 +23,9 @@ const TABS: Array<{
   { key: 'records', label: '기록', icon: CalendarDays },
 ];
 export const TAB_BAR_HEIGHT = 88;
+// 하단 바 본체의 높이와, 화면 아래에서 띄우는 거리. 바 위에 다른 요소를 얹을 때 같은 값을 쓴다
+export const TAB_BAR_BODY_HEIGHT = 70;
+export const tabBarBottom = (insetBottom: number) => Math.max(insetBottom, 12);
 export function BottomTabBar({
   activeTab,
   onChange,
@@ -32,7 +35,7 @@ export function BottomTabBar({
 }) {
   const insets = useSafeAreaInsets();
   return (
-    <View style={[styles.bar, { bottom: Math.max(insets.bottom, 12) }]}>
+    <View style={[styles.bar, { bottom: tabBarBottom(insets.bottom) }]}>
       {TABS.slice(0, 2).map(tab => (
         <TabItem
           key={tab.key}
@@ -104,7 +107,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: spacing.xl,
     right: spacing.xl,
-    height: 70,
+    height: TAB_BAR_BODY_HEIGHT,
     paddingHorizontal: 6,
     paddingVertical: 6,
     borderRadius: 25,

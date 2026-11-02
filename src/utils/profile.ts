@@ -1,4 +1,5 @@
 import type {Dialect, Gender} from '../types/user.types';
+import {normalizeUserId, userIdError} from './userId';
 
 export const DIALECT_OPTIONS: Array<{value: Dialect; label: string; example: string}> = [
   {value: 'std', label: '표준어', example: '달료!'},
@@ -30,6 +31,8 @@ export const REGIONS = [
 
 export type ProfileForm = {
   displayName: string;
+  // 아이디는 한 번 정하면 비울 수 없다. 아직 없는 기존 사용자는 빈 칸으로 두면 그대로 둔다
+  userId?: string;
   website: string;
   height: string;
   weight: string;
@@ -45,6 +48,11 @@ export function normalizeDialect(value: Dialect): Dialect {
 export function validateProfile(form: ProfileForm) {
   const displayName = form.displayName.trim();
   if (!displayName || displayName.length > 20) throw new Error('닉네임은 1~20자로 입력해 주세요.');
+  const userId = normalizeUserId(form.userId ?? '');
+  if (userId) {
+    const problem = userIdError(userId);
+    if (problem) throw new Error(problem);
+  }
   const website = form.website.trim();
   if (website && (!/^https?:\/\/[^\s]+$/i.test(website) || website.length > 500)) {
     throw new Error('웹사이트는 https:// 또는 http://로 시작하는 주소를 입력해 주세요.');
@@ -62,6 +70,7 @@ export function validateProfile(form: ProfileForm) {
   if (form.gender !== null && form.gender !== 'female' && form.gender !== 'male') throw new Error('성별을 다시 선택해 주세요.');
   return {
     display_name: displayName,
+    user_id: userId || null,
     website: website || null,
     height_cm: numberOrNull(form.height, '키', 50, 250),
     weight_kg: numberOrNull(form.weight, '몸무게', 10, 400),

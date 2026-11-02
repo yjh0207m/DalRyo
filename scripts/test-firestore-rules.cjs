@@ -1,6 +1,6 @@
 const fs = require('fs');
 const {initializeTestEnvironment, assertSucceeds, assertFails} = require('@firebase/rules-unit-testing');
-const {doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, collection, query, where, orderBy, Timestamp, serverTimestamp, deleteField, setLogLevel} = require('firebase/firestore');
+const {doc, setDoc, getDoc, getDocs, updateDoc, deleteDoc, collection, query, where, orderBy, Timestamp, serverTimestamp, deleteField, setLogLevel, writeBatch, runTransaction} = require('firebase/firestore');
 setLogLevel('silent');
 
 (async () => {
@@ -106,6 +106,42 @@ setLogLevel('silent');
       await assertFails(updateDoc(ref,{current_km:.5,updated_at:serverTimestamp()}));
       await assertFails(updateDoc(ref,{uid:'bob',updated_at:serverTimestamp()}));
       await assertFails(updateDoc(doc(bob,'together_rooms/room'),{status:'finished'}));
+    });
+    await test('a new account claims a free user id together with its profile, the way the app does', async () => {
+      const dan = env.authenticatedContext('dan').firestore();
+      await assertSucceeds(runTransaction(dan, async tx => {
+        const handle = await tx.get(doc(dan,'handles/dan_runner'));
+        if (handle.exists()) throw new Error('taken');
+        tx.set(doc(dan,'handles/dan_runner'),{uid:'dan',created_at:serverTimestamp()});
+        tx.set(doc(dan,'users/dan'),{...user('dan'),user_id:'dan_runner'});
+      }));
+      await assertSucceeds(getDoc(doc(alice,'handles/dan_runner')));
+    });
+    await test('nobody can take or wear a user id that belongs to someone else', async () => {
+      const erin = env.authenticatedContext('erin').firestore();
+      const claim = (db,id,uid='erin') => {
+        const batch = writeBatch(db);
+        batch.set(doc(db,`handles/${id}`),{uid,created_at:serverTimestamp()});
+        batch.set(doc(db,'users/erin'),{...user('erin'),user_id:id});
+        return batch.commit();
+      };
+      await assertFails(claim(erin,'dan_runner'));
+      // 아이디 문서 없이 프로필에만 남의 아이디(또는 빈 아이디)를 적는 것도 안 된다
+      await assertFails(setDoc(doc(erin,'users/erin'),{...user('erin'),user_id:'dan_runner'}));
+      await assertFails(setDoc(doc(erin,'users/erin'),{...user('erin'),user_id:'free_name'}));
+      await assertFails(claim(erin,'other_owner','dan'));
+      await assertFails(setDoc(doc(erin,'handles/no_profile'),{uid:'erin',created_at:serverTimestamp()}));
+      await assertFails(claim(erin,'Bad-ID'));
+      await assertFails(claim(erin,'abc'));
+      await assertFails(updateDoc(doc(alice,'users/alice'),{user_id:'alice_run'}));
+      await assertSucceeds(setDoc(doc(erin,'users/erin'),user('erin')));
+    });
+    await test('user ids can be looked up one at a time but not listed or changed from the app', async () => {
+      await assertFails(getDoc(doc(guest,'handles/dan_runner')));
+      await assertFails(getDocs(collection(alice,'handles')));
+      const dan = env.authenticatedContext('dan').firestore();
+      await assertFails(updateDoc(doc(dan,'handles/dan_runner'),{uid:'alice'}));
+      await assertFails(deleteDoc(doc(dan,'handles/dan_runner')));
     });
     console.log(`${passed} security rule scenarios passed`);
   } finally {await env.cleanup();}

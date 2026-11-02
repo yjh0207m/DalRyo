@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   BackHandler,
   Image,
   Pressable,
@@ -13,16 +14,17 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import {
-  Bell,
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
+import {
   Footprints,
   MoreHorizontal,
-  Settings,
   Bookmark,
   ChevronLeft,
-  MessageSquare,
   MessageCircle,
+  MessageSquare,
   Pencil,
   Search,
   Share2,
@@ -38,21 +40,27 @@ import {
   Card,
   FullPhoto,
   IconButton,
+  ScreenHeader,
 } from '../../components/ui';
 import { RunningShoeIcon } from '../../components/ui/RunningShoeIcon';
 import { SlideScreen } from '../../navigation/slide';
 import { ChatScreen } from './ChatScreen';
 import { CommentsSheet } from './CommentsSheet';
 import { ConnectionsScreen, type ConnectionKind } from './ConnectionsScreen';
+import { CommunitySubNav, ROW_HEIGHT, type SubNavKey } from './CommunitySubNav';
 import { CharacterView } from '../../components/character/CharacterView';
 import {
   CHARACTER_TYPES,
   CHARACTER_STAGE_ORDER,
 } from '../../types/character.types';
 import { hasUnread, watchConversations } from '../../services/chat.service';
-import { TAB_BAR_HEIGHT } from '../../navigation/BottomTabBar';
+import {
+  TAB_BAR_BODY_HEIGHT,
+  TAB_BAR_HEIGHT,
+  tabBarBottom,
+} from '../../navigation/BottomTabBar';
 import { colors, fonts, radius, spacing } from '../../theme';
-import { useSocialFeed } from '../../hooks/useSocialFeed';
+import { useServerFeed } from '../../hooks/useServerFeed';
 import { choosePhoto, uploadPhoto } from '../../services/media.service';
 import { runInBackground } from '../../services/backgroundTask.service';
 import { fetchRecentRuns } from '../../services/run.service';
@@ -64,7 +72,6 @@ import {
   socialRequest,
   watchPost,
   watchPostFlags,
-  type FeedScope,
   type PublicProfile,
   type SocialPost,
   type RunnerProfile,
@@ -87,7 +94,9 @@ type Props = {
 };
 export type CommunityLink =
   | { page: 'post'; id: string }
-  | { page: 'profile'; uid: string };
+  | { page: 'profile'; uid: string }
+  // 설정의 "저장한 게시물"에서 넘어올 때
+  | { page: 'saved' };
 type Route =
   | { page: 'feed' }
   | { page: 'compose'; post?: SocialPost }
@@ -98,6 +107,7 @@ type Route =
   | { page: 'rankings' }
   | { page: 'saved' }
   | { page: 'chat'; peer?: string };
+const WRITE_SIZE = 52;
 const VISIBILITY = {
   public: '전체 공개',
   followers: '팔로워 공개',
@@ -142,7 +152,17 @@ function CommunityContent(
       ),
     [],
   );
-  const [scope, setScope] = useState<FeedScope>('public');
+  const insets = useSafeAreaInsets();
+  const feedScroll = useRef<ScrollView>(null);
+  // 서브 네비게이션이 고르는 커뮤니티 안의 큰 화면. 하단 바 두 개는 그대로 두고 이 영역만 바뀐다
+  const [section, setSection] = useState<SubNavKey>('feed');
+  const [chatDetail, setChatDetail] = useState(false);
+  // 서브 네비게이션의 펼침 정도. 글쓰기 버튼이 같은 값으로 움직여서 메뉴와 동시에 비켜 준다
+  const subNavProgress = useRef(new Animated.Value(0)).current;
+  const writeLift = subNavProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -(ROW_HEIGHT + 12)],
+  });
   const [stack, setStack] = useState<Route[]>(() =>
     props.initialRoute
       ? [{ page: 'feed' }, props.initialRoute]
@@ -155,11 +175,15 @@ function CommunityContent(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const onSubpageChange = props.onSubpageChange;
+  // 게시물·다른 러너 프로필처럼 위에 쌓인 화면이나 대화방이 열리면 하단 바를 가리고 화면을 꽉 채운다
+  const open = stack.length > 1;
+  const fullScreen = open || chatDetail;
   useEffect(() => {
-    onSubpageChange?.(stack.length > 1);
+    onSubpageChange?.(fullScreen);
     return () => onSubpageChange?.(false);
-  }, [stack.length, onSubpageChange]);
-  const feed = useSocialFeed(scope);
+  }, [fullScreen, onSubpageChange]);
+  // 팔로우한 사람(과 내) 글 + 일부 추천 글
+  const feed = useServerFeed('homeFeed');
   // 딥링크로 처음부터 열려 있는 화면은 밀려 들어오지 않고, 그 뒤에 쌓는 화면만 밀려 들어온다
   const initialDepth = useRef(stack.length);
   const push = (next: Route) => setStack(old => [...old, next]);
@@ -170,6 +194,15 @@ function CommunityContent(
   const changed = () => {
     feed.refresh();
   };
+  const selectSubNav = (key: SubNavKey) => {
+    // 이미 보고 있는 피드를 다시 고르면 맨 위로 올리고 새로고침한다
+    if (key === 'feed' && section === 'feed') {
+      feedScroll.current?.scrollTo({ y: 0, animated: true });
+      feed.refresh();
+    }
+    setSection(key);
+  };
+  const leaveSection = () => setSection('feed');
   // 피드 위에 쌓이는 하위 화면 하나. goBack은 밀려 나간 뒤 맨 위 화면을 없애는 함수다
   const renderPage = (route: Route, goBack: () => void): React.ReactNode => {
     if (route.page === 'chat')
@@ -178,9 +211,6 @@ function CommunityContent(
           initialPeer={route.peer}
           onBack={goBack}
           onProfile={showProfile}
-          onConnections={() =>
-            push({ page: 'connections', uid: myUid(), kind: 'following' })
-          }
         />
       );
     if (route.page === 'connections')
@@ -207,9 +237,12 @@ function CommunityContent(
         <Composer
           post={route.post}
           onBack={goBack}
-          onSaved={() => {
-            setScope('mine');
+          // 글은 서버가 저장을 끝낸 뒤에야 목록에 들어가므로, 끝나면 피드를 다시 불러온다
+          onPosted={feed.refresh}
+          onSaved={visibility => {
+            // 전체 공개가 아닌 글은 피드에 보이지 않으니 내 프로필에서 확인할 수 있게 연다
             setStack([{ page: 'feed' }]);
+            setSection(visibility === 'public' ? 'feed' : 'profile');
             feed.refresh();
           }}
         />
@@ -262,193 +295,184 @@ function CommunityContent(
       );
     return null;
   };
+  const sectionPage = (): React.ReactNode => {
+    if (section === 'explore')
+      return (
+        <ExplorePage
+          bottomInset={sectionReserve}
+          onBack={leaveSection}
+          onSearch={() => push({ page: 'search' })}
+          onOpen={showPost}
+          onComments={showComments}
+          onProfile={showProfile}
+        />
+      );
+    if (section === 'messages')
+      return (
+        <ChatScreen
+          onBack={leaveSection}
+          onProfile={showProfile}
+          onTogether={
+            props.onTogetherPress && (() => props.onTogetherPress?.())
+          }
+          onDetailChange={setChatDetail}
+          bottomInset={sectionReserve}
+        />
+      );
+    if (section === 'profile')
+      return (
+        <ProfilePage
+          key="me"
+          uid={myUid()}
+          bottomInset={sectionReserve}
+          onBack={leaveSection}
+          onPost={showPost}
+          onTogether={props.onTogetherPress}
+          onComments={showComments}
+          onMessage={uid => push({ page: 'chat', peer: uid })}
+          onConnections={kind =>
+            push({ page: 'connections', uid: myUid(), kind })
+          }
+        />
+      );
+    return null;
+  };
   const feedPage = (
     <Page title="커뮤니티" feed>
       <View style={styles.feedHeader}>
-        <View>
-          <AppText style={styles.feedWordmark}>달료 클럽</AppText>
-          <AppText style={styles.feedEyebrow} color={colors.primaryInk}>
-            함께 달리는 이야기
-          </AppText>
-        </View>
-        <View style={styles.headerActions}>
-          <IconButton
-            icon={UserRound}
-            size={36}
-            variant="surface"
-            accessibilityLabel="내 러너 프로필"
-            onPress={() => showProfile(myUid())}
-          />
-          <IconButton
-            icon={Search}
-            size={36}
-            variant="surface"
-            accessibilityLabel="러너 검색"
-            onPress={() => push({ page: 'search' })}
-          />
-          <IconButton
-            icon={MessageSquare}
-            dot={unreadChat}
-            size={36}
-            variant="surface"
-            accessibilityLabel="메시지"
-            onPress={() => push({ page: 'chat' })}
-          />
-          <IconButton
-            icon={Bell}
-            size={36}
-            variant="surface"
-            dot={props.hasUnread}
-            accessibilityLabel="알림"
-            onPress={props.onNotificationPress}
-          />
-          <IconButton
-            icon={Settings}
-            size={36}
-            variant="surface"
-            accessibilityLabel="설정"
-            onPress={props.onSettingsPress}
-          />
-        </View>
+        <ScreenHeader
+          title="커뮤니티"
+          hasUnread={props.hasUnread}
+          onNotificationPress={props.onNotificationPress}
+          onSettingsPress={props.onSettingsPress}
+        />
       </View>
-      <View style={styles.tabs}>
-        {(
-          [
-            ['public', '전체'],
-            ['following', '팔로잉'],
-            ['mine', '내 게시물'],
-          ] as Array<[FeedScope, string]>
-        ).map(([value, label]) => (
-          <Tab
-            key={value}
-            label={label}
-            selected={scope === value}
-            onPress={() => setScope(value)}
-          />
-        ))}
-      </View>
-      <ScrollView
-        style={styles.feedCanvas}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.feedContent}
-        refreshControl={
-          <RefreshControl
-            refreshing={feed.status === 'loading'}
-            onRefresh={feed.refresh}
-            tintColor={colors.primary}
-          />
-        }
-      >
-        <View style={styles.discoveryRow}>
-          {props.onTogetherPress && (
+      <View style={styles.feedSheet}>
+        <ScrollView
+          ref={feedScroll}
+          style={styles.feedCanvas}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.feedContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={feed.status === 'loading'}
+              onRefresh={feed.refresh}
+              tintColor={colors.primary}
+            />
+          }
+        >
+          <View style={styles.discoveryRow}>
+            {props.onTogetherPress && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="같이 달리기"
+                onPress={() => props.onTogetherPress?.()}
+                style={styles.discovery}
+              >
+                <Users size={15} color={colors.primaryInk} />
+                <AppText variant="label" color={colors.primaryInk}>
+                  같이 달리기
+                </AppText>
+              </Pressable>
+            )}
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="같이 달리기"
-              onPress={() => props.onTogetherPress?.()}
+              accessibilityLabel="러너 랭킹"
+              onPress={() => push({ page: 'rankings' })}
               style={styles.discovery}
             >
-              <Users size={15} color={colors.primaryInk} />
-              <AppText variant="label" color={colors.primaryInk}>
-                같이 달리기
-              </AppText>
+              <Trophy size={15} color={colors.textMuted} />
+              <AppText variant="label">러너 랭킹</AppText>
             </Pressable>
-          )}
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => push({ page: 'rankings' })}
-            style={styles.discovery}
-          >
-            <Trophy size={15} color={colors.textMuted} />
-            <AppText variant="label">러너 랭킹</AppText>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => push({ page: 'saved' })}
-            style={styles.discovery}
-          >
-            <Bookmark size={15} color={colors.textMuted} />
-            <AppText variant="label">저장함</AppText>
-          </Pressable>
-        </View>
-        <View style={styles.feedSectionHeading}>
-          <View style={styles.grow}>
-            <AppText variant="heading">
-              {scope === 'mine'
-                ? '나의 러닝 이야기'
-                : scope === 'following'
-                ? '팔로잉의 이야기'
-                : '러닝 이야기'}
-            </AppText>
-            <AppText variant="label" color={colors.textMuted}>
-              각자의 속도, 함께 나누는 한 걸음
-            </AppText>
           </View>
+          {feed.status === 'loading' ? (
+            <Loading />
+          ) : feed.status === 'error' ? (
+            <Failure retry={feed.refresh} />
+          ) : feed.posts.length === 0 ? (
+            <Empty
+              title="아직 게시물이 없어요"
+              detail="러너를 팔로우하거나, 오늘의 달리기를 기록과 함께 나눠 보세요."
+            />
+          ) : (
+            feed.posts.map(post => (
+              <PostCard
+                key={post.post_id}
+                post={post}
+                onComments={() => showComments(post.post_id)}
+                onOpen={() => showPost(post.post_id)}
+                onProfile={() => showProfile(post.uid)}
+              />
+            ))
+          )}
+          {feed.moreError && (
+            <AppText color={colors.danger}>
+              이전 글을 불러오지 못했어요. 다시 시도해 주세요.
+            </AppText>
+          )}
+          {feed.more && (
+            <Button
+              label={feed.loadingMore ? '불러오는 중…' : '이전 글 더 보기'}
+              variant="secondary"
+              disabled={feed.loadingMore}
+              onPress={feed.loadMore}
+            />
+          )}
+        </ScrollView>
+      </View>
+    </Page>
+  );
+  const subNavBottom = tabBarBottom(insets.bottom) + TAB_BAR_BODY_HEIGHT + 10;
+  const sectionReserve = subNavBottom + ROW_HEIGHT + 8;
+  const chrome = !fullScreen;
+  return (
+    <View style={styles.stackRoot}>
+      <View
+        style={styles.stackRoot}
+        accessibilityElementsHidden={open || section !== 'feed'}
+        importantForAccessibility={
+          open || section !== 'feed' ? 'no-hide-descendants' : 'auto'
+        }
+      >
+        {feedPage}
+      </View>
+      {section !== 'feed' && (
+        <View
+          style={styles.sectionLayer}
+          accessibilityElementsHidden={open}
+          importantForAccessibility={open ? 'no-hide-descendants' : 'auto'}
+        >
+          {sectionPage()}
+        </View>
+      )}
+      {chrome && (section === 'feed' || section === 'explore') && (
+        <Animated.View
+          pointerEvents="box-none"
+          style={[
+            styles.writeFab,
+            { bottom: subNavBottom + (ROW_HEIGHT - WRITE_SIZE) / 2 },
+            { transform: [{ translateY: writeLift }] },
+          ]}
+        >
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="글쓰기"
             onPress={() => push({ page: 'compose' })}
             style={styles.writeButton}
           >
-            <Pencil size={16} color={colors.primaryInk} />
-            <AppText variant="label" color={colors.primaryInk}>
-              글쓰기
-            </AppText>
+            <Pencil size={22} color={colors.textOnPrimary} />
           </Pressable>
-        </View>
-        {feed.status === 'loading' ? (
-          <Loading />
-        ) : feed.status === 'error' ? (
-          <Failure retry={feed.refresh} />
-        ) : feed.posts.length === 0 ? (
-          <Empty
-            title={
-              scope === 'following'
-                ? '팔로잉 피드가 비어 있어요'
-                : '아직 게시물이 없어요'
-            }
-            detail={
-              scope === 'following'
-                ? '러너를 검색해 팔로우해 보세요.'
-                : '오늘의 달리기를 기록과 함께 나눠 보세요.'
-            }
-          />
-        ) : (
-          feed.posts.map(post => (
-            <PostCard
-              key={post.post_id}
-              post={post}
-              onComments={() => showComments(post.post_id)}
-              onOpen={() => showPost(post.post_id)}
-              onProfile={() => showProfile(post.uid)}
-            />
-          ))
-        )}
-        {feed.moreError && (
-          <AppText color={colors.danger}>
-            이전 글을 불러오지 못했어요. 다시 시도해 주세요.
-          </AppText>
-        )}
-        {feed.more && (
-          <Button
-            label={feed.loadingMore ? '불러오는 중…' : '이전 글 더 보기'}
-            variant="secondary"
-            disabled={feed.loadingMore}
-            onPress={feed.loadMore}
-          />
-        )}
-      </ScrollView>
-    </Page>
-  );
-  const open = stack.length > 1;
-  return (
-    <View style={styles.stackRoot}>
-      <View
-        style={styles.stackRoot}
-        accessibilityElementsHidden={open}
-        importantForAccessibility={open ? 'no-hide-descendants' : 'auto'}
-      >
-        {feedPage}
-      </View>
+        </Animated.View>
+      )}
+      {chrome && (
+        <CommunitySubNav
+          bottom={subNavBottom}
+          unreadMessages={unreadChat}
+          current={section}
+          onSelect={selectSubNav}
+          progress={subNavProgress}
+        />
+      )}
       {stack.slice(1).map((page, offset) => (
         <SlideScreen
           key={`${offset + 1}:${routeKey(page)}`}
@@ -477,12 +501,17 @@ function routeKey(route: Route) {
 
 function Page({
   title,
+  headerText,
+  headerRight,
   onBack,
   children,
   feed = false,
 }: {
   feed?: boolean;
   title: string;
+  // 머리글에 title 대신 보여 줄 글. 뒤로가기 버튼의 읽기 이름은 title을 그대로 쓴다
+  headerText?: string;
+  headerRight?: React.ReactNode;
   onBack?: () => void;
   children: React.ReactNode;
 }) {
@@ -508,7 +537,10 @@ function Page({
             accessibilityLabel={`${title}에서 뒤로`}
             onPress={onBack}
           />
-          <AppText variant="heading">{title}</AppText>
+          <AppText variant="heading" numberOfLines={1} style={styles.grow}>
+            {headerText ?? title}
+          </AppText>
+          {headerRight}
         </View>
       )}
       {children}
@@ -879,10 +911,13 @@ export function Composer({
   post,
   onBack,
   onSaved,
+  onPosted,
 }: {
   post?: SocialPost;
   onBack: () => void;
-  onSaved: () => void;
+  // 서버에 저장이 끝났을 때(백그라운드). 화면은 onSaved에서 이미 떠난 뒤일 수 있다
+  onPosted?: () => void;
+  onSaved: (visibility: SocialPost['visibility']) => void;
 }) {
   const [body, setBody] = useState(post?.text ?? '');
   const [visibility, setVisibility] = useState<SocialPost['visibility']>(
@@ -957,6 +992,7 @@ export function Composer({
         ? '게시물을 수정하지 못했어요'
         : '게시물을 올리지 못했어요',
       describeError: socialError,
+      onSuccess: () => onPosted?.(),
       task: async report => {
         if (post) {
           await socialRequest('editPost', { postId, text, visibility });
@@ -974,7 +1010,7 @@ export function Composer({
         });
       },
     });
-    onSaved();
+    onSaved(visibility);
   };
   return (
     <Page title={post ? '게시물 수정' : '오늘의 달리기'} onBack={leave}>
@@ -1146,6 +1182,85 @@ function PostDetail({
   );
 }
 
+// 탐색: 서버가 추천 순서로 골라 준 다른 러너들의 공개 글. 러너 검색은 오른쪽 위 버튼으로 연다
+function ExplorePage({
+  bottomInset,
+  onBack,
+  onSearch,
+  onOpen,
+  onComments,
+  onProfile,
+}: {
+  bottomInset: number;
+  onBack: () => void;
+  onSearch: () => void;
+  onOpen: (id: string) => void;
+  onComments: (id: string) => void;
+  onProfile: (uid: string) => void;
+}) {
+  const feed = useServerFeed('exploreFeed');
+  return (
+    <Page
+      title="탐색"
+      onBack={onBack}
+      headerRight={
+        <IconButton
+          icon={Search}
+          variant="plain"
+          accessibilityLabel="러너 검색"
+          onPress={onSearch}
+        />
+      }
+    >
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: bottomInset + spacing.xl }}
+        refreshControl={
+          <RefreshControl
+            refreshing={feed.status === 'loading'}
+            onRefresh={feed.refresh}
+            tintColor={colors.primary}
+          />
+        }
+      >
+        {feed.status === 'loading' ? (
+          <Loading />
+        ) : feed.status === 'error' ? (
+          <Failure retry={feed.refresh} />
+        ) : feed.posts.length === 0 ? (
+          <Empty
+            title="아직 둘러볼 글이 없어요"
+            detail="새로운 러너들이 글을 올리면 여기에 모여요."
+          />
+        ) : (
+          feed.posts.map(post => (
+            <PostCard
+              key={post.post_id}
+              post={post}
+              onComments={() => onComments(post.post_id)}
+              onOpen={() => onOpen(post.post_id)}
+              onProfile={() => onProfile(post.uid)}
+            />
+          ))
+        )}
+        {feed.moreError && (
+          <AppText color={colors.danger}>
+            글을 더 불러오지 못했어요. 다시 시도해 주세요.
+          </AppText>
+        )}
+        {feed.more && (
+          <Button
+            label={feed.loadingMore ? '불러오는 중…' : '더 둘러보기'}
+            variant="secondary"
+            disabled={feed.loadingMore}
+            onPress={feed.loadMore}
+          />
+        )}
+      </ScrollView>
+    </Page>
+  );
+}
+
 function PeoplePage({
   ranking,
   onBack,
@@ -1195,11 +1310,11 @@ function PeoplePage({
         {!ranking && (
           <>
             <Field
-              accessibilityLabel="러너 닉네임 검색"
-              placeholder="닉네임 앞부분으로 검색"
+              accessibilityLabel="러너 검색"
+              placeholder="닉네임 앞부분, 또는 @아이디로 검색"
               value={name}
               onChangeText={setName}
-              maxLength={20}
+              maxLength={21}
             />
             <Button
               label="검색"
@@ -1216,7 +1331,7 @@ function PeoplePage({
         ) : status === 'success' && users.length === 0 ? (
           <Empty
             title="러너를 찾지 못했어요"
-            detail="닉네임을 다시 확인해 주세요."
+            detail="닉네임이나 @아이디를 다시 확인해 주세요."
           />
         ) : (
           users.map((person, index) => (
@@ -1231,6 +1346,7 @@ function PeoplePage({
               <View style={styles.grow}>
                 <AppText variant="subheading">{person.display_name}</AppText>
                 <AppText variant="caption" color={colors.textMuted}>
+                  {person.user_id ? `@${person.user_id} · ` : ''}
                   {person.region} · {person.total_km.toFixed(1)}km
                 </AppText>
               </View>
@@ -1243,6 +1359,7 @@ function PeoplePage({
 }
 export function ProfilePage({
   uid,
+  bottomInset = 0,
   onBack,
   onPost,
   onTogether,
@@ -1251,6 +1368,8 @@ export function ProfilePage({
   onConnections,
 }: {
   uid: string;
+  // 화면 아래에 떠 있는 바에 끝이 가려지지 않도록 비워 둘 높이
+  bottomInset?: number;
   onBack: () => void;
   onPost: (id: string) => void;
   onTogether?: (friendUid: string) => void;
@@ -1319,8 +1438,24 @@ export function ProfilePage({
     });
   };
   return (
-    <Page title="러너 프로필" onBack={onBack}>
-      <ScrollView contentContainerStyle={styles.content}>
+    <Page
+      title="러너 프로필"
+      // 맨 위에는 아이디를 보여 준다. 아이디가 없는 기존 사용자는 닉네임을 보여 준다
+      headerText={
+        profile
+          ? profile.user_id
+            ? `@${profile.user_id}`
+            : profile.display_name
+          : ''
+      }
+      onBack={onBack}
+    >
+      <ScrollView
+        contentContainerStyle={[
+          styles.content,
+          bottomInset ? { paddingBottom: bottomInset + spacing.xl } : null,
+        ]}
+      >
         {status === 'loading' ? (
           <Loading />
         ) : status === 'error' ? (
@@ -1587,25 +1722,22 @@ const styles = StyleSheet.create({
   },
   content: { padding: spacing.xl, paddingBottom: 60, gap: spacing.md },
   feedCanvas: { backgroundColor: colors.background },
-  feedContent: { paddingBottom: TAB_BAR_HEIGHT + 40 },
-  feedSectionHeading: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 20,
-    paddingTop: 6,
-    paddingBottom: 16,
-  },
+  // 하단 탭 바와 그 위의 서브 네비게이션에 마지막 글이 가려지지 않게 비워 둔다
+  feedContent: { paddingBottom: TAB_BAR_HEIGHT + 100 },
+  // 오른쪽 아래에 떠 있는 원형 글쓰기 버튼. 서브 네비게이션이 펼쳐지면 위로 비켜 준다
+  writeFab: { position: 'absolute', right: spacing.xl },
   writeButton: {
-    flexDirection: 'row',
+    width: WRITE_SIZE,
+    height: WRITE_SIZE,
+    borderRadius: WRITE_SIZE / 2,
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 13,
-    minHeight: 38,
-    borderRadius: 14,
-    backgroundColor: colors.primarySoft,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.primaryBorder,
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+    shadowColor: '#101814',
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
   },
   toolbar: {
     flexDirection: 'row',
@@ -1684,37 +1816,26 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   stackRoot: { flex: 1 },
+  sectionLayer: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: colors.background,
+  },
   feedScreen: { backgroundColor: colors.sky },
-  feedHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 20,
-    gap: 8,
+  feedHeader: { paddingHorizontal: spacing.xl, paddingTop: spacing.sm },
+  // 하늘색 배경 위로 둥근 윗모서리를 드러내며 올라오는 피드 영역
+  feedSheet: {
+    flex: 1,
+    overflow: 'hidden',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: colors.background,
   },
-  feedWordmark: {
-    fontFamily: fonts.extrabold,
-    fontSize: 25,
-    lineHeight: 32,
-    letterSpacing: -0.8,
-  },
-  feedEyebrow: {
-    fontFamily: fonts.semibold,
-    fontSize: 11,
-    lineHeight: 17,
-    marginTop: 4,
-  },
-  headerActions: { flexDirection: 'row', gap: 4 },
+  // 피드 배경과 같은 색(배경을 칠하지 않는다). 버튼은 흰색으로 두어 배경 위에서 또렷하게 보이게 한다
   discoveryRow: {
     flexDirection: 'row',
     padding: 16,
     gap: 8,
-    backgroundColor: colors.surface,
-    marginBottom: 22,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
+    marginBottom: 6,
   },
   discovery: {
     flexDirection: 'row',
@@ -1725,7 +1846,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     minHeight: 40,
     borderRadius: 12,
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
   },
   postHeader: {
     flexDirection: 'row',

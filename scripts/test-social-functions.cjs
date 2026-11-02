@@ -258,6 +258,101 @@ async function call(user, action, data = {}, name = 'socialAction') {
       assert.deepEqual((await items(b,'list')).equipped,{back:'peach-glow',accessory:'pink-petals'});
     });
 
+    await test('user id: saving claims it, a taken id is refused, and changing it frees the old one',async()=>{
+      const save=(user,displayName,userId)=>call(user,null,{displayName,petName:'달료',website:'',heightCm:null,weightKg:null,gender:null,region:'경기',dialect:'std',notifications:prefs,profileImage:null,userId},'saveAccountSettings');
+      await save(a,'Alice','@Alice_Run');
+      assert.equal((await read(`users/${a.uid}`)).user_id,'alice_run');
+      assert.equal((await read('handles/alice_run')).uid,a.uid);
+      await assert.rejects(save(b,'Bob','alice_run'),{code:'ALREADY_EXISTS',message:/이미 사용 중/});
+      assert.equal((await read(`users/${b.uid}`)).user_id,undefined);
+      // 저장이 거절되면 닉네임 같은 다른 항목도 바뀌지 않는다
+      await assert.rejects(save(b,'바뀌면안됨','alice_run'),{code:'ALREADY_EXISTS'});
+      assert.equal((await read(`users/${b.uid}`)).display_name,'Bob');
+      await save(a,'Alice','alice_run');
+      assert.equal((await read('handles/alice_run')).uid,a.uid);
+      await save(a,'Alice','alice_two');
+      assert.equal(await read('handles/alice_run'),undefined);
+      assert.equal((await read('handles/alice_two')).uid,a.uid);
+      await save(b,'Bob','alice_run');
+      assert.equal((await read('handles/alice_run')).uid,b.uid);
+      // 빈 칸은 "바꾸지 않음"이고, 형식이 틀리면 거절한다
+      await save(a,'Alice','');
+      assert.equal((await read(`users/${a.uid}`)).user_id,'alice_two');
+      await assert.rejects(save(a,'Alice','no spaces'),{code:'INVALID_ARGUMENT'});
+    });
+    await test('user id: profiles show it and search finds it with @',async()=>{
+      assert.equal((await call(c,'profile',{uid:a.uid})).profile.user_id,'alice_two');
+      assert.equal((await call(c,'profile',{uid:c.uid})).profile.user_id,null);
+      const found=await call(c,'search',{query:'@Alice_T'});
+      assert.deepEqual(found.users.map(u=>u.uid),[a.uid]);
+      assert.equal(found.users[0].user_id,'alice_two');
+      assert.ok((await call(c,'search',{query:'Alice'})).users.some(u=>u.uid===a.uid));
+      assert.deepEqual((await call(c,'search',{query:'@nobody_here'})).users,[]);
+    });
+    await test('feed is who I follow plus some recommendations, explore is only who I do not follow',async()=>{
+      const me=await signup(),friend=await signup(),stranger=await signup();
+      await env.withSecurityRulesDisabled(async ctx=>{
+        for(const user of [me,friend,stranger]){
+          await setDoc(doc(ctx.firestore(),`users/${user.uid}`),{uid:user.uid,display_name:'Feed',pet_name:'달료',profile_image:null,region:'경기',dialect:'std',total_km:0,total_exp:0,follower_count:0,following_count:0,influencer_tier:'none',is_frozen:false,notification_settings:prefs,created_at:Timestamp.now(),updated_at:Timestamp.now()});
+        }
+      });
+      const all=async(user,action,seed=7)=>{
+        const ids=[];let offset=0;
+        for(;;){const page=await call(user,action,{offset,seed});ids.push(...page.posts.map(p=>p.post_id));offset+=page.posts.length;if(!page.hasMore)break;}
+        return ids;
+      };
+      await call(me,'follow',{uid:friend.uid,following:true});
+      await call(me,'createPost',{postId:'feed-mine',text:'mine',visibility:'public'});
+      await call(me,'createPost',{postId:'feed-mine-private',text:'mine',visibility:'private'});
+      for(const visibility of ['public','followers','private'])await call(friend,'createPost',{postId:`feed-friend-${visibility}`,text:'friend',visibility});
+      for(const visibility of ['public','followers','private'])await call(stranger,'createPost',{postId:`feed-stranger-${visibility}`,text:'stranger',visibility});
+      await call(stranger,'createPost',{postId:'feed-stranger-gone',text:'gone',visibility:'public'});
+      await call(stranger,'deletePost',{postId:'feed-stranger-gone'});
+      const home=await all(me,'homeFeed');
+      for(const id of ['feed-mine','feed-friend-public','feed-friend-followers','feed-stranger-public'])assert.ok(home.includes(id),`home should have ${id}`);
+      for(const id of ['feed-mine-private','feed-friend-private','feed-stranger-followers','feed-stranger-private','feed-stranger-gone'])assert.ok(!home.includes(id),`home should not have ${id}`);
+      assert.equal(new Set(home).size,home.length);
+      // 내가 올린 글과 팔로우한 사람의 글이 추천 글보다 먼저 나온다
+      assert.ok(home.indexOf('feed-friend-public')<home.indexOf('feed-stranger-public'));
+      const explore=await all(me,'exploreFeed');
+      assert.ok(explore.includes('feed-stranger-public'));
+      for(const id of explore)assert.ok(!/^feed-(mine|friend)/.test(id),`explore should not have ${id}`);
+      for(const id of ['feed-stranger-followers','feed-stranger-private','feed-stranger-gone'])assert.ok(!explore.includes(id));
+      assert.deepEqual(await all(me,'exploreFeed'),explore);
+      // 팔로우하면 탐색에서 빠지고, 그 사람의 팔로워 공개 글이 피드에 들어온다
+      await call(me,'follow',{uid:stranger.uid,following:true});
+      assert.ok(!(await all(me,'exploreFeed')).includes('feed-stranger-public'));
+      assert.ok((await all(me,'homeFeed')).includes('feed-stranger-followers'));
+      await call(me,'follow',{uid:stranger.uid,following:false});
+      assert.ok((await all(me,'exploreFeed')).includes('feed-stranger-public'));
+      // 아직 아무도 팔로우하지 않고 글도 없는 사람의 피드는 비지 않고 추천 글로 채워진다
+      const newcomer=await signup();
+      await env.withSecurityRulesDisabled(async ctx=>{await setDoc(doc(ctx.firestore(),`users/${newcomer.uid}`),{uid:newcomer.uid,display_name:'New',pet_name:'달료',region:'경기',dialect:'std',total_km:0,total_exp:0,follower_count:0,following_count:0,influencer_tier:'none',is_frozen:false,created_at:Timestamp.now(),updated_at:Timestamp.now()});});
+      assert.ok((await all(newcomer,'homeFeed')).includes('feed-stranger-public'));
+    });
+
+    await test('search puts people I follow first, then people who follow me, then strangers',async()=>{
+      const me=await signup(),stranger=await signup(),fan=await signup(),friend=await signup(),mutual=await signup();
+      const names=[[stranger,'Zq가'],[fan,'Zq나'],[friend,'Zq다'],[mutual,'Zq라'],[me,'Zq마']];
+      await env.withSecurityRulesDisabled(async ctx=>{
+        for(const [user,name] of names)await setDoc(doc(ctx.firestore(),`users/${user.uid}`),{uid:user.uid,display_name:name,pet_name:'달료',profile_image:null,region:'경기',dialect:'std',total_km:0,total_exp:0,follower_count:0,following_count:0,influencer_tier:'none',is_frozen:false,notification_settings:prefs,created_at:Timestamp.now(),updated_at:Timestamp.now()});
+      });
+      await call(me,'follow',{uid:friend.uid,following:true});
+      await call(me,'follow',{uid:mutual.uid,following:true});
+      await call(fan,'follow',{uid:me.uid,following:true});
+      await call(mutual,'follow',{uid:me.uid,following:true});
+      const found=(await call(me,'search',{query:'Zq'})).users;
+      const byName=Object.fromEntries(found.map(u=>[u.display_name,u.relation]));
+      assert.equal(byName['Zq다'],'following');
+      assert.equal(byName['Zq라'],'following');
+      assert.equal(byName['Zq나'],'follower');
+      assert.equal(byName['Zq가'],'none');
+      // 이름순(가나다라)이 아니라 관계 순서: 팔로잉(다, 라) > 나를 팔로우(나) > 모르는 사람(가)
+      assert.deepEqual(found.filter(u=>u.uid!==me.uid).map(u=>u.display_name),['Zq다','Zq라','Zq나','Zq가']);
+      // 랭킹 등 다른 목록은 관계 정보를 붙이지 않는다
+      assert.equal((await call(me,'rankings')).users.every(u=>u.relation===undefined),true);
+    });
+
     console.log(`${passed} backend integration scenarios passed`);
   } finally {await env.cleanup();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

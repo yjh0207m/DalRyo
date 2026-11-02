@@ -27,6 +27,7 @@ posts/{postId}
   └─ likes/                (서브컬렉션)
 
 follows/{followerId_followingId}   (플랫 컬렉션)
+handles/{userId}                   (플랫 컬렉션) ← 아이디 중복 방지
 bookmarks/{uid_postId}             (플랫 컬렉션)
 together_rooms/{roomId}
   └─ members/              (서브컬렉션)
@@ -43,6 +44,7 @@ parks/{parkId}
   uid:              string,        // Firebase Auth UID와 동일
   email:            string,
   display_name:     string,        // 닉네임
+  user_id:          string | null, // 아이디(영문 소문자·숫자·_ 4~20자, 겹치지 않음). 이 기능 전에 가입한 사용자는 없음
   profile_image:    string | null, // Firebase Storage URL
   website:          string | null, // 인플루언서 외부 링크
   phone:            string | null, // 휴대폰 번호 (폰 인증 로그인)
@@ -248,6 +250,19 @@ stage·exp·스탯은 Cloud Function `onRunCreate`만 갱신 (클라이언트 �
   follower_id:  string, // 팔로우를 하는 쪽
   following_id: string, // 팔로우를 받는 쪽
   created_at:   Timestamp
+}
+```
+
+---
+
+## handles/{userId}
+
+도큐먼트 ID = 아이디(`users.user_id`). 먼저 차지한 사람의 것이라 같은 아이디가 겹치지 않는다. 가입 때는 앱이 사용자 문서와 한 트랜잭션으로 만들고, 아이디를 바꿀 때는 서버(`saveAccountSettings`)가 새 문서를 만들고 이전 문서를 지운다. 클라이언트는 하나씩 읽을 수만 있다(목록 조회 불가).
+
+```js
+{
+  uid:        string,    // 이 아이디의 주인
+  created_at: Timestamp
 }
 ```
 

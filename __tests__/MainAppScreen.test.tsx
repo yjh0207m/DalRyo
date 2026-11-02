@@ -91,6 +91,7 @@ jest.mock('../src/screens/profile/SettingsScreen', () => ({
   SettingsScreen: (props: {
     onBack: () => void;
     onPreviewCharacter?: () => void;
+    onOpenSaved?: () => void;
   }) => {
     const R = require('react');
     const N = require('react-native');
@@ -106,6 +107,10 @@ jest.mock('../src/screens/profile/SettingsScreen', () => ({
       R.createElement(N.Pressable, {
         accessibilityLabel: '캐릭터 미리보기',
         onPress: props.onPreviewCharacter,
+      }),
+      R.createElement(N.Pressable, {
+        accessibilityLabel: '저장한 게시물',
+        onPress: props.onOpenSaved,
       }),
     );
   },
@@ -520,4 +525,14 @@ describe('swiping between the main tabs', () => {
       true,
     );
   });
+});
+
+test('“저장한 게시물” in settings closes settings and opens the saved posts inside the community', async () => {
+  await render();
+  await press('홈 설정');
+  expect(texts()).toContain('설정 화면');
+  await press('저장한 게시물');
+  expect(texts()).not.toContain('설정 화면');
+  expect(texts()).toContain('커뮤니티 화면');
+  expect(texts()).toContain('커뮤니티 화면 열린 경로 {"page":"saved"}');
 });

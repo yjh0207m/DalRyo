@@ -18,11 +18,12 @@ import {
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {colors, fonts} from '../../theme';
-import {completeOnboarding} from '../../services/user.service';
+import {completeOnboarding, isUserIdTaken} from '../../services/user.service';
 import {pickStarterCharacter} from '../../services/character.service';
 import type {CharacterType} from '../../types/character.types';
 import type {Gender, OnboardingProfileInput} from '../../types/user.types';
 import {REGIONS as regions, bodyInputError, type Region} from '../../utils/onboarding';
+import {userIdError} from '../../utils/userId';
 import {detectOnboardingRegion} from '../../services/onboardingLocation.service';
 
 const images = {
@@ -44,6 +45,7 @@ const MUTED = '#808080';
 export function OnboardingScreen({onBack, onDone}: Props) {
   const [step, setStep] = useState<Step>(1);
   const [displayName, setDisplayName] = useState('');
+  const [userId, setUserId] = useState('');
   const [petName, setPetName] = useState('');
   const [gender, setGender] = useState<Gender>(null);
   const [website, setWebsite] = useState('');
@@ -100,11 +102,21 @@ export function OnboardingScreen({onBack, onDone}: Props) {
     return () => {show.remove();hide.remove();if (focusTimer.current) clearTimeout(focusTimer.current);};
   }, []);
 
-  const goNext = () => {
+  const goNext = async () => {
     Keyboard.dismiss();
-    const error = step === 2 ? bodyInputError(heightCm, weightKg) : null;
+    const error = step === 1 ? userIdError(userId) : step === 2 ? bodyInputError(heightCm, weightKg) : null;
     setErrorMessage(error);
-    if (!error) setStep(current => Math.min(current + 1, 4) as Step);
+    if (error) return;
+    if (step === 1) {
+      // 이미 쓰는 사람이 있으면 여기서 바로 알려 준다. 확인하지 못하면(연결 문제 등) 그대로 진행하고, 가입 저장 때 다시 확인한다
+      const taken = await isUserIdTaken(userId).catch(() => false);
+      if (!mounted.current) return;
+      if (taken) {
+        setErrorMessage('이미 사용 중인 아이디예요. 다른 아이디를 입력해 주세요.');
+        return;
+      }
+    }
+    setStep(current => Math.min(current + 1, 4) as Step);
   };
   const goBack = () => {
     if (saving.current) return;
@@ -184,6 +196,7 @@ export function OnboardingScreen({onBack, onDone}: Props) {
     saving.current = true;
     const profile: OnboardingProfileInput = {
       displayName,
+      userId,
       petName,
       gender,
       website,
@@ -229,6 +242,7 @@ export function OnboardingScreen({onBack, onDone}: Props) {
           <Text style={styles.stepTitle}>기본 정보를{'\n'}입력해 주세요!</Text>
           <EggImage size={110} />
           <LabeledInput label="이름" value={displayName} onChangeText={setDisplayName} onFocus={revealFocusedInput} placeholder="이름을 입력해 주세요" maxLength={20} />
+          <LabeledInput label="아이디" value={userId} onChangeText={value => setUserId(value.toLowerCase())} onFocus={revealFocusedInput} placeholder="영문 소문자·숫자·_ 4~20자" maxLength={21} />
           <LabeledInput label="달료 펫 이름(닉네임)" value={petName} onChangeText={setPetName} onFocus={revealFocusedInput} placeholder="달료 펫의 이름을 입력해 주세요" maxLength={20} />
           <Text style={styles.inputLabel}>성별</Text>
           <View style={styles.segmentRow}>
@@ -240,7 +254,8 @@ export function OnboardingScreen({onBack, onDone}: Props) {
             </TouchableOpacity>
           </View>
           <LabeledInput label="외부 링크 (선택)" value={website} onChangeText={setWebsite} onFocus={revealFocusedInput} placeholder="블로그, 인스타그램 등 링크를 입력해 주세요" maxLength={500} />
-          <PrimaryButton label="다음" onPress={goNext} disabled={!displayName.trim() || !petName.trim()} />
+          {!!errorMessage && <Text accessibilityRole="alert" style={styles.errorText}>{errorMessage}</Text>}
+          <PrimaryButton label="다음" onPress={goNext} disabled={!displayName.trim() || !userId.trim() || !petName.trim()} />
         </View>
       )}
       {step === 2 && (
@@ -338,7 +353,7 @@ function LabeledInput({
     <View style={styles.inputGroup}>
       <Text style={styles.inputLabel}>{label}</Text>
       <View style={styles.inputWrap}>
-        <TextInput accessibilityLabel={label} value={value} onChangeText={onChangeText} onFocus={onFocus} maxLength={maxLength} keyboardType={keyboardType} placeholder={placeholder} placeholderTextColor="#B6B6B6" style={styles.input} />
+        <TextInput accessibilityLabel={label} value={value} onChangeText={onChangeText} onFocus={onFocus} maxLength={maxLength} keyboardType={keyboardType} autoCapitalize={label === '아이디' ? 'none' : undefined} autoCorrect={label === '아이디' ? false : undefined} placeholder={placeholder} placeholderTextColor="#B6B6B6" style={styles.input} />
         {!!suffix && <Text style={styles.inputSuffix}>{suffix}</Text>}
       </View>
     </View>

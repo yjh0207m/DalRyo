@@ -28,7 +28,7 @@ jest.mock('../src/services/social.service', () => ({
   socialRequest: (...args: unknown[]) => mockAction(...args),
   socialError: (error: Error) => error.message,
 }));
-jest.mock('../src/hooks/useSocialFeed', () => ({ useSocialFeed: jest.fn() }));
+jest.mock('../src/hooks/useServerFeed', () => ({ useServerFeed: jest.fn() }));
 jest.mock('../src/hooks/useComments', () => ({ useComments: jest.fn() }));
 jest.mock('../src/services/media.service', () => ({
   choosePhoto: jest.fn(),

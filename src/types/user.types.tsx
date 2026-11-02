@@ -8,6 +8,7 @@ export type Dialect = 'std' | 'seoul' | 'gyeonggi' | 'gangwon' | 'chung' | 'jeon
 
 export type OnboardingProfileInput = {
   displayName: string;
+  userId: string;
   petName: string;
   gender: Gender;
   website?: string | null;
@@ -22,6 +23,8 @@ export type UserDocument = {
   email: string | null;
   phone: string | null;
   display_name: string;
+  // 겹치지 않는 아이디. 이 기능이 생기기 전에 가입한 사용자에게는 없다
+  user_id?: string | null;
   pet_name: string;
   profile_image: string | null;
   website: string | null;

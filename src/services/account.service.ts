@@ -9,9 +9,17 @@ export async function saveAccount(form: ProfileForm, petName: string, profileIma
   const profile = validateProfile(form);
   const name = petName.trim();
   if (!name || name.length > 20) throw new Error('캐릭터 이름은 1~20자로 입력해 주세요.');
-  await httpsCallable(getFunctions(getApp(), 'asia-northeast3'), 'saveAccountSettings')({
-    displayName: profile.display_name, petName: name, website: profile.website,
-    heightCm: profile.height_cm, weightKg: profile.weight_kg, gender: profile.gender,
-    region: profile.region, dialect: profile.dialect, profileImage, notifications,
-  });
+  try {
+    await httpsCallable(getFunctions(getApp(), 'asia-northeast3'), 'saveAccountSettings')({
+      displayName: profile.display_name, userId: profile.user_id, petName: name, website: profile.website,
+      heightCm: profile.height_cm, weightKg: profile.weight_kg, gender: profile.gender,
+      region: profile.region, dialect: profile.dialect, profileImage, notifications,
+    });
+  } catch (failure) {
+    // 다른 사람이 쓰는 아이디라는 안내는 그대로 보여 준다
+    if ((failure as {code?: string})?.code === 'functions/already-exists' && failure instanceof Error) {
+      throw new Error(failure.message);
+    }
+    throw failure;
+  }
 }

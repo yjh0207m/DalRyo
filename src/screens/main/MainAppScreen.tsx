@@ -99,6 +99,14 @@ export function MainAppScreen({user, character}: Props) {
     else if (user) setSettingsOpen(true);
   };
 
+  // 설정의 "저장한 게시물": 설정을 닫고 커뮤니티에서 저장한 게시물을 연다. 뒤로 가면 커뮤니티 피드로 돌아온다
+  const openSavedPosts = () => {
+    setSettingsOpen(false);
+    setCommunityLink({page: 'saved'});
+    setCommunityKey(key => key + 1);
+    setActiveTab('community');
+  };
+
   const selectGoal = (goalType: RunGoalType) => {
     setRunSheetOpen(false);
     if (goalType === 'free') {
@@ -211,7 +219,7 @@ export function MainAppScreen({user, character}: Props) {
   // 전체 화면은 오른쪽에서 밀려 들어와 탭 화면 위에 겹치고, 뒤로 가면 오른쪽으로 밀려 나간다
   let overlay: React.ReactNode = null;
   if (__DEV__ && characterPreviewOpen) overlay = <SlideScreen key="preview" onBack={() => setCharacterPreviewOpen(false)}>{back => <CharacterPreviewScreen onBack={back} />}</SlideScreen>;
-  else if (settingsOpen && user) overlay = <SlideScreen key="settings" onBack={() => setSettingsOpen(false)}>{back => <SettingsScreen user={user} onBack={back} onPreviewCharacter={() => setCharacterPreviewOpen(true)} />}</SlideScreen>;
+  else if (settingsOpen && user) overlay = <SlideScreen key="settings" onBack={() => setSettingsOpen(false)}>{back => <SettingsScreen user={user} onBack={back} onPreviewCharacter={() => setCharacterPreviewOpen(true)} onOpenSaved={openSavedPosts} />}</SlideScreen>;
   else if (inventoryMode && character) overlay = <SlideScreen key="inventory" onBack={() => setInventoryMode(null)}>{back => <InventoryScreen key={character.uid} character={character} frozen={user?.is_frozen} initialMode={inventoryMode} onBack={back}/>}</SlideScreen>;
   else if (parksOpen) overlay = <SlideScreen key="parks" onBack={() => setParksOpen(false)}>{back => <ParksScreen onBack={back} onStart={(park,km,courseId)=>{
     if(startRun({goalType:'distance',goalValue:km,parkId:park.park_id,parkName:park.name,courseId}))setParksOpen(false);
