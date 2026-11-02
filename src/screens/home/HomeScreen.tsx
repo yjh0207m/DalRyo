@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import {
   SafeAreaView,
   useSafeAreaInsets,
@@ -7,10 +7,14 @@ import {
 import {
   Bell,
   Check,
+  DoorOpen,
   Footprints,
   Mountain,
+  Package,
+  ScrollText,
   Settings,
   Snowflake,
+  type LucideIcon,
 } from 'lucide-react-native';
 import { useDialect } from '../../locales/DialectProvider';
 import { LobbyCharacter } from '../../components/character/LobbyCharacter';
@@ -44,6 +48,10 @@ type Props = {
   hasUnread?: boolean;
   onNotificationPress: () => void;
   onSettingsPress: () => void;
+  // 아이템(꾸미기·보관함)을 연다. 마이룸·퀘스트는 아직 준비 중이라 눌러도 안내만 나온다
+  onItemsPress?: () => void;
+  onMyRoomPress?: () => void;
+  onQuestPress?: () => void;
 };
 const WEEK_LABELS = ['월', '화', '수', '목', '금', '토', '일'];
 // 이번 주(월~일) 7일 중 달린 날 수를 보여 준다
@@ -54,6 +62,9 @@ export function HomeScreen({
   character,
   onNotificationPress,
   onSettingsPress,
+  onItemsPress,
+  onMyRoomPress,
+  onQuestPress,
   hasUnread,
 }: Props) {
   const insets = useSafeAreaInsets(),
@@ -170,6 +181,19 @@ export function HomeScreen({
                 </View>
               </View>
             </Card>
+            <View style={styles.shortcuts}>
+              <Shortcut icon={Package} label="아이템" onPress={onItemsPress} />
+              <Shortcut
+                icon={DoorOpen}
+                label="마이룸"
+                onPress={onMyRoomPress}
+              />
+              <Shortcut
+                icon={ScrollText}
+                label="퀘스트"
+                onPress={onQuestPress}
+              />
+            </View>
           </>
         )}
         {stoneLevel !== 'none' && (
@@ -343,6 +367,43 @@ function summarizeWeek(runs: RunDocument[]) {
   return { today, ranDays };
 }
 
+// 캐릭터 카드 아래 정사각형 바로가기. 연결된 화면이 없으면 '준비 중' 안내만 보여 준다
+function Shortcut({
+  icon: Icon,
+  label,
+  onPress,
+}: {
+  icon: LucideIcon;
+  label: string;
+  onPress?: () => void;
+}) {
+  const ready = !!onPress;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={ready ? label : `${label}, 준비 중`}
+      onPress={
+        onPress ??
+        (() => Alert.alert(label, '준비 중이에요. 조금만 기다려 주세요.'))
+      }
+      style={({ pressed }) => [
+        styles.shortcut,
+        pressed && styles.shortcutPressed,
+      ]}
+    >
+      <View style={styles.shortcutIcon}>
+        <Icon color={colors.primaryInk} size={24} strokeWidth={2} />
+      </View>
+      <AppText variant="subheading">{label}</AppText>
+      {!ready && (
+        <AppText variant="label" color={colors.textMuted}>
+          준비 중
+        </AppText>
+      )}
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
   content: { paddingHorizontal: spacing.xl, paddingTop: spacing.sm },
@@ -401,6 +462,27 @@ const styles = StyleSheet.create({
     paddingBottom: 14,
     gap: 9,
     backgroundColor: colors.surface,
+  },
+  shortcuts: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.md },
+  shortcut: {
+    flex: 1,
+    aspectRatio: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  shortcutPressed: { backgroundColor: colors.surfaceMuted },
+  shortcutIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   section: { marginTop: 24 },
   sectionHeader: {

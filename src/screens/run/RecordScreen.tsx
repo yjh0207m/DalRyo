@@ -29,6 +29,7 @@ import {
   IconButton,
   ScreenHeader,
 } from '../../components/ui';
+import { SlideScreen } from '../../navigation/slide';
 import { RunDetailScreen } from './RunDetailScreen';
 import type { CharacterDocument } from '../../types/character.types';
 import { RunRecordsStatus } from '../../components/ui/RunRecordsStatus';
@@ -109,16 +110,8 @@ export function RecordScreen({
     setSelectedDay(null);
     setPeriod({ year: date.getFullYear(), month: date.getMonth() });
   };
-  if (selectedRun)
-    return (
-      <RunDetailScreen
-        run={selectedRun}
-        character={character}
-        onBack={() => setSelectedRun(null)}
-        onPosted={onPosted}
-      />
-    );
-  return (
+  // 기록 목록은 그대로 두고 그 위로 상세가 밀려 들어온다
+  const list = (
     <SafeAreaView style={styles.screen} edges={['top']}>
       <ScrollView
         style={styles.screen}
@@ -361,6 +354,32 @@ export function RecordScreen({
         )}
       </ScrollView>
     </SafeAreaView>
+  );
+  return (
+    <View style={styles.screen}>
+      <View
+        style={styles.screen}
+        accessibilityElementsHidden={!!selectedRun}
+        importantForAccessibility={selectedRun ? 'no-hide-descendants' : 'auto'}
+      >
+        {list}
+      </View>
+      {selectedRun && (
+        <SlideScreen
+          key={selectedRun.run_id}
+          onBack={() => setSelectedRun(null)}
+        >
+          {back => (
+            <RunDetailScreen
+              run={selectedRun}
+              character={character}
+              onBack={back}
+              onPosted={onPosted}
+            />
+          )}
+        </SlideScreen>
+      )}
+    </View>
   );
 }
 

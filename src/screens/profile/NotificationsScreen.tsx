@@ -9,10 +9,12 @@ import {runInBackground} from '../../services/backgroundTask.service';
 import {markNotificationRead} from '../../services/notification.service';
 import {colors, radius, spacing} from '../../theme';
 import type {AppNotification} from '../../types/notification.types';
-import {describeNotification, notificationTime} from '../../utils/notifications';
+import {describeNotification, notificationTarget, notificationTime, type NotificationTarget} from '../../utils/notifications';
+import {NotificationAvatar} from './NotificationAvatar';
 
-// 같이 달리기 요청 알림을 누르면 onOpenTogether로 요청 목록을 연다
-export function NotificationsScreen({onBack, onOpenTogether}: {onBack: () => void; onOpenTogether?: () => void}) {
+// 알림을 누르면 알림이 가리키는 곳(게시물, 프로필, 같이 달리기 등)으로 onNavigate가 이동시킨다.
+// 갈 곳을 알 수 없거나 onNavigate가 없으면 내용을 안내 창으로만 보여 준다
+export function NotificationsScreen({onBack, onNavigate}: {onBack: () => void; onNavigate?: (target: NotificationTarget) => void}) {
   const {items, status, retry, loadMore, loadingMore, moreError, hasMore, setRead} = useNotifications();
   const t = useDialect();
   const insets = useSafeAreaInsets();
@@ -36,8 +38,9 @@ export function NotificationsScreen({onBack, onOpenTogether}: {onBack: () => voi
         task: () => markNotificationRead(item.id),
       });
     }
-    if (item.type === 'room_invite' && onOpenTogether) {
-      onOpenTogether();
+    const target = notificationTarget(item);
+    if (target && onNavigate) {
+      onNavigate(target);
       return;
     }
     const {title, body} = describeNotification(item, t);
@@ -89,24 +92,27 @@ export function NotificationsScreen({onBack, onOpenTogether}: {onBack: () => voi
                 onPress={() => openNotification(item)}
                 style={({pressed}) => [styles.item, !item.is_read && styles.unread, pressed && styles.pressed]}
               >
-                <View style={styles.itemHeading}>
-                  <AppText variant="subheading" style={styles.title}>
-                    {title}
+                <NotificationAvatar item={item} />
+                <View style={styles.itemBody}>
+                  <View style={styles.itemHeading}>
+                    <AppText variant="subheading" style={styles.title}>
+                      {title}
+                    </AppText>
+                    {!item.is_read && <Badge label="새 알림" />}
+                  </View>
+                  <AppText variant="caption" color={colors.textMuted}>
+                    {body}
                   </AppText>
-                  {!item.is_read && <Badge label="새 알림" />}
-                </View>
-                <AppText variant="caption" color={colors.textMuted}>
-                  {body}
-                </AppText>
-                <View style={styles.itemFooter}>
-                  <AppText variant="label" color={colors.textMuted}>
-                    {date
-                      ? `${date.getMonth() + 1}월 ${date.getDate()}일 ${String(date.getHours()).padStart(2, '0')}:${String(
-                          date.getMinutes(),
-                        ).padStart(2, '0')}`
-                      : '방금'}
-                  </AppText>
-                  <ChevronRight size={16} color={colors.textMuted} />
+                  <View style={styles.itemFooter}>
+                    <AppText variant="label" color={colors.textMuted}>
+                      {date
+                        ? `${date.getMonth() + 1}월 ${date.getDate()}일 ${String(date.getHours()).padStart(2, '0')}:${String(
+                            date.getMinutes(),
+                          ).padStart(2, '0')}`
+                        : '방금'}
+                    </AppText>
+                    <ChevronRight size={16} color={colors.textMuted} />
+                  </View>
                 </View>
               </Pressable>
             );
@@ -140,14 +146,17 @@ const styles = StyleSheet.create({
   content: {paddingHorizontal: spacing.xl, paddingTop: spacing.md},
   empty: {alignItems: 'center', gap: spacing.lg, marginTop: spacing.xxl, paddingVertical: spacing.xxxl},
   item: {
+    flexDirection: 'row',
+    alignItems: 'center',
     padding: spacing.lg,
     marginBottom: spacing.md,
     borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surface,
-    gap: spacing.sm,
+    gap: spacing.md,
   },
+  itemBody: {flex: 1, gap: spacing.xs},
   unread: {borderColor: colors.primaryBorder, backgroundColor: colors.primarySoft},
   pressed: {opacity: 0.7},
   itemHeading: {flexDirection: 'row', gap: spacing.sm, alignItems: 'center'},

@@ -40,6 +40,7 @@ import {
   IconButton,
 } from '../../components/ui';
 import { RunningShoeIcon } from '../../components/ui/RunningShoeIcon';
+import { SlideScreen } from '../../navigation/slide';
 import { ChatScreen } from './ChatScreen';
 import { CommentsSheet } from './CommentsSheet';
 import { ConnectionsScreen, type ConnectionKind } from './ConnectionsScreen';
@@ -79,7 +80,14 @@ type Props = {
   // friendUid가 있으면 그 친구를 골라 둔 채로 같이 달리기 화면을 연다
   onTogetherPress?: (friendUid?: string) => void;
   onSubpageChange?: (open: boolean) => void;
+  // 알림에서 넘어올 때 피드 위에 바로 열어 둘 게시물이나 프로필. 뒤로 가면 피드로 돌아온다
+  initialRoute?: CommunityLink;
+  // initialRoute를 처음 화면에 반영한 뒤 부른다. 부모가 그 값을 지워 다시 열리지 않게 한다
+  onInitialRouteHandled?: () => void;
 };
+export type CommunityLink =
+  | { page: 'post'; id: string }
+  | { page: 'profile'; uid: string };
 type Route =
   | { page: 'feed' }
   | { page: 'compose'; post?: SocialPost }
@@ -135,14 +143,25 @@ function CommunityContent(
     [],
   );
   const [scope, setScope] = useState<FeedScope>('public');
-  const [stack, setStack] = useState<Route[]>([{ page: 'feed' }]);
+  const [stack, setStack] = useState<Route[]>(() =>
+    props.initialRoute
+      ? [{ page: 'feed' }, props.initialRoute]
+      : [{ page: 'feed' }],
+  );
+  const onInitialRouteHandled = props.onInitialRouteHandled;
+  useEffect(() => {
+    onInitialRouteHandled?.();
+    // 처음 한 번만 알린다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const onSubpageChange = props.onSubpageChange;
   useEffect(() => {
     onSubpageChange?.(stack.length > 1);
     return () => onSubpageChange?.(false);
   }, [stack.length, onSubpageChange]);
   const feed = useSocialFeed(scope);
-  const route = stack[stack.length - 1];
+  // 딥링크로 처음부터 열려 있는 화면은 밀려 들어오지 않고, 그 뒤에 쌓는 화면만 밀려 들어온다
+  const initialDepth = useRef(stack.length);
   const push = (next: Route) => setStack(old => [...old, next]);
   const back = () => setStack(old => (old.length > 1 ? old.slice(0, -1) : old));
   const showPost = (id: string) => push({ page: 'post', id });
@@ -151,95 +170,99 @@ function CommunityContent(
   const changed = () => {
     feed.refresh();
   };
-  if (route.page === 'chat')
-    return (
-      <ChatScreen
-        initialPeer={route.peer}
-        onBack={back}
-        onProfile={showProfile}
-        onConnections={() =>
-          push({ page: 'connections', uid: myUid(), kind: 'following' })
-        }
-      />
-    );
-  if (route.page === 'connections')
-    return (
-      <ConnectionsScreen
-        uid={route.uid}
-        initialKind={route.kind}
-        onKindChange={kind =>
-          setStack(old =>
-            old.map((item, index) =>
-              index === old.length - 1 && item.page === 'connections'
-                ? { ...item, kind }
-                : item,
-            ),
-          )
-        }
-        onBack={back}
-        onProfile={showProfile}
-        onMessage={uid => push({ page: 'chat', peer: uid })}
-      />
-    );
-  if (route.page === 'compose')
-    return (
-      <Composer
-        post={route.post}
-        onBack={back}
-        onSaved={() => {
-          setScope('mine');
-          setStack([{ page: 'feed' }]);
-          feed.refresh();
-        }}
-      />
-    );
-  if (route.page === 'post')
-    return (
-      <PostDetail
-        id={route.id}
-        onComments={() => showComments(route.id)}
-        onBack={back}
-        onProfile={showProfile}
-        onEdit={post => push({ page: 'compose', post })}
-        onDeleted={() => {
-          back();
-          changed();
-        }}
-      />
-    );
-  if (route.page === 'profile')
-    return (
-      <ProfilePage
-        key={route.uid}
-        uid={route.uid}
-        onBack={back}
-        onPost={showPost}
-        onTogether={props.onTogetherPress}
-        onComments={showComments}
-        onMessage={uid => push({ page: 'chat', peer: uid })}
-        onConnections={kind =>
-          push({ page: 'connections', uid: route.uid, kind })
-        }
-      />
-    );
-  if (route.page === 'search' || route.page === 'rankings')
-    return (
-      <PeoplePage
-        ranking={route.page === 'rankings'}
-        onBack={back}
-        onProfile={showProfile}
-      />
-    );
-  if (route.page === 'saved')
-    return (
-      <SavedPage
-        onBack={back}
-        onPost={showPost}
-        onProfile={showProfile}
-        onComments={showComments}
-      />
-    );
-  return (
+  // 피드 위에 쌓이는 하위 화면 하나. goBack은 밀려 나간 뒤 맨 위 화면을 없애는 함수다
+  const renderPage = (route: Route, goBack: () => void): React.ReactNode => {
+    if (route.page === 'chat')
+      return (
+        <ChatScreen
+          initialPeer={route.peer}
+          onBack={goBack}
+          onProfile={showProfile}
+          onConnections={() =>
+            push({ page: 'connections', uid: myUid(), kind: 'following' })
+          }
+        />
+      );
+    if (route.page === 'connections')
+      return (
+        <ConnectionsScreen
+          uid={route.uid}
+          initialKind={route.kind}
+          onKindChange={kind =>
+            setStack(old =>
+              old.map((item, index) =>
+                index === old.length - 1 && item.page === 'connections'
+                  ? { ...item, kind }
+                  : item,
+              ),
+            )
+          }
+          onBack={goBack}
+          onProfile={showProfile}
+          onMessage={uid => push({ page: 'chat', peer: uid })}
+        />
+      );
+    if (route.page === 'compose')
+      return (
+        <Composer
+          post={route.post}
+          onBack={goBack}
+          onSaved={() => {
+            setScope('mine');
+            setStack([{ page: 'feed' }]);
+            feed.refresh();
+          }}
+        />
+      );
+    if (route.page === 'post')
+      return (
+        <PostDetail
+          id={route.id}
+          onComments={() => showComments(route.id)}
+          onBack={goBack}
+          onProfile={showProfile}
+          onEdit={post => push({ page: 'compose', post })}
+          onDeleted={() => {
+            goBack();
+            changed();
+          }}
+        />
+      );
+    if (route.page === 'profile')
+      return (
+        <ProfilePage
+          key={route.uid}
+          uid={route.uid}
+          onBack={goBack}
+          onPost={showPost}
+          onTogether={props.onTogetherPress}
+          onComments={showComments}
+          onMessage={uid => push({ page: 'chat', peer: uid })}
+          onConnections={kind =>
+            push({ page: 'connections', uid: route.uid, kind })
+          }
+        />
+      );
+    if (route.page === 'search' || route.page === 'rankings')
+      return (
+        <PeoplePage
+          ranking={route.page === 'rankings'}
+          onBack={goBack}
+          onProfile={showProfile}
+        />
+      );
+    if (route.page === 'saved')
+      return (
+        <SavedPage
+          onBack={goBack}
+          onPost={showPost}
+          onProfile={showProfile}
+          onComments={showComments}
+        />
+      );
+    return null;
+  };
+  const feedPage = (
     <Page title="커뮤니티" feed>
       <View style={styles.feedHeader}>
         <View>
@@ -416,6 +439,40 @@ function CommunityContent(
       </ScrollView>
     </Page>
   );
+  const open = stack.length > 1;
+  return (
+    <View style={styles.stackRoot}>
+      <View
+        style={styles.stackRoot}
+        accessibilityElementsHidden={open}
+        importantForAccessibility={open ? 'no-hide-descendants' : 'auto'}
+      >
+        {feedPage}
+      </View>
+      {stack.slice(1).map((page, offset) => (
+        <SlideScreen
+          key={`${offset + 1}:${routeKey(page)}`}
+          animateIn={offset + 1 >= initialDepth.current}
+          onBack={back}
+        >
+          {goBack => renderPage(page, goBack)}
+        </SlideScreen>
+      ))}
+    </View>
+  );
+}
+
+// 쌓인 화면을 구분하는 키. 같은 자리에 다른 화면이 오면 새로 밀려 들어온다
+function routeKey(route: Route) {
+  return route.page === 'post'
+    ? `post:${route.id}`
+    : route.page === 'profile' || route.page === 'connections'
+    ? `${route.page}:${route.uid}`
+    : route.page === 'compose'
+    ? `compose:${route.post?.post_id ?? 'new'}`
+    : route.page === 'chat'
+    ? `chat:${route.peer ?? ''}`
+    : route.page;
 }
 
 function Page({
@@ -1626,6 +1683,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     overflow: 'hidden',
   },
+  stackRoot: { flex: 1 },
   feedScreen: { backgroundColor: colors.sky },
   feedHeader: {
     flexDirection: 'row',

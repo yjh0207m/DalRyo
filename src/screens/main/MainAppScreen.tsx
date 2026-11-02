@@ -1,11 +1,10 @@
 import React, {useState} from 'react';
 import {ActivityIndicator, Alert, Pressable, StatusBar, StyleSheet, View} from 'react-native';
-import {CommunityScreen} from '../community/CommunityScreen';
+import {CommunityScreen, type CommunityLink} from '../community/CommunityScreen';
 import {TogetherScreen} from '../together/TogetherScreen';
 import {ParksScreen} from '../parks/ParksScreen';
 import {GrowthScreen} from '../growth/GrowthScreen';
 import {HomeScreen} from '../home/HomeScreen';
-import {MyPageScreen} from '../profile/MyPageScreen';
 import {InventoryScreen} from '../profile/InventoryScreen';
 import {CharacterPreviewScreen} from '../dev/CharacterPreviewScreen';
 import {SettingsScreen} from '../profile/SettingsScreen';
@@ -20,6 +19,8 @@ import {RunStartSheet} from '../run/RunStartSheet';
 import type {RunResult} from '../../hooks/useRunSession';
 import {AppText, Button} from '../../components/ui';
 import {BottomTabBar, type MainTab} from '../../navigation/BottomTabBar';
+import {SlideScreen} from '../../navigation/slide';
+import {TabPagerView, useTabPager} from '../../navigation/tabPager';
 import {queueRun, uploadPendingRun} from '../../services/runOutbox.service';
 import {useRunRecovery} from '../../hooks/useRunRecovery';
 import {RunRecoveryScreen} from '../run/RunRecoveryScreen';
@@ -31,6 +32,7 @@ import type {CharacterDocument, CharacterStage} from '../../types/character.type
 import type {RunDocument, RunGoalType} from '../../types/run.types';
 import type {UserDocument} from '../../types/user.types';
 import type {RunStartSnapshot} from '../../utils/runCompletion';
+import type {NotificationTarget} from '../../utils/notifications';
 
 type Props = {
   user: UserDocument | null;
@@ -59,6 +61,9 @@ export function MainAppScreen({user, character}: Props) {
   const [inventoryMode, setInventoryMode] = useState<'owned' | 'all' | null>(null);
   const [characterPreviewOpen, setCharacterPreviewOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [communityLink, setCommunityLink] = useState<CommunityLink | null>(null);
+  // 알림에서 게시물·프로필로 올 때 이미 열려 있는 커뮤니티 화면도 새로 시작하게 하는 표시
+  const [communityKey, setCommunityKey] = useState(0);
   const [communitySubpage, setCommunitySubpage] = useState(false);
   const [together, setTogether] = useState<{friendUid?: string} | null>(null);
   const [recordSubpage,setRecordSubpage]=useState(false);
@@ -66,7 +71,33 @@ export function MainAppScreen({user, character}: Props) {
   const push = usePushNotifications(user?.uid, user?.notification_settings?.push ?? false, () => setNotificationsOpen(true));
 
   const recovery = useRunRecovery(user?.uid);
+  // 위에 겹쳐 열려 있는 전체 화면(설정, 알림, 보관함 등). 열려 있는 동안 아래 탭 화면은 그대로 두고 눌리지 않게 한다
+  const overlayOpen = (__DEV__ && characterPreviewOpen) || (settingsOpen && !!user) || (!!inventoryMode && !!character) || parksOpen || notificationsOpen || (!!together && !!user && !!character);
+  // 탭 화면에서 가로로 쓸어 탭을 바꾼다(손가락을 따라 움직이고, 탭 바를 눌러도 같은 방식으로 움직인다).
+  // 커뮤니티·기록의 하위 화면(게시물, 채팅, 기록 상세 등)이나 전체 화면이 열려 있을 때는 끈다
+  const pager = useTabPager({
+    active: activeTab,
+    enabled: !overlayOpen && !(activeTab === 'community' && communitySubpage) && !(activeTab === 'records' && recordSubpage),
+    onChange: setActiveTab,
+  });
   const openRunSheet = () => setRunSheetOpen(true);
+
+  // 알림을 누르면 알림 목록을 닫고 그 알림이 가리키는 곳으로 간다
+  const openNotificationTarget = (target: NotificationTarget) => {
+    setNotificationsOpen(false);
+    if (target.kind === 'post') {
+      setCommunityLink({page: 'post', id: target.postId});
+      setCommunityKey(key => key + 1);
+      setActiveTab('community');
+    } else if (target.kind === 'profile') {
+      setCommunityLink({page: 'profile', uid: target.uid});
+      setCommunityKey(key => key + 1);
+      setActiveTab('community');
+    } else if (target.kind === 'together') setTogether({});
+    else if (target.kind === 'growth') setActiveTab('growth');
+    else if (target.kind === 'home') setActiveTab('home');
+    else if (user) setSettingsOpen(true);
+  };
 
   const selectGoal = (goalType: RunGoalType) => {
     setRunSheetOpen(false);
@@ -174,50 +205,48 @@ export function MainAppScreen({user, character}: Props) {
       onDiscard={() => {recovery.dismiss(); recovery.refresh();}}/>;
   }
 
-  if (__DEV__ && characterPreviewOpen) return <CharacterPreviewScreen onBack={() => setCharacterPreviewOpen(false)} />;
-  if (settingsOpen && user) return <SettingsScreen user={user} onBack={() => setSettingsOpen(false)} />;
-  if (inventoryMode && character) return <InventoryScreen key={character.uid} character={character} frozen={user?.is_frozen} initialMode={inventoryMode} onBack={() => setInventoryMode(null)}/>;
-  if (parksOpen) return <ParksScreen onBack={()=>setParksOpen(false)} onStart={(park,km,courseId)=>{
-    if(startRun({goalType:'distance',goalValue:km,parkId:park.park_id,parkName:park.name,courseId}))setParksOpen(false);
-  }}/>;
-  if (notificationsOpen)
-    return (
-      <NotificationsScreen
-        onBack={() => setNotificationsOpen(false)}
-        onOpenTogether={() => {
-          setNotificationsOpen(false);
-          setTogether({});
-        }}
-      />
-    );
-  if (together && user && character)
-    return <TogetherScreen user={user} character={character} initialFriendUid={together.friendUid} onBack={() => setTogether(null)} onPosted={() => {setTogether(null); setActiveTab('community');}} />;
+  // 헤더의 설정 아이콘은 마이 화면을 거치지 않고 설정으로 바로 간다. 돌아오면 누르기 전 탭으로 돌아온다
+  const header = {onNotificationPress: () => setNotificationsOpen(true), onSettingsPress: () => {if (user) setSettingsOpen(true);}, hasUnread};
 
-  const header = {onNotificationPress: () => setNotificationsOpen(true), onSettingsPress: () => setActiveTab('my'), hasUnread};
+  // 전체 화면은 오른쪽에서 밀려 들어와 탭 화면 위에 겹치고, 뒤로 가면 오른쪽으로 밀려 나간다
+  let overlay: React.ReactNode = null;
+  if (__DEV__ && characterPreviewOpen) overlay = <SlideScreen key="preview" onBack={() => setCharacterPreviewOpen(false)}>{back => <CharacterPreviewScreen onBack={back} />}</SlideScreen>;
+  else if (settingsOpen && user) overlay = <SlideScreen key="settings" onBack={() => setSettingsOpen(false)}>{back => <SettingsScreen user={user} onBack={back} onPreviewCharacter={() => setCharacterPreviewOpen(true)} />}</SlideScreen>;
+  else if (inventoryMode && character) overlay = <SlideScreen key="inventory" onBack={() => setInventoryMode(null)}>{back => <InventoryScreen key={character.uid} character={character} frozen={user?.is_frozen} initialMode={inventoryMode} onBack={back}/>}</SlideScreen>;
+  else if (parksOpen) overlay = <SlideScreen key="parks" onBack={() => setParksOpen(false)}>{back => <ParksScreen onBack={back} onStart={(park,km,courseId)=>{
+    if(startRun({goalType:'distance',goalValue:km,parkId:park.park_id,parkName:park.name,courseId}))setParksOpen(false);
+  }}/>}</SlideScreen>;
+  else if (notificationsOpen) overlay = <SlideScreen key="notifications" onBack={() => setNotificationsOpen(false)}>{back => <NotificationsScreen onBack={back} onNavigate={openNotificationTarget} />}</SlideScreen>;
+  else if (together && user && character) overlay = <SlideScreen key="together" onBack={() => setTogether(null)}>{back => <TogetherScreen user={user} character={character} initialFriendUid={together.friendUid} onBack={back} onPosted={() => {setTogether(null); setActiveTab('community');}} />}</SlideScreen>;
+
+  const renderTab = (tab: MainTab) => {
+    if (tab === 'home') return <HomeScreen user={user} character={character} onItemsPress={() => setInventoryMode('owned')} {...header} />;
+    if (tab === 'growth') return <GrowthScreen user={user} character={character} {...header} />;
+    if (tab === 'community') return <CommunityScreen key={communityKey} {...header} initialRoute={communityLink ?? undefined} onInitialRouteHandled={() => setCommunityLink(null)} onSubpageChange={setCommunitySubpage} onTogetherPress={friendUid => setTogether({friendUid})}/>;
+    if (tab === 'records') return <RecordScreen {...header} character={character} onSubpageChange={setRecordSubpage} onPosted={() => setActiveTab('community')}/>;
+    return null;
+  };
 
   return (
     <View style={styles.screen}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
-      {recovery.pending > 0 && <View style={styles.pendingBanner}><AppText variant="caption">기기에 보관한 기록 {recovery.pending}개 · {recovery.syncing ? '저장 중' : '연결되면 자동 저장'}</AppText><Button label="다시 저장" size="md" variant="ghost" disabled={recovery.syncing} onPress={recovery.sync}/></View>}
-      <View style={styles.body}>
-        {activeTab === 'home' && <HomeScreen user={user} character={character} {...header} />}
-        {activeTab === 'growth' && <GrowthScreen user={user} character={character} {...header} />}
-        {activeTab === 'community' && <CommunityScreen {...header} onSubpageChange={setCommunitySubpage} onTogetherPress={friendUid => setTogether({friendUid})}/>}
-        {activeTab === 'records' && <RecordScreen {...header} character={character} onSubpageChange={setRecordSubpage} onPosted={() => setActiveTab('community')}/>}
-        {activeTab === 'my' && <MyPageScreen user={user} character={character} onBack={() => setActiveTab('home')} onOpenSettings={() => setSettingsOpen(true)} onOpenInventory={setInventoryMode} onPreviewCharacter={() => setCharacterPreviewOpen(true)} />}
+      <View style={styles.main} accessibilityElementsHidden={overlayOpen} importantForAccessibility={overlayOpen ? 'no-hide-descendants' : 'auto'}>
+        <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
+        {recovery.pending > 0 && <View style={styles.pendingBanner}><AppText variant="caption">기기에 보관한 기록 {recovery.pending}개 · {recovery.syncing ? '저장 중' : '연결되면 자동 저장'}</AppText><Button label="다시 저장" size="md" variant="ghost" disabled={recovery.syncing} onPress={recovery.sync}/></View>}
+        <TabPagerView pager={pager} renderTab={renderTab} />
+        {!(activeTab === 'community' && communitySubpage) && !(activeTab === 'records' && recordSubpage) && <BottomTabBar activeTab={activeTab} onChange={tab => (tab === 'run' ? openRunSheet() : pager.goTo(tab))} />}
+        <RunStartSheet visible={runSheetOpen} onClose={() => setRunSheetOpen(false)} onSelect={selectGoal} onParkPress={()=>{setRunSheetOpen(false);setParksOpen(true);}}/>
+        {push.notice && <Pressable accessibilityRole="button" onPress={() => {push.dismiss(); setNotificationsOpen(true);}} style={styles.pushBanner}>
+          <AppText variant="subheading">{push.notice.title}</AppText><AppText variant="caption">{push.notice.body}</AppText>
+        </Pressable>}
       </View>
-      {!(activeTab === 'community' && communitySubpage) && !(activeTab === 'records' && recordSubpage) && <BottomTabBar activeTab={activeTab} onChange={tab => (tab === 'run' ? openRunSheet() : setActiveTab(tab))} />}
-      <RunStartSheet visible={runSheetOpen} onClose={() => setRunSheetOpen(false)} onSelect={selectGoal} onParkPress={()=>{setRunSheetOpen(false);setParksOpen(true);}}/>
-      {push.notice && <Pressable accessibilityRole="button" onPress={() => {push.dismiss(); setNotificationsOpen(true);}} style={styles.pushBanner}>
-        <AppText variant="subheading">{push.notice.title}</AppText><AppText variant="caption">{push.notice.body}</AppText>
-      </Pressable>}
+      {overlay}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   screen: {flex: 1, backgroundColor: colors.background},
-  body: {flex: 1},
+  main: {flex: 1},
   pendingBanner: {paddingTop: 40, paddingHorizontal: 20, backgroundColor: colors.primarySoft, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'},
   savingScreen: {flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center'},
   savingText: {marginTop: 16},

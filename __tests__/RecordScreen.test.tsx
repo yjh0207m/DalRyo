@@ -130,3 +130,21 @@ test('the month selector sits right under the header with no leftover tagline sp
   expect(row).not.toBeNull();
   expect(StyleSheet.flatten(row!.props.style).marginTop).toBe(0);
 });
+test('the record detail slides in over the list instead of replacing it, and going back closes only the detail', async () => {
+  await render();
+  const listHidden = () =>
+    tree.root.findAll(node => node.props.accessibilityElementsHidden === true)
+      .length > 0;
+  expect(listHidden()).toBe(false);
+  await act(() => entries()[0].props.onPress());
+  expect(mockDetail).toHaveBeenCalled();
+  // 목록은 지워지지 않고 아래에 그대로 있으며, 화면 읽기 기능에서는 가려진다
+  expect(entries()).toHaveLength(2);
+  expect(listHidden()).toBe(true);
+  await act(async () => mockDetail.mock.calls.at(-1)?.[0].onBack());
+  expect(entries()).toHaveLength(2);
+  expect(listHidden()).toBe(false);
+  const before = mockDetail.mock.calls.length;
+  await act(async () => {});
+  expect(mockDetail.mock.calls.length).toBe(before);
+});

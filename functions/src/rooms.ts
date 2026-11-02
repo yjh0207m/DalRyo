@@ -187,6 +187,11 @@ export const roomAction = onCall(
               type: 'room_invite',
               actor_uid: uid,
               actor_name: name(user),
+              actor_image:
+                typeof user?.profile_image === 'string' &&
+                user.profile_image.startsWith('https://')
+                  ? user.profile_image.slice(0, 3000)
+                  : null,
               target_id: id,
               is_read: false,
               created_at: now(),

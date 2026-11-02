@@ -3,6 +3,7 @@ import { LogBox, Pressable, StyleSheet, Text } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import auth, { type FirebaseAuthTypes } from '@react-native-firebase/auth';
 import { BackgroundTaskToast } from './src/components/ui/BackgroundTaskToast';
+import { EdgeBackSwipe } from './src/navigation/backGesture';
 import { AuthStartScreen } from './src/screens/auth/SplashScreen';
 import { PhoneLoginScreen } from './src/screens/auth/LoginScreen';
 import { OnboardingScreen } from './src/screens/auth/OnboardingScreen';
@@ -29,6 +30,8 @@ function App() {
       <AppRoutes />
       {/* 게시 같은 백그라운드 요청의 진행 상태. 어느 화면에서든 위쪽에 작게 뜬다 */}
       <BackgroundTaskToast />
+      {/* iOS 왼쪽 가장자리 스와이프로 뒤로 가기 */}
+      <EdgeBackSwipe />
     </SafeAreaProvider>
   );
 }

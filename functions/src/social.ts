@@ -71,6 +71,8 @@ function notification(
       type,
       actor_uid: actor.uid,
       actor_name: actor.display_name,
+      // 알림 목록에서 상대의 사진을 바로 보여 주기 위한 사본. publicUser가 https 주소만 통과시킨다
+      actor_image: actor.profile_image,
       target_id: target,
       is_read: false,
       created_at: now(),

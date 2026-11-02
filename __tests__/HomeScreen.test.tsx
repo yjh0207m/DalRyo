@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, View as MockView } from 'react-native';
+import { Alert, StyleSheet, Text, View as MockView } from 'react-native';
 import Renderer, { act } from 'react-test-renderer';
 import { HomeScreen } from '../src/screens/home/HomeScreen';
 import type { CharacterDocument } from '../src/types/character.types';
@@ -161,4 +161,99 @@ test('seven days are always the ceiling, even if every day has a run', async () 
     );
   });
   expect(texts()).toContain('3 / 7일');
+});
+
+describe('shortcuts under the character card', () => {
+  const shortcut = (label: string) =>
+    tree.root.findAll(
+      node =>
+        typeof node.props.onPress === 'function' &&
+        String(node.props.accessibilityLabel ?? '').startsWith(label),
+    )[0];
+  const renderHome = async (
+    props: Partial<React.ComponentProps<typeof HomeScreen>> = {},
+  ) => {
+    await act(async () => {
+      tree.update(
+        <HomeScreen
+          user={user}
+          character={character}
+          onNotificationPress={jest.fn()}
+          onSettingsPress={jest.fn()}
+          {...props}
+        />,
+      );
+    });
+  };
+
+  test('three equal squares sit in one row, in the order items, my room, quest', () => {
+    const labels = ['아이템', '마이룸', '퀘스트'];
+    const tiles = labels.map(shortcut);
+    tiles.forEach(tile => expect(tile).toBeDefined());
+    tiles.forEach(tile =>
+      expect(
+        StyleSheet.flatten(tile.props.style({ pressed: false })),
+      ).toMatchObject({ flex: 1, aspectRatio: 1 }),
+    );
+    // 같은 가로 줄에 있다
+    const rowOf = (tile: Renderer.ReactTestInstance) => {
+      let node: Renderer.ReactTestInstance | null = tile.parent;
+      while (
+        node &&
+        StyleSheet.flatten(node.props.style)?.flexDirection !== 'row'
+      )
+        node = node.parent;
+      return node;
+    };
+    expect(rowOf(tiles[0])).toBe(rowOf(tiles[1]));
+    expect(rowOf(tiles[1])).toBe(rowOf(tiles[2]));
+    const order = rowOf(tiles[0])!
+      .findAllByType(Text)
+      .map(node => joined(node.props.children))
+      .filter(text => labels.includes(text));
+    expect(order).toEqual(labels);
+  });
+
+  test('they come right after the character card and before today’s run', () => {
+    const all = texts();
+    expect(all.indexOf('RUNNING MATE')).toBeLessThan(all.indexOf('아이템'));
+    expect(all.indexOf('퀘스트')).toBeLessThan(all.indexOf('오늘의 러닝'));
+  });
+
+  test('the items square opens the items screen', async () => {
+    const onItemsPress = jest.fn();
+    await renderHome({ onItemsPress });
+    // 연결된 아이템에는 '준비 중' 표시가 없고, 마이룸·퀘스트에만 남는다
+    expect(shortcut('아이템').props.accessibilityLabel).toBe('아이템');
+    await act(async () => shortcut('아이템').props.onPress());
+    expect(onItemsPress).toHaveBeenCalledTimes(1);
+  });
+
+  test('my room and quest are marked as not ready and only show a notice when pressed', async () => {
+    const alert = jest
+      .spyOn(Alert, 'alert')
+      .mockImplementation(() => undefined);
+    try {
+      expect(texts().filter(text => text === '준비 중')).toHaveLength(3);
+      await renderHome({ onItemsPress: jest.fn() });
+      expect(texts().filter(text => text === '준비 중')).toHaveLength(2);
+      await act(async () => shortcut('마이룸').props.onPress());
+      expect(alert).toHaveBeenLastCalledWith(
+        '마이룸',
+        expect.stringContaining('준비 중'),
+      );
+      await act(async () => shortcut('퀘스트').props.onPress());
+      expect(alert).toHaveBeenLastCalledWith(
+        '퀘스트',
+        expect.stringContaining('준비 중'),
+      );
+    } finally {
+      alert.mockRestore();
+    }
+  });
+
+  test('without a character there is nothing to open, so the squares are hidden', async () => {
+    await renderHome({ character: null });
+    expect(shortcut('아이템')).toBeUndefined();
+  });
 });

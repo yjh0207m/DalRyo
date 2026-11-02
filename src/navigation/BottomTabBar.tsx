@@ -11,15 +11,9 @@ import {
 } from 'lucide-react-native';
 import { AppText } from '../components/ui';
 import { colors, radius, spacing } from '../theme';
-export type MainTab =
-  | 'home'
-  | 'growth'
-  | 'run'
-  | 'community'
-  | 'records'
-  | 'my';
+export type MainTab = 'home' | 'growth' | 'run' | 'community' | 'records';
 const TABS: Array<{
-  key: Exclude<MainTab, 'run' | 'my'>;
+  key: Exclude<MainTab, 'run'>;
   label: string;
   icon: LucideIcon;
 }> = [

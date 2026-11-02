@@ -11,6 +11,47 @@ export function mergeNotifications(existing: AppNotification[], incoming: AppNot
   return [...byId.values()].sort((a, b) => notificationTime(b) - notificationTime(a) || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0));
 }
 
+// 알림을 눌렀을 때 갈 곳
+export type NotificationTarget =
+  | {kind: 'post'; postId: string}
+  | {kind: 'profile'; uid: string}
+  | {kind: 'together'}
+  | {kind: 'growth'}
+  | {kind: 'home'}
+  | {kind: 'settings'};
+
+function text(value: unknown) {
+  return typeof value === 'string' && value ? value : null;
+}
+
+// 갈 곳을 알 수 없으면(옛 알림에 대상 정보가 없는 등) null. 그때는 안내 창만 보여 준다
+export function notificationTarget(item: AppNotification): NotificationTarget | null {
+  switch (item.type) {
+    case 'like':
+    case 'comment': {
+      const postId = text(item.target_id);
+      return postId ? {kind: 'post', postId} : null;
+    }
+    case 'follow': {
+      const uid = text(item.actor_uid) ?? text(item.target_id);
+      return uid ? {kind: 'profile', uid} : null;
+    }
+    case 'room_invite':
+      return {kind: 'together'};
+    case 'level_up':
+      return {kind: 'growth'};
+    case 'stone_warning':
+      return {kind: 'home'};
+    case 'settings':
+      return {kind: 'settings'};
+    default:
+      return null;
+  }
+}
+
+// 사람이 한 행동이라 상대 프로필 사진을 보여 주는 알림
+export const PERSON_NOTIFICATION_TYPES = ['follow', 'like', 'comment', 'room_invite'];
+
 export function describeNotification(item: AppNotification, t: Translate) {
   if (item.type === 'level_up') {
     const stages: Record<string, string> = {baby: '아기', child: '어린이', runner: '러너'};
