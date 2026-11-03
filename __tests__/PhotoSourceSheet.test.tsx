@@ -73,3 +73,22 @@ test('cancel only closes the sheet', async () => {
   expect(handlers.onCamera).not.toHaveBeenCalled();
   expect(handlers.onAlbum).not.toHaveBeenCalled();
 });
+
+test('on iOS the choice still runs if the dismiss notice never arrives', async () => {
+  jest.useFakeTimers();
+  try {
+    await render();
+    await press('사진 촬영');
+    expect(handlers.onCamera).not.toHaveBeenCalled();
+    await act(async () => {
+      jest.advanceTimersByTime(1000);
+    });
+    expect(handlers.onCamera).toHaveBeenCalledTimes(1);
+    // 뒤늦게 닫힘 알림이 와도 두 번 실행되지 않는다
+    const modal = tree.root.findByType(Modal);
+    await act(async () => modal.props.onDismiss());
+    expect(handlers.onCamera).toHaveBeenCalledTimes(1);
+  } finally {
+    jest.useRealTimers();
+  }
+});

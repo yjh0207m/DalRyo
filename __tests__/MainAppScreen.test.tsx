@@ -12,6 +12,7 @@ type HeaderProps = {
   initialRoute?: unknown;
   onInitialRouteHandled?: () => void;
   onSubpageChange?: (open: boolean) => void;
+  onReady?: () => void;
 };
 // 화면들은 이동에 쓰는 버튼만 그려 주는 가짜로 바꾼다
 function fakeTab(name: string) {
@@ -35,6 +36,10 @@ function fakeTab(name: string) {
         <Pressable
           accessibilityLabel={`${name} 하위 화면 닫기`}
           onPress={() => props.onSubpageChange?.(false)}
+        />
+        <Pressable
+          accessibilityLabel={`${name} 준비 끝`}
+          onPress={props.onReady}
         />
         <Pressable
           accessibilityLabel={`${name} 알림`}
@@ -92,6 +97,7 @@ jest.mock('../src/screens/profile/SettingsScreen', () => ({
     onBack: () => void;
     onPreviewCharacter?: () => void;
     onOpenSaved?: () => void;
+    onOpenBlocked?: () => void;
   }) => {
     const R = require('react');
     const N = require('react-native');
@@ -112,7 +118,18 @@ jest.mock('../src/screens/profile/SettingsScreen', () => ({
         accessibilityLabel: '저장한 게시물',
         onPress: props.onOpenSaved,
       }),
+      R.createElement(N.Pressable, {
+        accessibilityLabel: '차단한 사용자',
+        onPress: props.onOpenBlocked,
+      }),
     );
+  },
+}));
+jest.mock('../src/screens/profile/BlockedUsersScreen', () => ({
+  BlockedUsersScreen: () => {
+    const R = require('react');
+    const N = require('react-native');
+    return R.createElement(N.Text, null, '차단 목록 화면');
   },
 }));
 jest.mock('../src/screens/profile/InventoryScreen', () => ({
@@ -535,4 +552,28 @@ test('“저장한 게시물” in settings closes settings and opens the saved 
   expect(texts()).not.toContain('설정 화면');
   expect(texts()).toContain('커뮤니티 화면');
   expect(texts()).toContain('커뮤니티 화면 열린 경로 {"page":"saved"}');
+});
+
+test('“차단한 사용자” in settings opens the blocked list over settings', async () => {
+  await render();
+  await press('홈 설정');
+  await press('차단한 사용자');
+  expect(texts()).toContain('차단 목록 화면');
+  expect(texts()).not.toContain('설정 화면');
+});
+
+test('the app is told when the home screen has finished drawing', async () => {
+  const onHomeReady = jest.fn();
+  await act(async () => {
+    tree = Renderer.create(
+      <MainAppScreen
+        user={user}
+        character={character}
+        onHomeReady={onHomeReady}
+      />,
+    );
+  });
+  expect(onHomeReady).not.toHaveBeenCalled();
+  await press('홈 준비 끝');
+  expect(onHomeReady).toHaveBeenCalledTimes(1);
 });

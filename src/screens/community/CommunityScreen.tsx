@@ -22,7 +22,9 @@ import {
   Footprints,
   MoreHorizontal,
   Bookmark,
+  Ban,
   ChevronLeft,
+  EyeOff,
   MessageCircle,
   MessageSquare,
   Pencil,
@@ -37,6 +39,8 @@ import {
   List,
 } from 'lucide-react-native';
 import {
+  ActionSheet,
+  type ActionSheetItem,
   AppText,
   Button,
   Card,
@@ -62,6 +66,7 @@ import {
   tabBarBottom,
 } from '../../navigation/BottomTabBar';
 import { colors, fonts, radius, spacing } from '../../theme';
+import { useHiddenContent } from '../../hooks/useHiddenContent';
 import { useServerFeed } from '../../hooks/useServerFeed';
 import { usePostAuthor } from '../../hooks/usePostAuthor';
 import { choosePhoto, uploadPhoto } from '../../services/media.service';
@@ -122,10 +127,12 @@ export function CommunityScreen(props: Props) {
     id: string;
     onProfile: (uid: string) => void;
   } | null>(null);
+  const hidden = useHiddenContent();
   return (
     <>
       <CommunityContent
         {...props}
+        hidden={hidden}
         onComments={(id, onProfile) => setComments({ id, onProfile })}
       />
       {comments && (
@@ -134,6 +141,7 @@ export function CommunityScreen(props: Props) {
           postId={comments.id}
           onClose={() => setComments(null)}
           onProfile={comments.onProfile}
+          hiddenUids={hidden.blockedUids}
         />
       )}
     </>
@@ -142,6 +150,7 @@ export function CommunityScreen(props: Props) {
 
 function CommunityContent(
   props: Props & {
+    hidden: ReturnType<typeof useHiddenContent>;
     onComments: (id: string, onProfile: (uid: string) => void) => void;
   },
 ) {
@@ -197,6 +206,12 @@ function CommunityContent(
   const changed = () => {
     feed.refresh();
   };
+  const editPost = (post: SocialPost) => push({ page: 'compose', post });
+  // 차단하거나 보지 않기로 한 글은 이미 불러온 목록에서도 바로 뺀다
+  const { blockedUids, hiddenPostIds } = props.hidden;
+  const wanted = (post: SocialPost) =>
+    !blockedUids.has(post.uid) && !hiddenPostIds.has(post.post_id);
+  const feedPosts = feed.posts.filter(wanted);
   const selectSubNav = (key: SubNavKey) => {
     // 이미 보고 있는 피드를 다시 고르면 맨 위로 올리고 새로고침한다
     if (key === 'feed' && section === 'feed') {
@@ -243,9 +258,11 @@ function CommunityContent(
           // 글은 서버가 저장을 끝낸 뒤에야 목록에 들어가므로, 끝나면 피드를 다시 불러온다
           onPosted={feed.refresh}
           onSaved={visibility => {
-            // 전체 공개가 아닌 글은 피드에 보이지 않으니 내 프로필에서 확인할 수 있게 연다
             setStack([{ page: 'feed' }]);
-            setSection(visibility === 'public' ? 'feed' : 'profile');
+            // 새 글이 전체 공개가 아니면 피드에 보이지 않으니 내 프로필에서 확인할 수 있게 연다.
+            // 고친 글은 보던 화면으로 그대로 돌아간다
+            if (!route.post)
+              setSection(visibility === 'public' ? 'feed' : 'profile');
             feed.refresh();
           }}
         />
@@ -271,6 +288,7 @@ function CommunityContent(
           uid={route.uid}
           onBack={goBack}
           onPost={showPost}
+          onEdit={editPost}
           onTogether={props.onTogetherPress}
           onComments={showComments}
           onMessage={uid => push({ page: 'chat', peer: uid })}
@@ -290,7 +308,9 @@ function CommunityContent(
     if (route.page === 'saved')
       return (
         <SavedPage
+          wanted={wanted}
           onBack={goBack}
+          onEdit={editPost}
           onPost={showPost}
           onProfile={showProfile}
           onComments={showComments}
@@ -302,6 +322,7 @@ function CommunityContent(
     if (section === 'explore')
       return (
         <ExplorePage
+          wanted={wanted}
           bottomInset={sectionReserve}
           onBack={leaveSection}
           onSearch={() => push({ page: 'search' })}
@@ -330,6 +351,7 @@ function CommunityContent(
           bottomInset={sectionReserve}
           onBack={leaveSection}
           onPost={showPost}
+          onEdit={editPost}
           onTogether={props.onTogetherPress}
           onComments={showComments}
           onMessage={uid => push({ page: 'chat', peer: uid })}
@@ -392,19 +414,20 @@ function CommunityContent(
             <Loading />
           ) : feed.status === 'error' ? (
             <Failure retry={feed.refresh} />
-          ) : feed.posts.length === 0 ? (
+          ) : feedPosts.length === 0 ? (
             <Empty
               title="아직 게시물이 없어요"
               detail="러너를 팔로우하거나, 오늘의 달리기를 기록과 함께 나눠 보세요."
             />
           ) : (
-            feed.posts.map(post => (
+            feedPosts.map(post => (
               <PostCard
                 key={post.post_id}
                 post={post}
                 onComments={() => showComments(post.post_id)}
                 onOpen={() => showPost(post.post_id)}
                 onProfile={() => showProfile(post.uid)}
+                onEdit={() => editPost(post)}
               />
             ))
           )}
@@ -631,7 +654,7 @@ function errorAlert(error: unknown) {
 }
 
 export function PostCard({
-  post,
+  post: initialPost,
   onOpen,
   onComments,
   onProfile,
@@ -644,9 +667,29 @@ export function PostCard({
   onComments: () => void;
   onProfile: () => void;
   onEdit?: () => void;
+  // 삭제·보지 않음·차단으로 이 글이 사라졌을 때
   onDeleted?: () => void;
   detail?: boolean;
 }) {
+  const [post, setPost] = useState(initialPost);
+  // 삭제됐거나 보지 않기로 해서 더 보여 주지 않는 글
+  const [gone, setGone] = useState(false);
+  // null은 메뉴를 연 적이 없다는 뜻이다. 그때까지는 시트를 만들지 않는다
+  const [menuOpen, setMenuOpen] = useState<boolean | null>(null);
+  useEffect(() => setPost(initialPost), [initialPost]);
+  // 피드는 요청해서 받는 목록이라, 응원·댓글 수와 수정·삭제는 글마다 직접 지켜본다.
+  // 상세 화면은 부모가 이미 지켜보고 있다
+  useEffect(() => {
+    if (detail) return undefined;
+    return watchPost(
+      initialPost.post_id,
+      next => {
+        if (next) setPost(next);
+        else setGone(true);
+      },
+      () => {},
+    );
+  }, [initialPost.post_id, detail]);
   const [flags, setFlags] = useState({ liked: false, saved: false });
   const author = usePostAuthor(post.uid, post);
   const authorName = author?.display_name ?? post.author_name;
@@ -693,7 +736,7 @@ export function PostCard({
         text: '삭제',
         style: 'destructive',
         onPress: () => {
-          // 서버 처리를 기다리지 않고 바로 목록으로 돌아간다. 피드는 실시간으로 갱신된다
+          // 서버 처리를 기다리지 않고 바로 목록으로 돌아간다. 처리가 끝나면 카드가 스스로 사라진다
           runInBackground({
             label: '게시물 삭제 중',
             successLabel: '게시물을 삭제했어요',
@@ -712,12 +755,75 @@ export function PostCard({
         post.run_id ? `\n${post.distance_km?.toFixed(2)}km` : ''
       }`,
     }).catch(errorAlert);
-  const menu = () =>
-    Alert.alert('게시물', authorName, [
-      { text: '게시물 보기', onPress: onOpen },
-      { text: '프로필 보기', onPress: onProfile },
-      { text: '취소', style: 'cancel' },
-    ]);
+  const hide = () => {
+    setGone(true);
+    onDeleted?.();
+    runInBackground({
+      label: '게시물 숨기는 중',
+      successLabel: '이 게시물을 더 이상 보여 주지 않아요',
+      failureLabel: '게시물을 숨기지 못했어요',
+      retryable: false,
+      describeError: socialError,
+      task: () => socialRequest('hidePost', { postId: post.post_id }),
+      onFailure: () => setGone(false),
+    });
+  };
+  const block = () =>
+    Alert.alert(
+      `${authorName}님을 차단할까요?`,
+      '서로의 팔로우가 끊기고, 이 러너의 글과 댓글이 보이지 않아요. 차단은 설정에서 해제할 수 있어요.',
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: '차단',
+          style: 'destructive',
+          onPress: () => {
+            setGone(true);
+            onDeleted?.();
+            runInBackground({
+              label: '차단하는 중',
+              successLabel: `${authorName}님을 차단했어요`,
+              failureLabel: '차단하지 못했어요',
+              retryable: false,
+              describeError: socialError,
+              task: () =>
+                socialRequest('blockUser', { uid: post.uid, blocked: true }),
+              onFailure: () => setGone(false),
+            });
+          },
+        },
+      ],
+    );
+  const menuItems: ActionSheetItem[] = own
+    ? [
+        ...(onEdit
+          ? [
+              {
+                label: '수정',
+                accessibilityLabel: '게시물 수정',
+                icon: Pencil,
+                onPress: onEdit,
+              },
+            ]
+          : []),
+        {
+          label: '삭제',
+          accessibilityLabel: '게시물 삭제',
+          icon: Trash2,
+          danger: true,
+          onPress: remove,
+        },
+      ]
+    : [
+        { label: '이 게시물 보지 않음', icon: EyeOff, onPress: hide },
+        {
+          label: `${authorName} 차단`,
+          icon: Ban,
+          danger: true,
+          onPress: block,
+        },
+      ];
+  if (gone) return null;
   const postedDate = post.createdAtMs
     ? new Date(post.createdAtMs).toLocaleDateString('ko-KR', {
         month: 'long',
@@ -746,28 +852,17 @@ export function PostCard({
             </AppText>
           </View>
         </Pressable>
-        {detail && own && onEdit && (
-          <IconButton
-            icon={Pencil}
-            variant="plain"
-            accessibilityLabel="게시물 수정"
-            onPress={onEdit}
-          />
-        )}
-        {detail && own && (
-          <IconButton
-            icon={Trash2}
-            variant="plain"
-            accessibilityLabel="게시물 삭제"
-            onPress={remove}
-          />
-        )}
-        {!detail && (
-          <IconButton
-            icon={MoreHorizontal}
-            variant="plain"
-            accessibilityLabel="게시물 메뉴"
-            onPress={menu}
+        <IconButton
+          icon={MoreHorizontal}
+          variant="plain"
+          accessibilityLabel="게시물 메뉴"
+          onPress={() => setMenuOpen(true)}
+        />
+        {menuOpen !== null && (
+          <ActionSheet
+            visible={menuOpen}
+            onClose={() => setMenuOpen(false)}
+            items={menuItems}
           />
         )}
       </View>
@@ -1190,6 +1285,7 @@ function PostDetail({
 
 // 탐색: 서버가 추천 순서로 골라 준 다른 러너들의 공개 글. 러너 검색은 오른쪽 위 버튼으로 연다
 function ExplorePage({
+  wanted,
   bottomInset,
   onBack,
   onSearch,
@@ -1197,6 +1293,7 @@ function ExplorePage({
   onComments,
   onProfile,
 }: {
+  wanted: (post: SocialPost) => boolean;
   bottomInset: number;
   onBack: () => void;
   onSearch: () => void;
@@ -1205,6 +1302,7 @@ function ExplorePage({
   onProfile: (uid: string) => void;
 }) {
   const feed = useServerFeed('exploreFeed');
+  const posts = feed.posts.filter(wanted);
   return (
     <Page
       title="탐색"
@@ -1233,13 +1331,13 @@ function ExplorePage({
           <Loading />
         ) : feed.status === 'error' ? (
           <Failure retry={feed.refresh} />
-        ) : feed.posts.length === 0 ? (
+        ) : posts.length === 0 ? (
           <Empty
             title="아직 둘러볼 글이 없어요"
             detail="새로운 러너들이 글을 올리면 여기에 모여요."
           />
         ) : (
-          feed.posts.map(post => (
+          posts.map(post => (
             <PostCard
               key={post.post_id}
               post={post}
@@ -1405,6 +1503,7 @@ export function ProfilePage({
   bottomInset = 0,
   onBack,
   onPost,
+  onEdit,
   onTogether,
   onComments,
   onMessage,
@@ -1415,6 +1514,7 @@ export function ProfilePage({
   bottomInset?: number;
   onBack: () => void;
   onPost: (id: string) => void;
+  onEdit?: (post: SocialPost) => void;
   onTogether?: (friendUid: string) => void;
   onMessage: (uid: string) => void;
   onComments: (id: string) => void;
@@ -1481,6 +1581,16 @@ export function ProfilePage({
       },
     });
   };
+  const blocked = runner?.blocked === true;
+  const unblock = () =>
+    runInBackground({
+      label: '차단 해제 중',
+      successLabel: '차단을 해제했어요',
+      failureLabel: '차단을 해제하지 못했어요',
+      describeError: socialError,
+      task: () => socialRequest('blockUser', { uid, blocked: false }),
+      onSuccess: () => setRevision(v => v + 1),
+    });
   return (
     <Page
       title="러너 프로필"
@@ -1546,8 +1656,22 @@ export function ProfilePage({
                     <AppText variant="caption">팔로잉</AppText>
                   </Pressable>
                 </View>
+                {blocked && (
+                  <>
+                    <AppText variant="caption" color={colors.textMuted}>
+                      차단한 러너예요. 차단을 해제하면 글과 기록을 다시 볼 수
+                      있어요.
+                    </AppText>
+                    <Button
+                      label="차단 해제"
+                      size="md"
+                      variant="secondary"
+                      onPress={unblock}
+                    />
+                  </>
+                )}
                 <View style={styles.runnerActions}>
-                  {uid !== myUid() && (
+                  {uid !== myUid() && !blocked && (
                     <Button
                       style={styles.runnerAction}
                       label={following ? '팔로잉' : '팔로우'}
@@ -1556,7 +1680,7 @@ export function ProfilePage({
                       onPress={follow}
                     />
                   )}
-                  {uid !== myUid() && (
+                  {uid !== myUid() && !blocked && (
                     <Button
                       style={styles.runnerAction}
                       icon={MessageSquare}
@@ -1575,7 +1699,8 @@ export function ProfilePage({
                   />
                 )}
               </Card>
-              {runner?.pet &&
+              {!blocked &&
+                runner?.pet &&
                 CHARACTER_TYPES.includes(runner.pet.character_type) &&
                 CHARACTER_STAGE_ORDER.includes(runner.pet.stage) && (
                   <Card style={styles.runnerPet}>
@@ -1603,53 +1728,59 @@ export function ProfilePage({
                     </AppText>
                   </Card>
                 )}
-              <Card style={styles.runnerRecords}>
-                <AppText variant="subheading">러닝 발자국</AppText>
-                <View style={styles.runnerStats}>
-                  <View>
-                    <AppText variant="heading">
-                      {profile.total_km.toFixed(1)} km
-                    </AppText>
-                    <AppText variant="caption">누적 거리</AppText>
-                  </View>
-                  <View>
-                    <AppText variant="heading">
-                      {runner?.run_count ?? '—'}
-                    </AppText>
-                    <AppText variant="caption">완료한 러닝</AppText>
-                  </View>
-                </View>
-                <View testID="profile-runs-list">
-                  {(runner?.recent_runs ?? []).map((run, index) => (
-                    <View key={index} style={styles.runnerRecordRow}>
-                      <AppText variant="caption" color={colors.textMuted}>
-                        {run.day}
+              {!blocked && (
+                <Card style={styles.runnerRecords}>
+                  <AppText variant="subheading">러닝 발자국</AppText>
+                  <View style={styles.runnerStats}>
+                    <View>
+                      <AppText variant="heading">
+                        {profile.total_km.toFixed(1)} km
                       </AppText>
-                      <AppText variant="caption">
-                        {run.distance_km.toFixed(2)}km
-                      </AppText>
-                      <AppText variant="caption" color={colors.textMuted}>
-                        {formatDuration(run.duration_sec)} ·{' '}
-                        {run.avg_pace_sec ? formatPace(run.avg_pace_sec) : '—'}
-                      </AppText>
+                      <AppText variant="caption">누적 거리</AppText>
                     </View>
-                  ))}
+                    <View>
+                      <AppText variant="heading">
+                        {runner?.run_count ?? '—'}
+                      </AppText>
+                      <AppText variant="caption">완료한 러닝</AppText>
+                    </View>
+                  </View>
+                  <View testID="profile-runs-list">
+                    {(runner?.recent_runs ?? []).map((run, index) => (
+                      <View key={index} style={styles.runnerRecordRow}>
+                        <AppText variant="caption" color={colors.textMuted}>
+                          {run.day}
+                        </AppText>
+                        <AppText variant="caption">
+                          {run.distance_km.toFixed(2)}km
+                        </AppText>
+                        <AppText variant="caption" color={colors.textMuted}>
+                          {formatDuration(run.duration_sec)} ·{' '}
+                          {run.avg_pace_sec
+                            ? formatPace(run.avg_pace_sec)
+                            : '—'}
+                        </AppText>
+                      </View>
+                    ))}
+                  </View>
+                  {!runner?.recent_runs?.length && (
+                    <AppText color={colors.textMuted}>
+                      아직 완료한 러닝이 없어요.
+                    </AppText>
+                  )}
+                </Card>
+              )}
+              {!blocked && (
+                <View style={styles.profileSectionHeader}>
+                  <AppText variant="subheading">최근 게시물</AppText>
+                  <ProfileViewSwitch
+                    label="게시물"
+                    value={postView}
+                    onChange={setPostView}
+                  />
                 </View>
-                {!runner?.recent_runs?.length && (
-                  <AppText color={colors.textMuted}>
-                    아직 완료한 러닝이 없어요.
-                  </AppText>
-                )}
-              </Card>
-              <View style={styles.profileSectionHeader}>
-                <AppText variant="subheading">최근 게시물</AppText>
-                <ProfileViewSwitch
-                  label="게시물"
-                  value={postView}
-                  onChange={setPostView}
-                />
-              </View>
-              {posts.length === 0 ? (
+              )}
+              {blocked ? null : posts.length === 0 ? (
                 <Empty
                   title="공개된 글이 없어요"
                   detail="볼 수 있는 최근 게시물이 없습니다."
@@ -1702,6 +1833,7 @@ export function ProfilePage({
                     onComments={() => onComments(post.post_id)}
                     onOpen={() => onPost(post.post_id)}
                     onProfile={() => {}}
+                    onEdit={onEdit && (() => onEdit(post))}
                   />
                 ))
               )}
@@ -1713,12 +1845,16 @@ export function ProfilePage({
   );
 }
 function SavedPage({
+  wanted,
   onBack,
+  onEdit,
   onPost,
   onProfile,
   onComments,
 }: {
+  wanted: (post: SocialPost) => boolean;
   onBack: () => void;
+  onEdit: (post: SocialPost) => void;
   onPost: (id: string) => void;
   onProfile: (uid: string) => void;
   onComments: (id: string) => void;
@@ -1745,6 +1881,7 @@ function SavedPage({
       live = false;
     };
   }, [revision]);
+  const shown = posts.filter(wanted);
   return (
     <Page title="저장한 게시물" onBack={onBack}>
       <ScrollView contentContainerStyle={styles.content}>
@@ -1752,19 +1889,20 @@ function SavedPage({
           <Loading />
         ) : status === 'error' ? (
           <Failure retry={() => setRevision(v => v + 1)} />
-        ) : posts.length === 0 ? (
+        ) : shown.length === 0 ? (
           <Empty
             title="저장한 글이 없어요"
             detail="마음에 드는 글의 책갈피를 눌러 보세요."
           />
         ) : (
-          posts.map(post => (
+          shown.map(post => (
             <PostCard
               key={post.post_id}
               post={post}
               onComments={() => onComments(post.post_id)}
               onOpen={() => onPost(post.post_id)}
               onProfile={() => onProfile(post.uid)}
+              onEdit={() => onEdit(post)}
             />
           ))
         )}

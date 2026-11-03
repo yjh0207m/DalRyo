@@ -34,11 +34,13 @@ type Props = {
   style?: ViewStyle;
   // 파일을 못 읽으면 PNG로 되돌아가도록 알린다
   onError: () => void;
+  // 파일을 다 읽고 재생을 시작했을 때
+  onReady?: () => void;
 };
 
 const INPUTS_ONLY = AutoBind(false);
 
-export function RiveCharacter({source, stage, motion, jumpKey, style, onError}: Props) {
+export function RiveCharacter({source, stage, motion, jumpKey, style, onError, onReady}: Props) {
   const riveRef = useRef<RiveRef>(null);
 
   const applyInputs = useCallback(() => {
@@ -69,7 +71,10 @@ export function RiveCharacter({source, stage, motion, jumpKey, style, onError}: 
       alignment={Alignment.Center}
       style={style}
       // 파일을 다 읽기 전에 넘긴 입력은 무시될 수 있어, 재생이 시작되면 현재 상태를 다시 넘긴다
-      onPlay={applyInputs}
+      onPlay={() => {
+        applyInputs();
+        onReady?.();
+      }}
       onError={error => {
         if (FATAL_ERRORS.has(error.type)) onError();
       }}

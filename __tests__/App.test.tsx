@@ -1,7 +1,7 @@
 import React from 'react';
 import { Text as MockText } from 'react-native';
 import Renderer, { act } from 'react-test-renderer';
-import App from '../App';
+import App, { HOME_READY_MAX_MS } from '../App';
 const mockFetchUser = jest.fn();
 const mockFetchProfile = jest.fn();
 const mockSubscribe = jest.fn((..._args: unknown[]) => jest.fn());
@@ -58,8 +58,12 @@ jest.mock('../src/screens/auth/LoginScreen', () => ({
 jest.mock('../src/screens/auth/OnboardingScreen', () => ({
   OnboardingScreen: () => <MockText>새 계정 등록</MockText>,
 }));
+let mockHomeReady: (() => void) | undefined;
 jest.mock('../src/screens/main/MainAppScreen', () => ({
-  MainAppScreen: () => <MockText>내 앱</MockText>,
+  MainAppScreen: ({ onHomeReady }: { onHomeReady?: () => void }) => {
+    mockHomeReady = onHomeReady;
+    return <MockText>내 앱</MockText>;
+  },
 }));
 let tree: Renderer.ReactTestRenderer;
 beforeEach(() => {
@@ -194,4 +198,63 @@ test('reopening the app with a saved login goes straight to home', async () => {
   await renderUser({ uid: 'test' });
   expect(renderedText()).toContain('내 앱');
   expect(renderedText()).not.toContain('시작하기');
+});
+
+describe('the loading screen while the home screen draws', () => {
+  test('home is drawn underneath while the loading screen stays on top until home says it is finished', async () => {
+    await renderUser({ uid: 'test' });
+    expect(renderedText()).toContain('내 앱');
+    expect(renderedText()).toContain('달료 준비 중');
+    await act(async () => mockHomeReady!());
+    expect(renderedText()).toContain('내 앱');
+    expect(renderedText()).not.toContain('달료 준비 중');
+  });
+
+  test('home is hidden from screen readers while covered, and available afterwards', async () => {
+    await renderUser({ uid: 'test' });
+    const covered = () =>
+      tree.root.findAll(
+        node => node.props.accessibilityElementsHidden === true,
+      ).length > 0;
+    expect(covered()).toBe(true);
+    await act(async () => mockHomeReady!());
+    expect(covered()).toBe(false);
+  });
+
+  test('a slow connection cannot trap the user on the loading screen', async () => {
+    jest.useFakeTimers();
+    try {
+      await renderUser({ uid: 'test' });
+      await act(async () => {
+        jest.advanceTimersByTime(HOME_READY_MAX_MS - 1);
+      });
+      expect(renderedText()).toContain('달료 준비 중');
+      await act(async () => {
+        jest.advanceTimersByTime(1);
+      });
+      expect(renderedText()).not.toContain('달료 준비 중');
+      expect(renderedText()).toContain('내 앱');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('signing out and back in waits for home again', async () => {
+    await renderUser({ uid: 'test' });
+    await act(async () => mockHomeReady!());
+    await notifyAuth(null);
+    expect(renderedText()).not.toContain('내 앱');
+    expect(renderedText()).toContain('시작하기');
+    await pressStart();
+    await notifyAuth({ uid: 'test' });
+    expect(renderedText()).toContain('내 앱');
+    expect(renderedText()).toContain('달료 준비 중');
+  });
+
+  test('the start screen is a single layer with nothing underneath', async () => {
+    await renderUser(null);
+    expect(renderedText()).toContain('시작하기');
+    expect(renderedText()).not.toContain('내 앱');
+    expect(renderedText()).not.toContain('달료 준비 중');
+  });
 });

@@ -27,6 +27,7 @@ jest.mock('react-native/Libraries/Lists/FlatList', () => {
 jest.mock('../src/services/social.service', () => ({
   myUid: () => 'me',
   socialRequest: (...args: unknown[]) => mockAction(...args),
+  watchPost: () => () => {},
   socialError: (error: Error) => error.message,
   watchPostFlags: () => () => {},
 }));

@@ -1,7 +1,9 @@
 import React from 'react';
 jest.mock('../src/hooks/usePostAuthor', () => ({ usePostAuthor: jest.fn() }));
-jest.mock('../src/components/character/CharacterView', () => ({CharacterView: () => null}));
-import { Alert, TextInput, View as MockView } from 'react-native';
+jest.mock('../src/components/character/CharacterView', () => ({
+  CharacterView: () => null,
+}));
+import { Alert, Modal, TextInput, View as MockView } from 'react-native';
 import Renderer, { act } from 'react-test-renderer';
 import {
   Composer,
@@ -21,6 +23,7 @@ jest.mock('../src/services/social.service', () => ({
   myUid: () => 'me',
   newSocialId: () => 'new-post',
   socialRequest: (...args: unknown[]) => mockAction(...args),
+  watchPost: () => () => {},
   watchPostFlags: (_id: string, next: (flags: unknown) => void) => {
     next({ liked: false, saved: false });
     return () => {};
@@ -91,6 +94,12 @@ const pressable = (root: Renderer.ReactTestInstance, label: string) =>
       typeof node.props.onPress === 'function' &&
       node.props.accessibilityLabel === label,
   )[0];
+// 게시물 메뉴를 열고 항목을 고른다. iOS는 메뉴가 닫힌 뒤에 고른 동작을 실행한다
+const chooseFromMenu = async (label: string) => {
+  await act(async () => pressable(tree.root, '게시물 메뉴').props.onPress());
+  await act(async () => pressable(tree.root, label).props.onPress());
+  await act(async () => tree.root.findByType(Modal).props.onDismiss());
+};
 const buttonByText = (label: string) => {
   const text = tree.root.findAll(node => node.props.children === label)[0];
   let node: Renderer.ReactTestInstance | null = text;
@@ -189,7 +198,7 @@ describe('deleting a post', () => {
         />,
       );
     });
-    await act(async () => pressable(tree.root, '게시물 삭제').props.onPress());
+    await chooseFromMenu('게시물 삭제');
     const buttons = alert.mock.calls[0][2] as Array<{
       text: string;
       onPress?: () => void;
@@ -222,7 +231,7 @@ describe('deleting a post', () => {
         />,
       );
     });
-    await act(async () => pressable(tree.root, '게시물 삭제').props.onPress());
+    await chooseFromMenu('게시물 삭제');
     const buttons = alert.mock.calls[0][2] as Array<{
       text: string;
       onPress?: () => void;

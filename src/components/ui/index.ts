@@ -1,3 +1,4 @@
+export {ActionSheet, type ActionSheetItem} from './ActionSheet';
 export {AppText} from './AppText';
 export {BackgroundTaskToast} from './BackgroundTaskToast';
 export {Badge} from './Badge';

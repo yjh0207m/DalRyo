@@ -39,13 +39,20 @@ export async function chatAction(uid: string, input: Record<string, unknown>) {
     const id = conversationId(uid, peer),
       ref = db.collection('conversations').doc(id);
     await db.runTransaction(async tx => {
-      const [mine, other, room] = await Promise.all([
+      const [mine, other, room, iBlocked, blockedMe] = await Promise.all([
         tx.get(db.doc(`users/${uid}`)),
         tx.get(db.doc(`users/${peer}`)),
         tx.get(ref),
+        tx.get(db.doc(`users/${uid}/blocks/${peer}`)),
+        tx.get(db.doc(`users/${peer}/blocks/${uid}`)),
       ]);
       if (!mine.exists || !other.exists)
         throw new HttpsError('not-found', '러너를 찾을 수 없어요.');
+      if (iBlocked.exists || blockedMe.exists)
+        throw new HttpsError(
+          'permission-denied',
+          '이 러너와 대화할 수 없어요.',
+        );
       if (!room.exists)
         tx.create(ref, {
           members: [uid, peer].sort(),

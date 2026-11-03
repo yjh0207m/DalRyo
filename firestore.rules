@@ -107,6 +107,9 @@ service cloud.firestore {
       match /inventory/{id} { allow read: if isOwner(uid); allow write: if false; }
       match /room/{id} { allow read: if isOwner(uid); allow write: if false; }
       match /room_invites/{id} { allow read: if isOwner(uid); allow write: if false; }
+      // 내가 차단한 사람과 "보지 않음"으로 고른 게시물. 쓰기는 서버만 한다. blocked_by는 서버 전용이라 규칙이 없다
+      match /blocks/{id} { allow read: if isOwner(uid); allow write: if false; }
+      match /hidden_posts/{id} { allow read: if isOwner(uid); allow write: if false; }
     }
     // 아이디 중복 확인용. 하나씩 읽을 수만 있고 목록은 볼 수 없다
     match /handles/{handle} {

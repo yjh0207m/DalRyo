@@ -136,6 +136,21 @@ stage·exp·스탯은 Cloud Function `onRunCreate`만 갱신 (클라이언트 �
 
 ---
 
+## users/{uid}/blocks/{targetUid}, users/{uid}/blocked_by/{uid}, users/{uid}/hidden_posts/{postId}
+
+모두 서버(`socialAction`)만 쓴다.
+
+```js
+// users/{나}/blocks/{상대}: 내가 차단한 사람. 나만 읽을 수 있다(설정의 차단 목록, 댓글 거르기)
+{ uid, display_name, user_id, profile_image, created_at }
+// users/{상대}/blocked_by/{나}: 상대의 피드에서 내 글을 빼기 위한 사본. 앱은 읽을 수 없다
+{ uid, created_at }
+// users/{나}/hidden_posts/{postId}: "이 게시물 보지 않음". 나만 읽을 수 있다
+{ post_id, created_at }
+```
+
+---
+
 ## users/{uid}/notifications/{notifId}
 
 ```js
@@ -221,10 +236,13 @@ stage·exp·스탯은 Cloud Function `onRunCreate`만 갱신 (클라이언트 �
   author_name:  string,   // 복사 (표시용)
   author_image: string,
   parent_id:    string | null, // 대댓글인 경우 부모 comment_id
+  reply_to_name: string | null, // 답글 대상의 닉네임(복사). 답글 앞의 @이름에 쓴다
   text:         string,
   created_at:   Timestamp
 }
 ```
+
+삭제하면 문서째 지운다. 그 아래 달린 답글(답글의 답글 포함)도 함께 지우고 `comment_count`도 그만큼 줄인다. 이전 방식으로 `deleted: true`만 남은 문서가 있을 수 있는데, 앱은 그 문서와 그 아래 답글을 보여 주지 않는다.
 
 ---
 

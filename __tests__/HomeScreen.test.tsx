@@ -1,11 +1,13 @@
 import React from 'react';
 import { Alert, StyleSheet, Text, View as MockView } from 'react-native';
 import Renderer, { act } from 'react-test-renderer';
+import { LobbyCharacter } from '../src/components/character/LobbyCharacter';
 import { HomeScreen } from '../src/screens/home/HomeScreen';
 import type { CharacterDocument } from '../src/types/character.types';
 import type { UserDocument } from '../src/types/user.types';
 
 const mockRuns = jest.fn();
+let mockRunStatus = 'success';
 jest.mock(
   'lucide-react-native',
   () => new Proxy({}, { get: () => () => null }),
@@ -33,7 +35,7 @@ jest.mock('../src/navigation/BottomTabBar', () => ({ TAB_BAR_HEIGHT: 60 }));
 jest.mock('../src/hooks/useRunRecords', () => ({
   useRunRecords: () => ({
     runs: mockRuns(),
-    status: 'success',
+    status: mockRunStatus,
     retry: jest.fn(),
   }),
 }));
@@ -255,5 +257,71 @@ describe('shortcuts under the character card', () => {
   test('without a character there is nothing to open, so the squares are hidden', async () => {
     await renderHome({ character: null });
     expect(shortcut('아이템')).toBeUndefined();
+  });
+});
+
+describe('telling the app that home has finished drawing', () => {
+  const onReady = jest.fn();
+  const draw = (
+    props: Partial<React.ComponentProps<typeof HomeScreen>> = {},
+  ) => (
+    <HomeScreen
+      user={user}
+      character={character}
+      onNotificationPress={jest.fn()}
+      onSettingsPress={jest.fn()}
+      onReady={onReady}
+      {...props}
+    />
+  );
+  const characterDrawn = () =>
+    act(async () => tree.root.findByType(LobbyCharacter).props.onReady());
+  beforeEach(async () => {
+    onReady.mockClear();
+    mockRunStatus = 'loading';
+    await act(async () => tree.update(draw()));
+  });
+  afterEach(() => {
+    mockRunStatus = 'success';
+  });
+
+  test('waits for both the character and this week’s records, in either order', async () => {
+    expect(onReady).not.toHaveBeenCalled();
+    await characterDrawn();
+    expect(onReady).not.toHaveBeenCalled();
+    mockRunStatus = 'success';
+    await act(async () => tree.update(draw()));
+    expect(onReady).toHaveBeenCalledTimes(1);
+  });
+
+  test('records first, then the character', async () => {
+    mockRunStatus = 'success';
+    await act(async () => tree.update(draw()));
+    expect(onReady).not.toHaveBeenCalled();
+    await characterDrawn();
+    expect(onReady).toHaveBeenCalledTimes(1);
+  });
+
+  test('records that failed to load still count, since the screen shows its own retry', async () => {
+    await characterDrawn();
+    mockRunStatus = 'error';
+    await act(async () => tree.update(draw()));
+    expect(onReady).toHaveBeenCalledTimes(1);
+  });
+
+  test('without a character there is only the records to wait for', async () => {
+    await act(async () => tree.update(draw({ character: null })));
+    expect(onReady).not.toHaveBeenCalled();
+    mockRunStatus = 'success';
+    await act(async () => tree.update(draw({ character: null })));
+    expect(onReady).toHaveBeenCalledTimes(1);
+  });
+
+  test('announces it only once', async () => {
+    mockRunStatus = 'success';
+    await act(async () => tree.update(draw()));
+    await characterDrawn();
+    await act(async () => tree.update(draw()));
+    expect(onReady).toHaveBeenCalledTimes(1);
   });
 });

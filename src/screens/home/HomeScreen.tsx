@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import {
   SafeAreaView,
@@ -52,6 +52,8 @@ type Props = {
   onItemsPress?: () => void;
   onMyRoomPress?: () => void;
   onQuestPress?: () => void;
+  // 캐릭터가 그려지고 이번 주 기록을 불러와, 화면이 다 채워졌을 때 한 번 알린다. 앱을 켤 때 로딩 화면을 이때 걷는다
+  onReady?: () => void;
 };
 const WEEK_LABELS = ['월', '화', '수', '목', '금', '토', '일'];
 // 이번 주(월~일) 7일 중 달린 날 수를 보여 준다
@@ -66,6 +68,7 @@ export function HomeScreen({
   onMyRoomPress,
   onQuestPress,
   hasUnread,
+  onReady,
 }: Props) {
   const insets = useSafeAreaInsets(),
     t = useDialect();
@@ -75,6 +78,13 @@ export function HomeScreen({
     status,
     retry,
   } = useRunRecords(fetchThisWeekRuns, lastRunAtMs);
+  const [characterDrawn, setCharacterDrawn] = useState(false);
+  const filled = (!character || characterDrawn) && status !== 'loading';
+  const notifyReady = useRef(onReady);
+  notifyReady.current = onReady;
+  useEffect(() => {
+    if (filled) notifyReady.current?.();
+  }, [filled]);
   const totalKm = user?.total_km ?? 0;
   const stoneLevel: StoneLevel = user?.is_frozen
     ? 'stone'
@@ -129,6 +139,7 @@ export function HomeScreen({
                   stage={character.stage}
                   size={185}
                   bubblePlacement="beside"
+                  onReady={() => setCharacterDrawn(true)}
                   frozen={stoneLevel === 'stone'}
                   equipped={character.equipped}
                   tapLines={

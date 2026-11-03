@@ -143,6 +143,22 @@ setLogLevel('silent');
       await assertFails(updateDoc(doc(dan,'handles/dan_runner'),{uid:'alice'}));
       await assertFails(deleteDoc(doc(dan,'handles/dan_runner')));
     });
+    await test('my blocks and hidden posts are readable only by me and written only by the server', async () => {
+      await env.withSecurityRulesDisabled(async ctx => {
+        await setDoc(doc(ctx.firestore(),'users/alice/blocks/bob'),{uid:'bob'});
+        await setDoc(doc(ctx.firestore(),'users/alice/hidden_posts/public'),{post_id:'public'});
+        await setDoc(doc(ctx.firestore(),'users/bob/blocked_by/alice'),{uid:'alice'});
+      });
+      await assertSucceeds(getDocs(collection(alice,'users/alice/blocks')));
+      await assertSucceeds(getDocs(collection(alice,'users/alice/hidden_posts')));
+      await assertFails(getDocs(collection(bob,'users/alice/blocks')));
+      await assertFails(getDocs(collection(bob,'users/alice/hidden_posts')));
+      // 누가 나를 차단했는지는 나도 볼 수 없다
+      await assertFails(getDocs(collection(bob,'users/bob/blocked_by')));
+      await assertFails(setDoc(doc(alice,'users/alice/blocks/eve'),{uid:'eve'}));
+      await assertFails(setDoc(doc(alice,'users/alice/hidden_posts/other'),{post_id:'other'}));
+      await assertFails(deleteDoc(doc(alice,'users/alice/blocks/bob')));
+    });
     console.log(`${passed} security rule scenarios passed`);
   } finally {await env.cleanup();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

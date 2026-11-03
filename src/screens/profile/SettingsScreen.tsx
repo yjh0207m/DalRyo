@@ -19,6 +19,7 @@ import {
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
 import {
+  Ban,
   Bell,
   Bookmark,
   Camera,
@@ -59,6 +60,8 @@ type Props = {
   onPreviewCharacter?: () => void;
   // 있으면 목록에 "저장한 게시물"을 보여 주고, 누르면 커뮤니티의 저장한 게시물로 간다
   onOpenSaved?: () => void;
+  // 있으면 목록에 "차단한 사용자"를 보여 준다
+  onOpenBlocked?: () => void;
 };
 
 // 설정 목록의 항목. 항목을 누르면 그 항목만 바꾸는 화면이 밀려 들어온다
@@ -96,6 +99,7 @@ export function SettingsScreen({
   onBack,
   onPreviewCharacter,
   onOpenSaved,
+  onOpenBlocked,
 }: Props) {
   const insets = useSafeAreaInsets();
   const [initial, setInitial] = useState<ProfileForm>(() => ({
@@ -472,6 +476,7 @@ export function SettingsScreen({
         onSignOut={requestSignOut}
         onPreviewCharacter={onPreviewCharacter}
         onOpenSaved={onOpenSaved}
+        onOpenBlocked={onOpenBlocked}
       />
       {section && (
         <SlideScreen key={section} onBack={() => setSection(null)}>
@@ -511,6 +516,7 @@ function List({
   onSignOut,
   onPreviewCharacter,
   onOpenSaved,
+  onOpenBlocked,
 }: {
   insetsBottom: number;
   busy: boolean;
@@ -522,6 +528,7 @@ function List({
   onSignOut: () => void;
   onPreviewCharacter?: () => void;
   onOpenSaved?: () => void;
+  onOpenBlocked?: () => void;
 }) {
   useEffect(() => {
     const subscription = BackHandler.addEventListener(
@@ -598,33 +605,67 @@ function List({
             );
           })}
         </Card>
-        {onOpenSaved && (
+        {(onOpenSaved || onOpenBlocked) && (
           <Card style={styles.listCard} padded={false}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="저장한 게시물"
-              disabled={busy}
-              onPress={onOpenSaved}
-              style={({ pressed }) => [
-                styles.listRow,
-                pressed && styles.listPressed,
-              ]}
-            >
-              <View style={styles.listIcon}>
-                <Bookmark color={colors.primaryInk} size={20} strokeWidth={2} />
-              </View>
-              <View style={styles.flex}>
-                <AppText variant="subheading">저장한 게시물</AppText>
-                <AppText
-                  variant="caption"
-                  color={colors.textMuted}
-                  numberOfLines={1}
-                >
-                  북마크한 게시물을 모아 봐요
-                </AppText>
-              </View>
-              <ChevronRight color={colors.textSubtle} size={18} />
-            </Pressable>
+            {onOpenSaved && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="저장한 게시물"
+                disabled={busy}
+                onPress={onOpenSaved}
+                style={({ pressed }) => [
+                  styles.listRow,
+                  !!onOpenBlocked && styles.listDivider,
+                  pressed && styles.listPressed,
+                ]}
+              >
+                <View style={styles.listIcon}>
+                  <Bookmark
+                    color={colors.primaryInk}
+                    size={20}
+                    strokeWidth={2}
+                  />
+                </View>
+                <View style={styles.flex}>
+                  <AppText variant="subheading">저장한 게시물</AppText>
+                  <AppText
+                    variant="caption"
+                    color={colors.textMuted}
+                    numberOfLines={1}
+                  >
+                    북마크한 게시물을 모아 봐요
+                  </AppText>
+                </View>
+                <ChevronRight color={colors.textSubtle} size={18} />
+              </Pressable>
+            )}
+            {onOpenBlocked && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="차단한 사용자"
+                disabled={busy}
+                onPress={onOpenBlocked}
+                style={({ pressed }) => [
+                  styles.listRow,
+                  pressed && styles.listPressed,
+                ]}
+              >
+                <View style={styles.listIcon}>
+                  <Ban color={colors.primaryInk} size={20} strokeWidth={2} />
+                </View>
+                <View style={styles.flex}>
+                  <AppText variant="subheading">차단한 사용자</AppText>
+                  <AppText
+                    variant="caption"
+                    color={colors.textMuted}
+                    numberOfLines={1}
+                  >
+                    차단을 확인하고 해제해요
+                  </AppText>
+                </View>
+                <ChevronRight color={colors.textSubtle} size={18} />
+              </Pressable>
+            )}
           </Card>
         )}
         {error && (

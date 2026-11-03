@@ -4,7 +4,7 @@ jest.mock('../src/hooks/usePostAuthor', () => ({ usePostAuthor: jest.fn() }));
 jest.mock('../src/components/character/CharacterView', () => ({
   CharacterView: () => null,
 }));
-import { Image, View as MockView } from 'react-native';
+import { Alert, Image, Modal, Text, View as MockView } from 'react-native';
 import Renderer, { act } from 'react-test-renderer';
 import { PostCard } from '../src/screens/community/CommunityScreen';
 import type { SocialPost } from '../src/services/social.service';
@@ -15,6 +15,10 @@ const mockAction = jest.fn(),
 jest.mock('../src/services/social.service', () => ({
   myUid: () => 'me',
   socialRequest: (...args: unknown[]) => mockAction(...args),
+  watchPost: (_id: string, next: (post: unknown) => void) => {
+    mockLivePost = next;
+    return () => {};
+  },
   watchPostFlags: (_id: string, next: (flags: unknown) => void) => {
     next({ liked: false, saved: false });
     return () => {};
@@ -60,6 +64,7 @@ const post = {
   createdAtMs: Date.now(),
 } satisfies SocialPost;
 let tree: Renderer.ReactTestRenderer;
+let mockLivePost: (post: unknown) => void;
 beforeEach(() => {
   jest.clearAllMocks();
   (usePostAuthor as jest.Mock).mockReturnValue(undefined);
@@ -169,4 +174,167 @@ test('private posts offer no public sharing action and run tiles use saved metri
   ).toBe(false);
   expect(JSON.stringify(tree.toJSON())).toContain('3.25');
   expect(JSON.stringify(tree.toJSON())).toContain('200');
+});
+
+describe('the post menu', () => {
+  const texts = () =>
+    tree.root
+      .findAllByType(Text)
+      .map(node => ([] as unknown[]).concat(node.props.children).join(''));
+  const onEdit = jest.fn();
+  const onDeleted = jest.fn();
+  async function renderFull(value: SocialPost = post) {
+    await act(async () => {
+      tree = Renderer.create(
+        <PostCard
+          post={value}
+          onOpen={mockOpen}
+          onComments={mockComments}
+          onProfile={mockProfile}
+          onEdit={onEdit}
+          onDeleted={onDeleted}
+        />,
+      );
+    });
+  }
+  const mine = { ...post, uid: 'me' };
+  // 메뉴에서 고르면 메뉴가 닫힌 뒤(iOS) 실행된다
+  const choose = async (label: string) => {
+    await press(label);
+    await act(async () => tree.root.findByType(Modal).props.onDismiss());
+  };
+  let alert: jest.SpyInstance;
+  beforeEach(() => {
+    alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+  });
+  afterEach(() => alert.mockRestore());
+  const confirm = async (text: string) => {
+    const buttons = alert.mock.calls.at(-1)![2] as Array<{
+      text: string;
+      onPress?: () => void;
+    }>;
+    await act(async () => buttons.find(b => b.text === text)!.onPress!());
+  };
+
+  test('is closed until asked for, and shows no pop-up alert list', async () => {
+    await renderFull();
+    expect(tree.root.findAllByType(Modal)).toHaveLength(0);
+    await press('게시물 메뉴');
+    expect(tree.root.findByType(Modal).props.visible).toBe(true);
+    expect(alert).not.toHaveBeenCalled();
+  });
+
+  test('my post offers edit and delete, and nothing about hiding or blocking', async () => {
+    await renderFull(mine);
+    await press('게시물 메뉴');
+    expect(texts()).toEqual(expect.arrayContaining(['수정', '삭제', '취소']));
+    expect(texts()).not.toContain('이 게시물 보지 않음');
+    expect(texts().some(text => text.endsWith('차단'))).toBe(false);
+  });
+
+  test('editing from the menu runs the edit action', async () => {
+    await renderFull(mine);
+    await press('게시물 메뉴');
+    await choose('게시물 수정');
+    expect(onEdit).toHaveBeenCalledTimes(1);
+  });
+
+  test('where editing is not possible, my post only offers delete', async () => {
+    await render(mine);
+    await press('게시물 메뉴');
+    expect(texts()).toContain('삭제');
+    expect(texts()).not.toContain('수정');
+  });
+
+  test('deleting from the menu asks first', async () => {
+    await renderFull(mine);
+    await press('게시물 메뉴');
+    await choose('게시물 삭제');
+    expect(alert.mock.calls[0][0]).toBe('게시물을 삭제할까요?');
+    expect(mockAction).not.toHaveBeenCalled();
+    await confirm('삭제');
+    expect(mockAction).toHaveBeenCalledWith('deletePost', { postId: 'one' });
+    expect(onDeleted).toHaveBeenCalledTimes(1);
+  });
+
+  test('someone else’s post offers hiding it and blocking the author, not edit or delete', async () => {
+    await renderFull();
+    await press('게시물 메뉴');
+    expect(texts()).toEqual(
+      expect.arrayContaining(['이 게시물 보지 않음', '러너 차단', '취소']),
+    );
+    expect(texts()).not.toContain('수정');
+    expect(texts()).not.toContain('삭제');
+  });
+
+  test('hiding removes the post right away and tells the server', async () => {
+    await renderFull();
+    await press('게시물 메뉴');
+    await choose('이 게시물 보지 않음');
+    expect(tree.toJSON()).toBeNull();
+    expect(onDeleted).toHaveBeenCalledTimes(1);
+    expect(mockAction).toHaveBeenCalledWith('hidePost', { postId: 'one' });
+  });
+
+  test('if hiding fails the post comes back', async () => {
+    mockAction.mockRejectedValue(new Error('offline'));
+    await renderFull();
+    await press('게시물 메뉴');
+    await choose('이 게시물 보지 않음');
+    expect(tree.toJSON()).not.toBeNull();
+  });
+
+  test('blocking asks first and explains what happens, and cancelling does nothing', async () => {
+    await renderFull();
+    await press('게시물 메뉴');
+    await choose('러너 차단');
+    expect(alert.mock.calls[0][0]).toBe('러너님을 차단할까요?');
+    expect(alert.mock.calls[0][1]).toContain('설정에서 해제');
+    expect(mockAction).not.toHaveBeenCalled();
+    expect(tree.toJSON()).not.toBeNull();
+  });
+
+  test('confirming a block removes the post and tells the server who', async () => {
+    await renderFull();
+    await press('게시물 메뉴');
+    await choose('러너 차단');
+    await confirm('차단');
+    expect(tree.toJSON()).toBeNull();
+    expect(mockAction).toHaveBeenCalledWith('blockUser', {
+      uid: 'other',
+      blocked: true,
+    });
+  });
+
+  test('if blocking fails the post comes back', async () => {
+    mockAction.mockRejectedValue(new Error('offline'));
+    await renderFull();
+    await press('게시물 메뉴');
+    await choose('러너 차단');
+    await confirm('차단');
+    expect(tree.toJSON()).not.toBeNull();
+  });
+});
+
+describe('a card keeps itself up to date', () => {
+  const texts = () =>
+    tree.root
+      .findAllByType(Text)
+      .map(node => ([] as unknown[]).concat(node.props.children).join(''));
+
+  test('counts follow the post even though the feed list is not live', async () => {
+    await render();
+    expect(texts()).toContain('댓글 2개 모두 보기');
+    await act(async () =>
+      mockLivePost({ ...post, like_count: 9, comment_count: 1 }),
+    );
+    expect(texts()).toContain('응원 9개');
+    expect(texts()).toContain('댓글 1개 모두 보기');
+  });
+
+  test('a post deleted elsewhere disappears from the list', async () => {
+    await render();
+    await act(async () => mockLivePost(null));
+    expect(tree.toJSON()).toBeNull();
+  });
 });

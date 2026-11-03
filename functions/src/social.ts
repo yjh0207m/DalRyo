@@ -17,7 +17,7 @@ import {
   USER_ID_PATTERN,
 } from './validation';
 import { mixHome, rankByRelation, recommendations } from './explore';
-import { chatAction } from './chat';
+import { chatAction, conversationId } from './chat';
 
 const db = () => getFirestore();
 const now = () => FieldValue.serverTimestamp();
@@ -71,6 +71,28 @@ function postDto(id: string, data: DocumentData): PostDto {
     post_id: id,
     createdAtMs: created_at?.toMillis?.() ?? 0,
   };
+}
+// 차단은 두 문서로 남긴다. users/{나}/blocks/{상대}는 내 목록(앱이 읽는다),
+// users/{상대}/blocked_by/{나}는 상대에게 내 글을 빼고 보여 주기 위한 서버 전용 사본이다
+const blockRef = (owner: string, target: string) =>
+  db().collection('users').doc(owner).collection('blocks').doc(target);
+// 내가 차단했거나 나를 차단한 사람들. 목록에서 빼는 데 쓴다
+async function blockedWith(uid: string) {
+  const me = db().collection('users').doc(uid);
+  const [mine, theirs] = await Promise.all([
+    me.collection('blocks').limit(500).get(),
+    me.collection('blocked_by').limit(500).get(),
+  ]);
+  return new Set([...mine.docs, ...theirs.docs].map(doc => doc.id));
+}
+// 둘 중 누구라도 상대를 차단했으면 반응(팔로우·응원·댓글)을 받지 않는다
+async function blockedBetween(a: string, b: string, tx: Transaction) {
+  if (a === b) return false;
+  const [one, other] = await Promise.all([
+    tx.get(blockRef(a, b)),
+    tx.get(blockRef(b, a)),
+  ]);
+  return one.exists || other.exists;
 }
 async function readable(uid: string, post: DocumentData, tx?: Transaction) {
   if (post.deleted) return false;
@@ -193,8 +215,13 @@ export const socialAction = onCall(
             : text(input.query, '닉네임', 1, 20);
           query = query.startAt(prefix).endAt(`${prefix}\uf8ff`);
         }
-        const snapshot = await query.limit(50).get();
-        const users = snapshot.docs.map(doc => publicUser(doc.id, doc.data()));
+        const [snapshot, blocked] = await Promise.all([
+          query.limit(50).get(),
+          blockedWith(uid),
+        ]);
+        const users = snapshot.docs
+          .filter(doc => !blocked.has(doc.id))
+          .map(doc => publicUser(doc.id, doc.data()));
         if (input.action !== 'search') return { users };
         // 검색 결과는 내가 팔로우한 사람 > 나를 팔로우한 사람 > 모르는 사람 순으로 보여 준다
         const others = users;
@@ -218,29 +245,41 @@ export const socialAction = onCall(
       }
       if (input.action === 'profile') {
         const target = documentId(input.uid);
-        const [profile, follow, followBack, pet, runCount, recentRuns] =
-          await Promise.all([
-            db().collection('users').doc(target).get(),
-            db().collection('follows').doc(`${uid}_${target}`).get(),
-            db().collection('follows').doc(`${target}_${uid}`).get(),
-            db()
-              .collection('users')
-              .doc(target)
-              .collection('character')
-              .doc(target)
-              .get(),
-            db().collection('runs').where('uid', '==', target).count().get(),
-            db()
-              .collection('runs')
-              .where('uid', '==', target)
-              .orderBy('started_at', 'desc')
-              .limit(5)
-              .get(),
-          ]);
-        if (!profile.exists)
+        const [
+          profile,
+          follow,
+          followBack,
+          pet,
+          runCount,
+          recentRuns,
+          iBlocked,
+          blockedMe,
+        ] = await Promise.all([
+          db().collection('users').doc(target).get(),
+          db().collection('follows').doc(`${uid}_${target}`).get(),
+          db().collection('follows').doc(`${target}_${uid}`).get(),
+          db()
+            .collection('users')
+            .doc(target)
+            .collection('character')
+            .doc(target)
+            .get(),
+          db().collection('runs').where('uid', '==', target).count().get(),
+          db()
+            .collection('runs')
+            .where('uid', '==', target)
+            .orderBy('started_at', 'desc')
+            .limit(5)
+            .get(),
+          blockRef(uid, target).get(),
+          blockRef(target, uid).get(),
+        ]);
+        if (!profile.exists || (blockedMe.exists && target !== uid))
           throw new HttpsError('not-found', '사용자를 찾을 수 없어요.');
         return {
           profile: publicUser(target, profile.data()!),
+          // 내가 차단한 러너. 앱은 기록 대신 차단 해제 버튼을 보여 준다
+          blocked: iBlocked.exists,
           following: follow.exists,
           // 서로 팔로우하면 친구 → 같이 달리기 요청 가능
           friend: follow.exists && followBack.exists,
@@ -293,10 +332,13 @@ export const socialAction = onCall(
             .collection('users')
             .doc(documentId(edge.get(otherField))),
         );
-        const people = refs.length ? await db().getAll(...refs) : [];
+        const [people, blocked] = await Promise.all([
+          refs.length ? db().getAll(...refs) : Promise.resolve([]),
+          blockedWith(uid),
+        ]);
         return {
           users: people
-            .filter(person => person.exists)
+            .filter(person => person.exists && !blocked.has(person.id))
             .map(person => publicUser(person.id, person.data()!)),
           cursor: page.size > 30 ? edges[edges.length - 1].id : null,
         };
@@ -318,7 +360,7 @@ export const socialAction = onCall(
             ? input.seed
             : 0;
         const home = input.action === 'homeFeed';
-        const [recent, followDocs] = await Promise.all([
+        const [recent, followDocs, blocked, hiddenDocs] = await Promise.all([
           db()
             .collection('posts')
             .where('visibility', '==', 'public')
@@ -330,12 +372,18 @@ export const socialAction = onCall(
             .where('follower_id', '==', uid)
             .limit(300)
             .get(),
+          blockedWith(uid),
+          userRef.collection('hidden_posts').limit(500).get(),
         ]);
+        const hidden = new Set(hiddenDocs.docs.map(doc => doc.id));
+        // 차단한 사람의 글과 내가 "보지 않음"으로 고른 글은 어디에도 나오지 않는다
+        const wanted = (post: PostDto) =>
+          !blocked.has(post.uid) && !hidden.has(post.post_id);
         const following = new Set<string>(
           followDocs.docs.map(d => d.get('following_id')),
         );
         const recommended = recommendations(
-          recent.docs.map(doc => postDto(doc.id, doc.data())),
+          recent.docs.map(doc => postDto(doc.id, doc.data())).filter(wanted),
           { uid, following, seed },
         );
         let list: Array<ReturnType<typeof postDto>> = recommended;
@@ -355,7 +403,7 @@ export const socialAction = onCall(
           );
           const mine = snapshots
             .flatMap(snap => snap.docs.map(doc => postDto(doc.id, doc.data())))
-            .filter(post => !post.deleted)
+            .filter(post => !post.deleted && wanted(post))
             .sort(
               (a, b) =>
                 b.createdAtMs - a.createdAtMs ||
@@ -370,6 +418,11 @@ export const socialAction = onCall(
         };
       }
       if (input.action === 'followingFeed' || input.action === 'profilePosts') {
+        if (
+          input.action === 'profilePosts' &&
+          (await blockedWith(uid)).has(documentId(input.uid))
+        )
+          return { posts: [], hasMore: false };
         let ids: string[];
         if (input.action === 'profilePosts') ids = [documentId(input.uid)];
         else
@@ -439,13 +492,19 @@ export const socialAction = onCall(
         const targetRef = db().collection('users').doc(target);
         const followRef = db().collection('follows').doc(`${uid}_${target}`);
         const changed = await db().runTransaction(async tx => {
-          const [me, other, follow] = await Promise.all([
+          const [me, other, follow, blocked] = await Promise.all([
             tx.get(userRef),
             tx.get(targetRef),
             tx.get(followRef),
+            blockedBetween(uid, target, tx),
           ]);
           if (!other.exists)
             throw new HttpsError('not-found', '사용자를 찾을 수 없어요.');
+          if (blocked && input.following)
+            throw new HttpsError(
+              'permission-denied',
+              '이 러너를 팔로우할 수 없어요.',
+            );
           if (follow.exists === input.following) return false;
           const delta = input.following ? 1 : -1;
           const nextFollowing = count(me.get('following_count')) + delta;
@@ -477,6 +536,78 @@ export const socialAction = onCall(
         if (changed && input.following)
           await push(target, actor, 'follow', uid);
         return { following: input.following };
+      }
+      if (input.action === 'blockUser') {
+        const target = documentId(input.uid);
+        if (target === uid || typeof input.blocked !== 'boolean')
+          throw new Error('차단 대상을 확인해 주세요.');
+        const targetRef = db().collection('users').doc(target);
+        const mineRef = blockRef(uid, target);
+        const reverseRef = targetRef.collection('blocked_by').doc(uid);
+        const roomRef = db()
+          .collection('conversations')
+          .doc(conversationId(uid, target));
+        await db().runTransaction(async tx => {
+          const [me, other, block, myFollow, theirFollow, room] =
+            await Promise.all([
+              tx.get(userRef),
+              tx.get(targetRef),
+              tx.get(mineRef),
+              tx.get(db().collection('follows').doc(`${uid}_${target}`)),
+              tx.get(db().collection('follows').doc(`${target}_${uid}`)),
+              tx.get(roomRef),
+            ]);
+          if (!other.exists)
+            throw new HttpsError('not-found', '사용자를 찾을 수 없어요.');
+          if (block.exists === input.blocked) return;
+          // 기존 대화방도 같이 막고, 차단을 풀면 같이 풀어 준다
+          if (room.exists)
+            tx.update(roomRef, {
+              blocked_by: input.blocked
+                ? FieldValue.arrayUnion(uid)
+                : FieldValue.arrayRemove(uid),
+            });
+          if (!input.blocked) {
+            tx.delete(mineRef);
+            tx.delete(reverseRef);
+            return;
+          }
+          const person = publicUser(target, other.data()!);
+          tx.set(mineRef, {
+            uid: target,
+            display_name: person.display_name,
+            user_id: person.user_id,
+            profile_image: person.profile_image,
+            created_at: now(),
+          });
+          tx.set(reverseRef, { uid, created_at: now() });
+          // 차단하면 서로의 팔로우를 끊는다
+          if (!myFollow.exists && !theirFollow.exists) return;
+          const lost = (edge: boolean) => (edge ? 1 : 0);
+          const myFollowers =
+            count(me.get('follower_count')) - lost(theirFollow.exists);
+          const theirFollowers =
+            count(other.get('follower_count')) - lost(myFollow.exists);
+          if (myFollow.exists) tx.delete(myFollow.ref);
+          if (theirFollow.exists) tx.delete(theirFollow.ref);
+          tx.update(userRef, {
+            following_count: Math.max(
+              0,
+              count(me.get('following_count')) - lost(myFollow.exists),
+            ),
+            follower_count: Math.max(0, myFollowers),
+            influencer_tier: tier(Math.max(0, myFollowers)),
+          });
+          tx.update(targetRef, {
+            following_count: Math.max(
+              0,
+              count(other.get('following_count')) - lost(theirFollow.exists),
+            ),
+            follower_count: Math.max(0, theirFollowers),
+            influencer_tier: tier(Math.max(0, theirFollowers)),
+          });
+        });
+        return { blocked: input.blocked };
       }
       if (input.action === 'createPost') {
         const id = documentId(input.postId);
@@ -547,6 +678,13 @@ export const socialAction = onCall(
       }
       const postId = documentId(input.postId);
       const postRef = db().collection('posts').doc(postId);
+      if (input.action === 'hidePost') {
+        await userRef
+          .collection('hidden_posts')
+          .doc(postId)
+          .set({ post_id: postId, created_at: now() });
+        return { hidden: true };
+      }
       if (input.action === 'post') {
         const post = (await postRef.get()).data();
         if (!post || !(await readable(uid, post)))
@@ -605,6 +743,8 @@ export const socialAction = onCall(
           if (!post.exists || !(await readable(uid, post.data()!, tx)))
             throw new HttpsError('permission-denied', '게시물을 볼 수 없어요.');
           receiver = post.get('uid');
+          if (input.active && (await blockedBetween(uid, receiver, tx)))
+            throw new HttpsError('permission-denied', '게시물을 볼 수 없어요.');
           if (target.exists === input.active) return false;
           if (input.active)
             tx.set(targetRef, { uid, post_id: postId, created_at: now() });
@@ -653,12 +793,16 @@ export const socialAction = onCall(
               );
             return false;
           }
+          if (await blockedBetween(uid, post.get('uid'), tx))
+            throw new HttpsError('permission-denied', '댓글을 남길 수 없어요.');
+          let replyToName: string | null = null;
           if (parentId) {
             const parent = await tx.get(
               postRef.collection('comments').doc(parentId),
             );
             if (!parent.exists || parent.get('deleted'))
               throw new HttpsError('not-found', '답글 대상을 찾을 수 없어요.');
+            replyToName = parent.get('author_name') ?? null;
           }
           receiver = post.get('uid');
           tx.set(commentRef, {
@@ -668,6 +812,7 @@ export const socialAction = onCall(
             author_image: actor.profile_image,
             text: body,
             parent_id: parentId,
+            reply_to_name: replyToName,
             deleted: false,
             created_at: now(),
           });
@@ -696,7 +841,7 @@ export const socialAction = onCall(
             tx.get(postRef),
             tx.get(commentRef),
           ]);
-          if (!comment.exists || comment.get('deleted')) return;
+          if (!comment.exists) return;
           if (
             !post.exists ||
             (comment.get('uid') !== uid && post.get('uid') !== uid)
@@ -705,14 +850,35 @@ export const socialAction = onCall(
               'permission-denied',
               '댓글을 삭제할 수 없어요.',
             );
-          tx.update(commentRef, {
-            deleted: true,
-            text: '',
-            author_name: '',
-            author_image: null,
-          });
+          // 댓글과 그 아래 달린 답글을 모두 찾아 문서째 지운다. 답글의 답글까지 한 단계씩 내려간다
+          const doomed = [comment];
+          let frontier = [comment.id];
+          while (frontier.length) {
+            const pages = await Promise.all(
+              Array.from({ length: Math.ceil(frontier.length / 30) }, (_, i) =>
+                tx.get(
+                  postRef
+                    .collection('comments')
+                    .where(
+                      'parent_id',
+                      'in',
+                      frontier.slice(i * 30, i * 30 + 30),
+                    ),
+                ),
+              ),
+            );
+            const found = pages.flatMap(page => page.docs);
+            doomed.push(...found);
+            frontier = found.map(doc => doc.id);
+          }
+          doomed.forEach(doc => tx.delete(doc.ref));
+          // 예전 방식으로 삭제 표시만 남은 댓글은 이미 숫자에서 빠져 있다
+          const removed = doomed.filter(doc => !doc.get('deleted')).length;
           tx.update(postRef, {
-            comment_count: Math.max(0, count(post.get('comment_count')) - 1),
+            comment_count: Math.max(
+              0,
+              count(post.get('comment_count')) - removed,
+            ),
           });
         });
         return { deleted: true };

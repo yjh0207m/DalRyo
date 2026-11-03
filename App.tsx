@@ -1,9 +1,17 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { LogBox, Pressable, StyleSheet, Text } from 'react-native';
+import {
+  Animated,
+  LogBox,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import auth, { type FirebaseAuthTypes } from '@react-native-firebase/auth';
 import { BackgroundTaskToast } from './src/components/ui/BackgroundTaskToast';
 import { EdgeBackSwipe } from './src/navigation/backGesture';
+import { animateTo } from './src/navigation/motion';
 import { AuthStartScreen } from './src/screens/auth/SplashScreen';
 import { PhoneLoginScreen } from './src/screens/auth/LoginScreen';
 import { OnboardingScreen } from './src/screens/auth/OnboardingScreen';
@@ -17,6 +25,11 @@ import {
 } from './src/services/profile.service';
 
 type Route = 'loading' | 'error' | 'start' | 'phone' | 'onboarding' | 'main';
+
+// 홈이 다 그려지기를 기다리는 가장 긴 시간(ms). 인터넷이 느려도 로딩 화면에 갇히지 않게 한다
+export const HOME_READY_MAX_MS = 10000;
+// 로딩 화면이 걷히는 시간(ms)
+const SPLASH_FADE_MS = 220;
 
 LogBox.ignoreLogs([
   'This method is deprecated (as well as all React Native Firebase namespaced API)',
@@ -47,6 +60,29 @@ function AppRoutes() {
   const lastUid = useRef<string | null>(null);
   const routeRequest = useRef(0);
   const resolvingUid = useRef<string | null>(null);
+  // 홈이 다 그려졌는지. 그때까지 로딩 화면을 홈 위에 덮어 둔다
+  const [homeReady, setHomeReady] = useState(false);
+  const [splashGone, setSplashGone] = useState(false);
+  const splashOpacity = useRef(new Animated.Value(1)).current;
+  const markHomeReady = useCallback(() => setHomeReady(true), []);
+
+  useEffect(() => {
+    if (route !== 'main') {
+      setHomeReady(false);
+      setSplashGone(false);
+      splashOpacity.setValue(1);
+      return undefined;
+    }
+    const timer = setTimeout(markHomeReady, HOME_READY_MAX_MS);
+    return () => clearTimeout(timer);
+  }, [route, markHomeReady, splashOpacity]);
+  useEffect(() => {
+    if (route !== 'main' || !homeReady) return;
+    animateTo(splashOpacity, 0, {
+      duration: SPLASH_FADE_MS,
+      onEnd: () => setSplashGone(true),
+    });
+  }, [route, homeReady, splashOpacity]);
 
   const resolveRouteForUser = useCallback(
     async (user: FirebaseAuthTypes.User | null) => {
@@ -149,10 +185,6 @@ function AppRoutes() {
     setRoute('start');
   };
 
-  // 시작 화면과 같은 컴포넌트를 쓰므로 로딩 → 시작 화면으로 바뀌어도 배경 이미지가 다시 그려지지 않는다
-  if (route === 'loading') {
-    return <AuthStartScreen loading onStart={goToStartOrMain} />;
-  }
   if (route === 'error') {
     return (
       <SafeAreaView style={styles.loadingScreen}>
@@ -198,21 +230,46 @@ function AppRoutes() {
     );
   }
 
-  if (route === 'main') {
-    return (
-      <DialectProvider dialect={profile?.user.dialect}>
-        <MainAppScreen
-          user={profile?.user ?? null}
-          character={profile?.character ?? null}
-        />
-      </DialectProvider>
-    );
-  }
-
-  return <AuthStartScreen onStart={goToStartOrMain} />;
+  // 시작·로딩·홈 대기 화면이 모두 트리의 같은 자리에 있는 같은 컴포넌트라서,
+  // 서로 바뀌어도 배경 이미지가 다시 그려지지 않고 이어진다.
+  // 홈은 그 아래에서 미리 그려 두고, 캐릭터까지 다 그려지면 로딩 화면을 걷는다
+  const splashCovers = route !== 'main' || !splashGone;
+  return (
+    <View style={styles.root}>
+      {route === 'main' && (
+        <View
+          style={styles.root}
+          accessibilityElementsHidden={splashCovers}
+          importantForAccessibility={
+            splashCovers ? 'no-hide-descendants' : 'auto'
+          }
+        >
+          <DialectProvider dialect={profile?.user.dialect}>
+            <MainAppScreen
+              user={profile?.user ?? null}
+              character={profile?.character ?? null}
+              onHomeReady={markHomeReady}
+            />
+          </DialectProvider>
+        </View>
+      )}
+      {splashCovers && (
+        <Animated.View
+          pointerEvents={route === 'main' && homeReady ? 'none' : 'auto'}
+          style={[StyleSheet.absoluteFill, { opacity: splashOpacity }]}
+        >
+          <AuthStartScreen
+            loading={route !== 'start'}
+            onStart={goToStartOrMain}
+          />
+        </Animated.View>
+      )}
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
+  root: { flex: 1 },
   retry: { padding: 20 },
   loadingScreen: {
     flex: 1,

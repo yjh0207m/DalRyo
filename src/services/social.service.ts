@@ -9,6 +9,8 @@ import type { CharacterType, CharacterStage } from '../types/character.types';
 
 export type RunnerProfile = {
   profile: PublicProfile;
+  // 내가 차단한 러너
+  blocked?: boolean;
   following: boolean;
   friend?: boolean;
   pet?: {
@@ -25,6 +27,12 @@ export type RunnerProfile = {
     duration_sec: number;
     avg_pace_sec: number;
   }[];
+};
+export type BlockedUser = {
+  uid: string;
+  display_name: string;
+  user_id?: string | null;
+  profile_image: string | null;
 };
 export type ConnectionPage = { users: PublicProfile[]; cursor: string | null };
 
@@ -68,6 +76,8 @@ export type SocialComment = {
   author_image: string | null;
   text: string;
   parent_id: string | null;
+  // 답글 대상의 닉네임. 이 값이 생기기 전에 쓴 답글에는 없다
+  reply_to_name?: string | null;
   deleted: boolean;
   createdAtMs: number;
 };
@@ -89,6 +99,31 @@ export async function socialRequest<T>(
     'socialAction',
   )({ action, ...input });
   return response.data;
+}
+// 내가 차단한 사람 목록. 못 읽으면 빈 목록으로 둔다(차단 자체는 서버가 막는다)
+export function watchBlockedUsers(next: (users: BlockedUser[]) => void) {
+  return firestore()
+    .collection('users')
+    .doc(myUid())
+    .collection('blocks')
+    .orderBy('created_at', 'desc')
+    .limit(500)
+    .onSnapshot(
+      snap => next(snap.docs.map(doc => doc.data() as BlockedUser)),
+      () => next([]),
+    );
+}
+// "보지 않음"으로 고른 게시물 id 목록
+export function watchHiddenPosts(next: (ids: string[]) => void) {
+  return firestore()
+    .collection('users')
+    .doc(myUid())
+    .collection('hidden_posts')
+    .limit(500)
+    .onSnapshot(
+      snap => next(snap.docs.map(doc => doc.id)),
+      () => next([]),
+    );
 }
 export function newSocialId() {
   return firestore().collection('posts').doc().id;

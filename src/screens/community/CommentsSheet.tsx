@@ -27,6 +27,7 @@ import { ArrowUp, Trash2, UserRound, X } from 'lucide-react-native';
 import { AppText, Button, IconButton } from '../../components/ui';
 import { colors, fonts } from '../../theme';
 import { useComments } from '../../hooks/useComments';
+import { commentBranch, threadComments } from '../../utils/commentThreads';
 import {
   myUid,
   newSocialId,
@@ -41,8 +42,15 @@ type Props = {
   postId: string;
   onClose: () => void;
   onProfile: (uid: string) => void;
+  // 내가 차단한 사람들. 이 사람들의 댓글과 그 아래 답글은 보여 주지 않는다
+  hiddenUids?: ReadonlySet<string>;
 };
-export function CommentsSheet({ postId, onClose, onProfile }: Props) {
+export function CommentsSheet({
+  postId,
+  onClose,
+  onProfile,
+  hiddenUids,
+}: Props) {
   const { height } = useWindowDimensions();
   const screenHeight = Dimensions.get('screen').height;
   const [modalHeight, setModalHeight] = useState(height);
@@ -65,6 +73,10 @@ export function CommentsSheet({ postId, onClose, onProfile }: Props) {
     keyboardHeight > 0 ? 12 : Math.max(insets.bottom, 12);
   const [revision, setRevision] = useState(0);
   const feed = useComments(postId, revision);
+  const comments = useMemo(
+    () => threadComments(feed.comments, hiddenUids),
+    [feed.comments, hiddenUids],
+  );
   const [post, setPost] = useState<SocialPost | null>(null);
   const [postStatus, setPostStatus] = useState<'loading' | 'success' | 'error'>(
     'loading',
@@ -189,12 +201,10 @@ export function CommentsSheet({ postId, onClose, onProfile }: Props) {
     );
   }, [postId, revision]);
   useEffect(() => {
-    if (
-      reply &&
-      feed.comments.some(c => c.comment_id === reply.comment_id && c.deleted)
-    )
+    // 답글을 쓰던 댓글이 지워지면 답글 쓰기를 그만둔다
+    if (reply && !comments.some(c => c.comment_id === reply.comment_id))
       setReply(null);
-  }, [feed.comments, reply]);
+  }, [comments, reply]);
   const available = postStatus === 'success' && !!post && !post.deleted;
   const send = async () => {
     const text = body.trim(),
@@ -227,29 +237,36 @@ export function CommentsSheet({ postId, onClose, onProfile }: Props) {
       if (alive.current) setBusy(false);
     }
   };
-  const remove = (comment: SocialComment) =>
-    Alert.alert('댓글을 삭제할까요?', '답글이 있으면 삭제 표시가 남아요.', [
-      { text: '취소', style: 'cancel' },
-      {
-        text: '삭제',
-        style: 'destructive',
-        onPress: async () => {
-          if (deleting) return;
-          setDeleting(comment.comment_id);
-          setError('');
-          try {
-            await socialRequest('deleteComment', {
-              postId,
-              commentId: comment.comment_id,
-            });
-          } catch (e) {
-            if (alive.current) setError(socialError(e));
-          } finally {
-            if (alive.current) setDeleting(null);
-          }
+  const remove = (comment: SocialComment) => {
+    const branch = commentBranch(feed.comments, comment.comment_id);
+    Alert.alert(
+      '댓글을 삭제할까요?',
+      branch.length > 1 ? '달린 답글도 함께 삭제돼요.' : undefined,
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: '삭제',
+          style: 'destructive',
+          onPress: async () => {
+            if (deleting) return;
+            setDeleting(comment.comment_id);
+            setError('');
+            try {
+              await socialRequest('deleteComment', {
+                postId,
+                commentId: comment.comment_id,
+              });
+              if (alive.current) feed.forget(branch);
+            } catch (e) {
+              if (alive.current) setError(socialError(e));
+            } finally {
+              if (alive.current) setDeleting(null);
+            }
+          },
         },
-      },
-    ]);
+      ],
+    );
+  };
   const retry = () => {
     setError('');
     setRevision(v => v + 1);
@@ -296,14 +313,9 @@ export function CommentsSheet({ postId, onClose, onProfile }: Props) {
             <View style={s.handle} />
           </View>
           <View style={s.heading}>
-            <View style={s.grow}>
-              <AppText variant="heading">댓글</AppText>
-              <AppText variant="label" color={colors.textMuted}>
-                {post
-                  ? `${post.author_name}님의 러닝 이야기`
-                  : '함께 나누는 응원의 한마디'}
-              </AppText>
-            </View>
+            <AppText variant="heading" style={s.grow}>
+              댓글
+            </AppText>
             <IconButton
               icon={X}
               variant="plain"
@@ -355,7 +367,7 @@ export function CommentsSheet({ postId, onClose, onProfile }: Props) {
                     onPress={feed.loadMore}
                   />
                 )}
-                {!feed.comments.length ? (
+                {!comments.length ? (
                   <View style={s.empty}>
                     <View style={s.emptySymbol}>
                       <UserRound size={25} color={colors.primaryInk} />
@@ -368,7 +380,7 @@ export function CommentsSheet({ postId, onClose, onProfile }: Props) {
                     </AppText>
                   </View>
                 ) : (
-                  feed.comments.map(comment => (
+                  comments.map(comment => (
                     <View
                       key={comment.comment_id}
                       style={[s.comment, !!comment.parent_id && s.reply]}
@@ -376,11 +388,10 @@ export function CommentsSheet({ postId, onClose, onProfile }: Props) {
                       <Pressable
                         accessibilityRole="button"
                         accessibilityLabel={`${comment.author_name} 프로필`}
-                        disabled={comment.deleted}
                         onPress={() => profile(comment.uid)}
                         style={s.avatar}
                       >
-                        {comment.author_image && !comment.deleted ? (
+                        {comment.author_image ? (
                           <Image
                             source={{ uri: comment.author_image }}
                             style={s.avatarImage}
@@ -392,9 +403,7 @@ export function CommentsSheet({ postId, onClose, onProfile }: Props) {
                       <View style={s.grow}>
                         <View style={s.author}>
                           <AppText variant="label">
-                            {comment.deleted
-                              ? '삭제된 댓글'
-                              : comment.author_name}
+                            {comment.author_name}
                           </AppText>
                           <AppText variant="label" color={colors.textSubtle}>
                             {comment.createdAtMs
@@ -407,49 +416,46 @@ export function CommentsSheet({ postId, onClose, onProfile }: Props) {
                               : ''}
                           </AppText>
                         </View>
-                        <AppText
-                          selectable
-                          style={s.commentText}
-                          color={
-                            comment.deleted ? colors.textSubtle : colors.text
-                          }
-                        >
-                          {comment.deleted
-                            ? '삭제된 댓글입니다.'
-                            : `${comment.parent_id ? '↳ ' : ''}${comment.text}`}
-                        </AppText>
-                        {!comment.deleted && (
-                          <Pressable
-                            accessibilityRole="button"
-                            accessibilityLabel={`${comment.author_name}에게 답글 쓰기`}
-                            disabled={busy}
-                            hitSlop={6}
-                            onPress={() => {
-                              setReply(comment);
-                              input.current?.focus();
-                            }}
-                          >
+                        <AppText selectable style={s.commentText}>
+                          {!!comment.replyToName && (
                             <AppText
-                              variant="label"
                               color={colors.primaryInk}
-                              style={s.replyButton}
+                              style={s.replyTag}
                             >
-                              답글 쓰기
+                              @{comment.replyToName}{' '}
                             </AppText>
-                          </Pressable>
-                        )}
+                          )}
+                          {comment.text}
+                        </AppText>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel={`${comment.author_name}에게 답글 쓰기`}
+                          disabled={busy}
+                          hitSlop={6}
+                          onPress={() => {
+                            setReply(comment);
+                            input.current?.focus();
+                          }}
+                        >
+                          <AppText
+                            variant="label"
+                            color={colors.primaryInk}
+                            style={s.replyButton}
+                          >
+                            답글 쓰기
+                          </AppText>
+                        </Pressable>
                       </View>
-                      {!comment.deleted &&
-                        (comment.uid === myUid() || post?.uid === myUid()) && (
-                          <IconButton
-                            icon={Trash2}
-                            size={32}
-                            variant="plain"
-                            accessibilityLabel="댓글 삭제"
-                            disabled={!!deleting}
-                            onPress={() => remove(comment)}
-                          />
-                        )}
+                      {(comment.uid === myUid() || post?.uid === myUid()) && (
+                        <IconButton
+                          icon={Trash2}
+                          size={32}
+                          variant="plain"
+                          accessibilityLabel="댓글 삭제"
+                          disabled={!!deleting}
+                          onPress={() => remove(comment)}
+                        />
+                      )}
                     </View>
                   ))
                 )}
@@ -596,6 +602,7 @@ const s = StyleSheet.create({
     paddingBottom: 5,
   },
   commentText: { fontSize: 14, lineHeight: 21 },
+  replyTag: { fontFamily: fonts.semibold, fontSize: 14, lineHeight: 21 },
   replyButton: { marginTop: 8 },
   composer: {
     paddingHorizontal: 18,

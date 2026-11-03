@@ -46,11 +46,16 @@ jest.mock('../src/services/social.service', () => ({
 }));
 const mockFeedAction = jest.fn();
 const mockExplorePosts: unknown[] = [];
+const mockHomePosts: unknown[] = [];
+const mockHidden = {
+  blockedUids: new Set<string>(),
+  hiddenPostIds: new Set<string>(),
+};
 jest.mock('../src/hooks/useServerFeed', () => ({
   useServerFeed: (action: string) => {
     mockFeedAction(action);
     return {
-      posts: action === 'exploreFeed' ? mockExplorePosts : [],
+      posts: action === 'exploreFeed' ? mockExplorePosts : mockHomePosts,
       status: 'success',
       more: false,
       loadingMore: false,
@@ -59,6 +64,9 @@ jest.mock('../src/hooks/useServerFeed', () => ({
       refresh: jest.fn(),
     };
   },
+}));
+jest.mock('../src/hooks/useHiddenContent', () => ({
+  useHiddenContent: () => mockHidden,
 }));
 jest.mock('../src/hooks/useComments', () => ({ useComments: jest.fn() }));
 jest.mock('../src/services/media.service', () => ({
@@ -549,4 +557,103 @@ test('the saved posts can be opened straight from a link (the settings entry), a
   await press('저장한 게시물에서 뒤로');
   expect(hasLabel('저장한 게시물에서 뒤로')).toBe(false);
   expect(subpage).toHaveBeenLastCalledWith(false);
+});
+
+describe('posts I do not want to see', () => {
+  // 카드마다 글을 지켜보는데, 이 테스트의 목록은 여러 글이라 빈 구독으로 둔다
+  beforeEach(() => mockWatchPost.mockImplementation(() => () => {}));
+  const other = {
+    ...post,
+    post_id: 'other-post',
+    uid: 'someone',
+    text: '다른 글',
+  };
+  afterEach(() => {
+    mockHomePosts.length = 0;
+    mockExplorePosts.length = 0;
+    mockHidden.blockedUids = new Set();
+    mockHidden.hiddenPostIds = new Set();
+  });
+
+  test('a blocked author’s posts leave the already loaded feed and explore lists', async () => {
+    mockHomePosts.push(post, other);
+    mockExplorePosts.push(post, other);
+    mockHidden.blockedUids = new Set(['peer']);
+    await render();
+    expect(texts()).toContain('다른 글');
+    expect(texts()).not.toContain('오늘도 달렸어요');
+    await chooseSubNav('explore');
+    expect(texts()).toContain('다른 글');
+    expect(texts()).not.toContain('오늘도 달렸어요');
+  });
+
+  test('a hidden post leaves the feed while other posts by the same author stay', async () => {
+    const same = {
+      ...post,
+      post_id: 'same-author',
+      text: '같은 사람의 다른 글',
+    };
+    mockHomePosts.push(post, same);
+    mockHidden.hiddenPostIds = new Set(['post-9']);
+    await render();
+    expect(texts()).toContain('같은 사람의 다른 글');
+    expect(texts()).not.toContain('오늘도 달렸어요');
+  });
+
+  test('hiding from a post page goes back to where I was', async () => {
+    mockWatchPost.mockImplementation(
+      (_id: string, next: (value: unknown) => void) => {
+        next(post);
+        return () => {};
+      },
+    );
+    await render({ page: 'post', id: 'post-9' });
+    await press('게시물 메뉴');
+    expect(hasLabel('이 게시물 보지 않음')).toBe(true);
+    await press('이 게시물 보지 않음');
+    await act(async () => {
+      tree.root
+        .findAll(node => typeof node.props.onDismiss === 'function')
+        .forEach(node => node.props.onDismiss());
+    });
+    expect(mockAction).toHaveBeenCalledWith('hidePost', { postId: 'post-9' });
+    expect(hasLabel('게시물에서 뒤로')).toBe(false);
+  });
+});
+
+describe('a runner I have blocked', () => {
+  const blockedProfile = {
+    profile: {
+      uid: 'peer',
+      display_name: '민지',
+      profile_image: null,
+      total_km: 3,
+      region: '서울',
+      follower_count: 0,
+      following_count: 0,
+      influencer_tier: 'none',
+    },
+    following: false,
+    blocked: true,
+    run_count: 2,
+  };
+  test('shows only a way to unblock, with no follow, message, records or posts', async () => {
+    mockAction.mockImplementation((action: string) =>
+      Promise.resolve(action === 'profile' ? blockedProfile : { posts: [] }),
+    );
+    await render({ page: 'profile', uid: 'peer' });
+    const all = texts();
+    expect(all).toContain('차단 해제');
+    expect(all).not.toContain('팔로우');
+    expect(all).not.toContain('메시지 보내기');
+    expect(all).not.toContain('러닝 발자국');
+    expect(all).not.toContain('최근 게시물');
+    await act(async () => {
+      tree.root.find(node => node.props.label === '차단 해제').props.onPress();
+    });
+    expect(mockAction).toHaveBeenCalledWith('blockUser', {
+      uid: 'peer',
+      blocked: false,
+    });
+  });
 });

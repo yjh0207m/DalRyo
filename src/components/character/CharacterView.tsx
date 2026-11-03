@@ -46,6 +46,8 @@ type Props = {
   grounded?: boolean;
   // 개발 화면에서만 미검수 동작 후보를 비교한다. 일반 화면에는 전달하지 않는다.
   previewRiveSource?: number;
+  // 캐릭터가 화면에 다 그려졌을 때 한 번 알린다. 그림을 받지 못했을 때도 더 기다릴 것이 없으므로 알린다
+  onReady?: () => void;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -131,13 +133,14 @@ export function CharacterView({
   equipped,
   grounded = true,
   previewRiveSource,
+  onReady,
   style,
 }: Props) {
-  const source = useCharacterSource(type, stage);
+  const {source, resolved: sourceResolved} = useResolvedCharacterSource(type, stage);
   const decoration = cleanEquipped(equipped);
   // 외부 의상 레이어는 PNG 경로에서 합성한다. 기본/돌 상태는 Rive 내부 재질을 쓴다.
   const pngOnly = Object.values(outfitLayers ?? {}).some(Boolean);
-  const resolvedRiveSource = useRiveSource(type, stage, pngOnly);
+  const {source: resolvedRiveSource, resolved: riveResolved} = useRiveSource(type, stage, pngOnly);
   const riveSource = __DEV__ && previewRiveSource !== undefined && stage !== 'egg' && motion !== 'stone' && !pngOnly
     ? previewRiveSource : resolvedRiveSource;
   const riveKey = `${type}/${stage}/${riveSource}`;
@@ -147,6 +150,18 @@ export function CharacterView({
   const phase = useRef(new Animated.Value(0)).current;
   const jump = useRef(new Animated.Value(0)).current;
   const frames = riveStage ? null : stage === 'egg' && motion !== 'stone' ? EGG_WOBBLE : MOTIONS[motion];
+
+  // 무엇으로 그릴지 정해지고(Rive 파일 주소 확인이 끝나고) 그 그림이 실제로 그려지면 준비가 끝난 것이다.
+  // Rive 주소를 기다리는 동안 PNG가 먼저 뜨더라도 곧 Rive로 바뀌므로 아직 끝난 것이 아니다
+  const [riveDone, setRiveDone] = useState(false);
+  const [imageDone, setImageDone] = useState(false);
+  const painted = riveStage ? riveDone : sourceResolved && (source === null || imageDone);
+  const ready = riveResolved && painted;
+  const notifyReady = useRef(onReady);
+  notifyReady.current = onReady;
+  useEffect(() => {
+    if (ready) notifyReady.current?.();
+  }, [ready]);
 
   useEffect(() => {
     phase.stopAnimation();
@@ -227,12 +242,12 @@ export function CharacterView({
           <OutfitDecoration itemId={decoration.back} size={size} />
           {riveSource !== null && riveStage ? (
             // 옷은 Rive 파일 안의 교체 가능한 이미지(referenced asset)로 입힌다 — 규격 문서 참고
-            <RiveCharacter key={riveKey} source={riveSource} stage={riveStage} motion={motion} jumpKey={jumpKey} style={box} onError={() => setFailedRiveKey(riveKey)} />
+            <RiveCharacter key={riveKey} source={riveSource} stage={riveStage} motion={motion} jumpKey={jumpKey} style={box} onError={() => setFailedRiveKey(riveKey)} onReady={() => setRiveDone(true)} />
           ) : (
             <>
               {BEHIND_BODY.map(slot => renderLayer(outfitLayers?.[slot], slot, layer))}
               {source ? (
-                <Image source={source} resizeMode="contain" style={layer} />
+                <Image source={source} resizeMode="contain" style={layer} onLoadEnd={() => setImageDone(true)} />
               ) : (
                 <View style={[styles.placeholder, {borderRadius: size / 2}]} />
               )}
@@ -324,25 +339,31 @@ function useRiveSource(type: CharacterType, stage: CharacterStage, pngOnly: bool
     };
   }, [type, stage, key, bundled, pngOnly]);
 
-  if (stage === 'egg' || pngOnly) return null;
-  return bundled ?? (remote?.key === key ? remote.url : null);
+  if (stage === 'egg' || pngOnly) return {source: null, resolved: true};
+  if (bundled !== null) return {source: bundled, resolved: true};
+  return remote?.key === key ? {source: remote.url, resolved: true} : {source: null, resolved: false};
 }
 
 // 성장 연출의 실루엣처럼 그림 원본이 필요한 곳에서도 쓴다
 export function useCharacterSource(type: CharacterType, stage: CharacterStage) {
-  const [source, setSource] = useState<ImageSourcePropType | null>(null);
+  return useResolvedCharacterSource(type, stage).source;
+}
+
+// resolved는 원본을 찾는 일이 끝났는지 알려 준다. source가 null이어도 resolved면 원본이 없다는 뜻이다
+function useResolvedCharacterSource(type: CharacterType, stage: CharacterStage) {
+  const [state, setState] = useState<{source: ImageSourcePropType | null; resolved: boolean}>({source: null, resolved: false});
 
   useEffect(() => {
     let cancelled = false;
     const resolved = resolveCharacterSource(type, stage);
 
     if (resolved instanceof Promise) {
-      setSource(null);
+      setState({source: null, resolved: false});
       resolved.then(next => {
-        if (!cancelled) setSource(next);
+        if (!cancelled) setState({source: next, resolved: true});
       });
     } else {
-      setSource(resolved);
+      setState({source: resolved, resolved: true});
     }
 
     return () => {
@@ -350,7 +371,7 @@ export function useCharacterSource(type: CharacterType, stage: CharacterStage) {
     };
   }, [type, stage]);
 
-  return source;
+  return state;
 }
 
 const styles = StyleSheet.create({

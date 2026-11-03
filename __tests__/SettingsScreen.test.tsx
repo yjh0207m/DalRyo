@@ -445,3 +445,25 @@ describe('saved posts', () => {
     expect(byLabel('저장한 게시물')).toBeUndefined();
   });
 });
+
+describe('blocked users', () => {
+  test('are reached from the list when the app provides the entry', async () => {
+    const onOpenBlocked = jest.fn();
+    await act(async () => {
+      tree = Renderer.create(
+        <SettingsScreen
+          user={user}
+          onBack={onBack}
+          onOpenBlocked={onOpenBlocked}
+        />,
+      );
+    });
+    await press('차단한 사용자');
+    expect(onOpenBlocked).toHaveBeenCalledTimes(1);
+  });
+
+  test('are not offered when nothing handles them', async () => {
+    await render();
+    expect(byLabel('차단한 사용자')).toBeUndefined();
+  });
+});

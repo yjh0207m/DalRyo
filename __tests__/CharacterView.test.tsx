@@ -80,3 +80,57 @@ test('an unapproved preview source requires explicit development-only opt-in', a
     flag.restore();
   }
 });
+
+describe('telling when the character has finished drawing', () => {
+  const ready = jest.fn();
+  beforeEach(() => ready.mockClear());
+  const mainImage = () => renderer.root.findAllByType(Image)[0];
+
+  test('a picture counts only after the picture itself has loaded', async () => {
+    await act(async () => {renderer = create(<CharacterView type="duck" stage="child" onReady={ready} />);});
+    expect(ready).not.toHaveBeenCalled();
+    await act(async () => mainImage().props.onLoadEnd());
+    expect(ready).toHaveBeenCalledTimes(1);
+  });
+
+  test('an animated file counts when it starts playing, not when its address arrives', async () => {
+    mockRemote.mockResolvedValue('https://example.test/duck.riv');
+    await act(async () => {renderer = create(<CharacterView type="duck" stage="child" onReady={ready} />);});
+    expect(ready).not.toHaveBeenCalled();
+    await act(async () => renderer.root.findByType(RiveCharacter).props.onReady());
+    expect(ready).toHaveBeenCalledTimes(1);
+  });
+
+  test('a picture shown while waiting for the animated file does not count yet', async () => {
+    let finish!: (url: string | null) => void;
+    mockRemote.mockImplementationOnce(() => new Promise(resolve => {finish = resolve;}));
+    await act(async () => {renderer = create(<CharacterView type="duck" stage="child" onReady={ready} />);});
+    await act(async () => mainImage().props.onLoadEnd());
+    expect(ready).not.toHaveBeenCalled();
+    await act(async () => finish(null));
+    expect(ready).toHaveBeenCalledTimes(1);
+  });
+
+  test('if the animated file cannot be read, it waits for the picture instead', async () => {
+    mockRemote.mockResolvedValue('https://example.test/duck.riv');
+    await act(async () => {renderer = create(<CharacterView type="duck" stage="child" onReady={ready} />);});
+    await act(async () => renderer.root.findByType(RiveCharacter).props.onError());
+    expect(ready).not.toHaveBeenCalled();
+    await act(async () => mainImage().props.onLoadEnd());
+    expect(ready).toHaveBeenCalledTimes(1);
+  });
+
+  test('a picture that fails to load still counts, so loading does not wait forever', async () => {
+    await act(async () => {renderer = create(<CharacterView type="duck" stage="child" onReady={ready} />);});
+    // onLoadEnd는 성공과 실패 모두에 불린다
+    await act(async () => mainImage().props.onLoadEnd());
+    expect(ready).toHaveBeenCalledTimes(1);
+  });
+
+  test('re-rendering does not announce it twice', async () => {
+    await act(async () => {renderer = create(<CharacterView type="duck" stage="child" onReady={ready} />);});
+    await act(async () => mainImage().props.onLoadEnd());
+    await act(async () => {renderer.update(<CharacterView type="duck" stage="child" motion="run" onReady={ready} />);});
+    expect(ready).toHaveBeenCalledTimes(1);
+  });
+});

@@ -8,6 +8,7 @@ import {HomeScreen} from '../home/HomeScreen';
 import {InventoryScreen} from '../profile/InventoryScreen';
 import {CharacterPreviewScreen} from '../dev/CharacterPreviewScreen';
 import {SettingsScreen} from '../profile/SettingsScreen';
+import {BlockedUsersScreen} from '../profile/BlockedUsersScreen';
 import {NotificationsScreen} from '../profile/NotificationsScreen';
 import {useUnreadNotifications} from '../../hooks/useNotifications';
 import {usePushNotifications} from '../../hooks/usePushNotifications';
@@ -37,6 +38,8 @@ import type {NotificationTarget} from '../../utils/notifications';
 type Props = {
   user: UserDocument | null;
   character: CharacterDocument | null;
+  // 앱을 켠 뒤 홈 화면이 다 그려졌을 때
+  onHomeReady?: () => void;
 };
 
 type RunGoal = {goalType: RunGoalType; goalValue: number | null; parkId?:string; parkName?:string; courseId?:string};
@@ -52,12 +55,13 @@ type RunFlow =
   | ({phase: 'saving'; result: RunResult} & RunStart)
   | {phase: 'complete'; before: RunStartSnapshot; run: RunDocument};
 
-export function MainAppScreen({user, character}: Props) {
+export function MainAppScreen({user, character, onHomeReady}: Props) {
   const [activeTab, setActiveTab] = useState<MainTab>('home');
   const [runFlow, setRunFlow] = useState<RunFlow | null>(null);
   const [runSheetOpen, setRunSheetOpen] = useState(false);
   const [parksOpen,setParksOpen]=useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [blockedOpen, setBlockedOpen] = useState(false);
   const [inventoryMode, setInventoryMode] = useState<'owned' | 'all' | null>(null);
   const [characterPreviewOpen, setCharacterPreviewOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -219,7 +223,8 @@ export function MainAppScreen({user, character}: Props) {
   // 전체 화면은 오른쪽에서 밀려 들어와 탭 화면 위에 겹치고, 뒤로 가면 오른쪽으로 밀려 나간다
   let overlay: React.ReactNode = null;
   if (__DEV__ && characterPreviewOpen) overlay = <SlideScreen key="preview" onBack={() => setCharacterPreviewOpen(false)}>{back => <CharacterPreviewScreen onBack={back} />}</SlideScreen>;
-  else if (settingsOpen && user) overlay = <SlideScreen key="settings" onBack={() => setSettingsOpen(false)}>{back => <SettingsScreen user={user} onBack={back} onPreviewCharacter={() => setCharacterPreviewOpen(true)} onOpenSaved={openSavedPosts} />}</SlideScreen>;
+  else if (blockedOpen) overlay = <SlideScreen key="blocked" onBack={() => setBlockedOpen(false)}>{back => <BlockedUsersScreen onBack={back} />}</SlideScreen>;
+  else if (settingsOpen && user) overlay = <SlideScreen key="settings" onBack={() => setSettingsOpen(false)}>{back => <SettingsScreen user={user} onBack={back} onPreviewCharacter={() => setCharacterPreviewOpen(true)} onOpenSaved={openSavedPosts} onOpenBlocked={() => setBlockedOpen(true)} />}</SlideScreen>;
   else if (inventoryMode && character) overlay = <SlideScreen key="inventory" onBack={() => setInventoryMode(null)}>{back => <InventoryScreen key={character.uid} character={character} frozen={user?.is_frozen} initialMode={inventoryMode} onBack={back}/>}</SlideScreen>;
   else if (parksOpen) overlay = <SlideScreen key="parks" onBack={() => setParksOpen(false)}>{back => <ParksScreen onBack={back} onStart={(park,km,courseId)=>{
     if(startRun({goalType:'distance',goalValue:km,parkId:park.park_id,parkName:park.name,courseId}))setParksOpen(false);
@@ -228,7 +233,7 @@ export function MainAppScreen({user, character}: Props) {
   else if (together && user && character) overlay = <SlideScreen key="together" onBack={() => setTogether(null)}>{back => <TogetherScreen user={user} character={character} initialFriendUid={together.friendUid} onBack={back} onPosted={() => {setTogether(null); setActiveTab('community');}} />}</SlideScreen>;
 
   const renderTab = (tab: MainTab) => {
-    if (tab === 'home') return <HomeScreen user={user} character={character} onItemsPress={() => setInventoryMode('owned')} {...header} />;
+    if (tab === 'home') return <HomeScreen user={user} character={character} onItemsPress={() => setInventoryMode('owned')} onReady={onHomeReady} {...header} />;
     if (tab === 'growth') return <GrowthScreen user={user} character={character} {...header} />;
     if (tab === 'community') return <CommunityScreen key={communityKey} {...header} initialRoute={communityLink ?? undefined} onInitialRouteHandled={() => setCommunityLink(null)} onSubpageChange={setCommunitySubpage} onTogetherPress={friendUid => setTogether({friendUid})}/>;
     if (tab === 'records') return <RecordScreen {...header} character={character} onSubpageChange={setRecordSubpage} onPosted={() => setActiveTab('community')}/>;

@@ -25,6 +25,8 @@ type Props = {
   tapLines?: string[];
   equipped?: EquippedOutfit;
   bubblePlacement?: 'above' | 'beside';
+  // 캐릭터가 화면에 다 그려졌을 때
+  onReady?: () => void;
 };
 
 type Particle = {
@@ -49,6 +51,7 @@ export function LobbyCharacter({
   tapLines = [],
   equipped,
   bubblePlacement = 'above',
+  onReady,
 }: Props) {
   const turn = useRef(new Animated.Value(1)).current;
   const facingRef = useRef(1);
@@ -144,6 +147,7 @@ export function LobbyCharacter({
             jumpKey={jumpKey}
             size={size}
             equipped={equipped}
+            onReady={onReady}
           />
         </Animated.View>
       </Pressable>

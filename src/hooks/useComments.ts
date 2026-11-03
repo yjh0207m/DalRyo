@@ -84,5 +84,10 @@ export function useComments(id: string, revision: number) {
       }
     }
   };
-  return { comments, status, more, pending, error, loadMore };
+  // 지운 댓글을 목록에서 뺀다. 실시간 구독 범위 밖의 이전 페이지는 저절로 갱신되지 않는다
+  const forget = (ids: string[]) => {
+    older.current = older.current.filter(c => !ids.includes(c.comment_id));
+    publish();
+  };
+  return { comments, status, more, pending, error, loadMore, forget };
 }

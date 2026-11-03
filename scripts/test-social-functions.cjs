@@ -61,8 +61,10 @@ async function call(user, action, data = {}, name = 'socialAction') {
       assert.equal((await read('posts/public-post')).comment_count,2);
       await call(b,'deleteComment',{postId:'public-post',commentId:'comment-one'});
       await call(b,'deleteComment',{postId:'public-post',commentId:'comment-one'});
-      assert.equal((await read('posts/public-post')).comment_count,1);
-      assert.equal((await read('posts/public-post/comments/comment-one')).deleted,true);
+      assert.equal((await read('posts/public-post')).comment_count,0);
+      // 댓글은 문서째 사라지고, 그 아래 답글도 함께 사라진다
+      assert.equal(await read('posts/public-post/comments/comment-one'),undefined);
+      assert.equal(await read('posts/public-post/comments/reply-one'),undefined);
     });
     await test('private and follower visibility enforce real relationship', async () => {
       await call(a,'createPost',{postId:'private-post',text:'private',visibility:'private'});
@@ -367,6 +369,106 @@ async function call(user, action, data = {}, name = 'socialAction') {
       assert.equal((await call(b,'publicProfiles',{uids:[a.uid]})).users[0].profile_image,null);
       for(const uids of [[],Array(31).fill(a.uid),['../users'],[123]])await assert.rejects(call(b,'publicProfiles',{uids}));
     });
+    const socialUser=async name=>{
+      const user=await signup();
+      await env.withSecurityRulesDisabled(async ctx=>{await setDoc(doc(ctx.firestore(),`users/${user.uid}`),{uid:user.uid,display_name:name,pet_name:'달료',profile_image:null,region:'경기',dialect:'std',total_km:0,total_exp:0,follower_count:0,following_count:0,influencer_tier:'none',is_frozen:false,notification_settings:prefs,created_at:Timestamp.now(),updated_at:Timestamp.now()});});
+      return user;
+    };
+    await test('deleting a comment removes its whole branch and only that branch, and the count follows',async()=>{
+      const owner=await socialUser('글쓴이'),one=await socialUser('하나'),two=await socialUser('둘');
+      await call(owner,'createPost',{postId:'thread-post',text:'글',visibility:'public'});
+      const comment=(user,commentId,parentId=null)=>call(user,'comment',{postId:'thread-post',commentId,text:commentId,parentId});
+      await comment(one,'root-a');await comment(two,'root-b');
+      await comment(two,'reply-a1','root-a');await comment(one,'reply-a2','reply-a1');await comment(two,'reply-b1','root-b');
+      assert.equal((await read('posts/thread-post')).comment_count,5);
+      // 답글에는 누구에게 단 답글인지 이름이 남는다
+      assert.equal((await read('posts/thread-post/comments/reply-a1')).reply_to_name,'하나');
+      assert.equal((await read('posts/thread-post/comments/reply-a2')).reply_to_name,'둘');
+      assert.equal((await read('posts/thread-post/comments/root-a')).reply_to_name,null);
+      // 남의 댓글은 지울 수 없지만, 글쓴이는 지울 수 있다
+      await assert.rejects(call(two,'deleteComment',{postId:'thread-post',commentId:'root-a'}),{code:'PERMISSION_DENIED'});
+      await call(one,'deleteComment',{postId:'thread-post',commentId:'reply-a2'});
+      assert.equal(await read('posts/thread-post/comments/reply-a2'),undefined);
+      assert.equal((await read('posts/thread-post')).comment_count,4);
+      await comment(one,'reply-a3','reply-a1');
+      await call(owner,'deleteComment',{postId:'thread-post',commentId:'root-a'});
+      for(const id of ['root-a','reply-a1','reply-a3'])assert.equal(await read(`posts/thread-post/comments/${id}`),undefined,id);
+      for(const id of ['root-b','reply-b1'])assert.ok(await read(`posts/thread-post/comments/${id}`),id);
+      assert.equal((await read('posts/thread-post')).comment_count,2);
+      // 이미 지운 댓글을 또 지워도 숫자가 줄지 않고, 지운 댓글에는 답글을 달 수 없다
+      await call(owner,'deleteComment',{postId:'thread-post',commentId:'root-a'});
+      assert.equal((await read('posts/thread-post')).comment_count,2);
+      await assert.rejects(comment(two,'late-reply','root-a'),{code:'NOT_FOUND'});
+    });
+    await test('a post marked as not wanted leaves my feed and explore, but nobody else’s',async()=>{
+      const me=await socialUser('나'),other=await socialUser('다른'),author=await socialUser('글쓴이');
+      await call(me,'follow',{uid:author.uid,following:true});
+      await call(author,'createPost',{postId:'hide-followed',text:'글',visibility:'public'});
+      const stranger=await socialUser('모름');
+      await call(stranger,'createPost',{postId:'hide-explore',text:'글',visibility:'public'});
+      const ids=async(user,action)=>{const list=[];let offset=0;for(;;){const page=await call(user,action,{offset,seed:3});list.push(...page.posts.map(p=>p.post_id));offset+=page.posts.length;if(!page.hasMore)break;}return list;};
+      assert.ok((await ids(me,'homeFeed')).includes('hide-followed'));
+      assert.ok((await ids(me,'exploreFeed')).includes('hide-explore'));
+      await call(me,'hidePost',{postId:'hide-followed'});
+      await call(me,'hidePost',{postId:'hide-explore'});
+      assert.ok(!(await ids(me,'homeFeed')).includes('hide-followed'));
+      assert.ok(!(await ids(me,'exploreFeed')).includes('hide-explore'));
+      assert.ok((await ids(other,'exploreFeed')).includes('hide-followed'));
+    });
+    await test('blocking cuts both follows, hides each other everywhere, stops reactions, and can be undone',async()=>{
+      const me=await socialUser('차단자Zk'),them=await socialUser('상대Zk'),bystander=await socialUser('제삼자Zk');
+      await call(me,'follow',{uid:them.uid,following:true});
+      await call(them,'follow',{uid:me.uid,following:true});
+      await call(me,'follow',{uid:bystander.uid,following:true});
+      await call(them,'createPost',{postId:'blocked-post',text:'글',visibility:'public'});
+      await call(me,'createPost',{postId:'my-post-for-block',text:'글',visibility:'public'});
+      const room=(await call(me,'chatOpen',{uid:them.uid})).conversationId;
+      await assert.rejects(call(me,'blockUser',{uid:me.uid,blocked:true}),{code:'INVALID_ARGUMENT'});
+      await call(me,'blockUser',{uid:them.uid,blocked:true});
+      await call(me,'blockUser',{uid:them.uid,blocked:true});
+      // 서로의 팔로우가 끊기고 숫자가 맞는다. 제삼자와의 팔로우는 그대로다
+      assert.equal(await read(`follows/${me.uid}_${them.uid}`),undefined);
+      assert.equal(await read(`follows/${them.uid}_${me.uid}`),undefined);
+      const mine=await read(`users/${me.uid}`),theirs=await read(`users/${them.uid}`);
+      assert.deepEqual([mine.following_count,mine.follower_count,theirs.following_count,theirs.follower_count],[1,0,0,0]);
+      assert.ok(await read(`follows/${me.uid}_${bystander.uid}`));
+      assert.equal((await read(`users/${me.uid}/blocks/${them.uid}`)).display_name,'상대Zk');
+      assert.deepEqual((await read(`conversations/${room}`)).blocked_by,[me.uid]);
+      const ids=async(user,action)=>{const list=[];let offset=0;for(;;){const page=await call(user,action,{offset,seed:5});list.push(...page.posts.map(p=>p.post_id));offset+=page.posts.length;if(!page.hasMore)break;}return list;};
+      // 양쪽 모두 상대의 글이 피드·탐색·프로필에 나오지 않는다
+      for(const action of ['homeFeed','exploreFeed']){
+        assert.ok(!(await ids(me,action)).includes('blocked-post'),`me ${action}`);
+        assert.ok(!(await ids(them,action)).includes('my-post-for-block'),`them ${action}`);
+      }
+      assert.deepEqual((await call(me,'profilePosts',{uid:them.uid})).posts,[]);
+      assert.deepEqual((await call(them,'profilePosts',{uid:me.uid})).posts,[]);
+      // 내가 차단한 사람의 프로필은 차단 표시와 함께 열리고, 나를 차단한 사람의 프로필은 찾을 수 없다
+      assert.equal((await call(me,'profile',{uid:them.uid})).blocked,true);
+      await assert.rejects(call(them,'profile',{uid:me.uid}),{code:'NOT_FOUND'});
+      assert.equal((await call(me,'profile',{uid:bystander.uid})).blocked,false);
+      // 검색과 팔로우 목록에도 나오지 않는다
+      assert.ok(!(await call(me,'search',{query:'상대Zk'})).users.some(u=>u.uid===them.uid));
+      assert.ok(!(await call(them,'search',{query:'차단자Zk'})).users.some(u=>u.uid===me.uid));
+      // 서로 팔로우·응원·댓글·새 대화를 할 수 없다
+      for(const [user,peer] of [[me,them],[them,me]]){
+        await assert.rejects(call(user,'follow',{uid:peer.uid,following:true}),{code:'PERMISSION_DENIED'});
+        await assert.rejects(call(user,'chatOpen',{uid:peer.uid}),{code:'PERMISSION_DENIED'});
+      }
+      await assert.rejects(call(them,'like',{postId:'my-post-for-block',active:true}),{code:'PERMISSION_DENIED'});
+      await assert.rejects(call(them,'comment',{postId:'my-post-for-block',commentId:'blocked-comment',text:'안녕'}),{code:'PERMISSION_DENIED'});
+      await assert.rejects(call(me,'comment',{postId:'blocked-post',commentId:'blocked-comment-2',text:'안녕'}),{code:'PERMISSION_DENIED'});
+      // 앱은 자기 차단 목록만 읽을 수 있다(규칙은 규칙 시나리오에서 확인한다). 해제하면 다시 보이지만 팔로우는 복구되지 않는다
+      await call(me,'blockUser',{uid:them.uid,blocked:false});
+      assert.equal(await read(`users/${me.uid}/blocks/${them.uid}`),undefined);
+      assert.equal(await read(`users/${them.uid}/blocked_by/${me.uid}`),undefined);
+      assert.deepEqual((await read(`conversations/${room}`)).blocked_by,[]);
+      assert.equal(await read(`follows/${me.uid}_${them.uid}`),undefined);
+      assert.ok((await ids(me,'exploreFeed')).includes('blocked-post'));
+      await call(me,'follow',{uid:them.uid,following:true});
+      assert.ok(await read(`follows/${me.uid}_${them.uid}`));
+      assert.equal((await call(me,'profile',{uid:them.uid})).blocked,false);
+    });
+
     console.log(`${passed} backend integration scenarios passed`);
   } finally {await env.cleanup();}
 })().catch(error=>{console.error(error);process.exitCode=1;});
