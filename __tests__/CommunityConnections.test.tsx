@@ -260,8 +260,5 @@ test('profile shows a pet and brief runs, and relationship counts navigate to li
     tree.root.findByProps({ label: '메시지 보내기' }).props.onPress(),
   );
   expect(message).toHaveBeenCalledWith('peer');
-  await act(() => press('최근 러닝 그리드 보기'));
-  expect(tree.root.findByProps({ testID: 'profile-runs-grid' })).toBeTruthy();
-  await act(() => press('최근 러닝 목록 보기'));
   expect(tree.root.findByProps({ testID: 'profile-runs-list' })).toBeTruthy();
 });

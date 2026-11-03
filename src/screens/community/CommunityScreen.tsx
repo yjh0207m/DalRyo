@@ -1422,7 +1422,6 @@ export function ProfilePage({
 }) {
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [runner, setRunner] = useState<RunnerProfile | null>(null);
-  const [runView, setRunView] = useState<'list' | 'grid'>('list');
   const [postView, setPostView] = useState<'list' | 'grid'>('list');
   const [following, setFollowing] = useState(false);
   const [friend, setFriend] = useState(false);
@@ -1605,14 +1604,7 @@ export function ProfilePage({
                   </Card>
                 )}
               <Card style={styles.runnerRecords}>
-                <View style={styles.profileSectionHeader}>
-                  <AppText variant="subheading">러닝 발자국</AppText>
-                  <ProfileViewSwitch
-                    label="최근 러닝"
-                    value={runView}
-                    onChange={setRunView}
-                  />
-                </View>
+                <AppText variant="subheading">러닝 발자국</AppText>
                 <View style={styles.runnerStats}>
                   <View>
                     <AppText variant="heading">
@@ -1627,25 +1619,13 @@ export function ProfilePage({
                     <AppText variant="caption">완료한 러닝</AppText>
                   </View>
                 </View>
-                <View
-                  testID={`profile-runs-${runView}`}
-                  style={runView === 'grid' ? styles.profileGrid : undefined}
-                >
+                <View testID="profile-runs-list">
                   {(runner?.recent_runs ?? []).map((run, index) => (
-                    <View
-                      key={index}
-                      style={
-                        runView === 'grid'
-                          ? styles.runnerRecordTile
-                          : styles.runnerRecordRow
-                      }
-                    >
+                    <View key={index} style={styles.runnerRecordRow}>
                       <AppText variant="caption" color={colors.textMuted}>
                         {run.day}
                       </AppText>
-                      <AppText
-                        variant={runView === 'grid' ? 'subheading' : 'caption'}
-                      >
+                      <AppText variant="caption">
                         {run.distance_km.toFixed(2)}km
                       </AppText>
                       <AppText variant="caption" color={colors.textMuted}>
@@ -1841,14 +1821,6 @@ const styles = StyleSheet.create({
   },
   profileViewSelected: { backgroundColor: colors.primarySoft },
   profileGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  runnerRecordTile: {
-    width: '48%',
-    flexGrow: 0,
-    padding: 12,
-    gap: 8,
-    borderRadius: 14,
-    backgroundColor: colors.primarySoft,
-  },
   profilePostTile: {
     width: '48%',
     borderRadius: 16,
