@@ -1,7 +1,10 @@
 import React from 'react';
+import { usePostAuthor } from '../src/hooks/usePostAuthor';
+jest.mock('../src/hooks/usePostAuthor', () => ({ usePostAuthor: jest.fn() }));
 import {
   AppState,
   FlatList,
+  Image,
   Keyboard,
   Platform,
   StyleSheet,
@@ -86,6 +89,8 @@ let tree: Renderer.ReactTestRenderer;
 beforeEach(() => {
   AppState.currentState = 'active';
   jest.clearAllMocks();
+  (usePostAuthor as jest.Mock).mockReturnValue(undefined);
+  (socialRequest as jest.Mock).mockResolvedValue({ users: [], cursor: null });
   mockSend.mockResolvedValue({});
   mockRead.mockResolvedValue({});
   mockWatchInbox.mockImplementation(next => {
@@ -190,6 +195,32 @@ test('rapid repeated send presses cannot issue concurrent mutations', async () =
     finish({});
   });
 });
+test('sending keeps the composer editable and preserves a newer draft', async () => {
+  let finish!: () => void;
+  mockSend.mockImplementationOnce(
+    () =>
+      new Promise<void>(resolve => {
+        finish = resolve;
+      }),
+  );
+  await render();
+  await type('첫 메시지');
+  let sending!: Promise<void>;
+  await act(() => {
+    sending = sendButton().props.onPress();
+  });
+  expect(tree.root.findByType(TextInput).props.editable).toBe(true);
+  expect(sendButton().props.disabled).toBe(true);
+  await type('다음 메시지 작성 중');
+  await act(async () => {
+    finish();
+    await sending;
+  });
+  expect(tree.root.findByType(TextInput).props.value).toBe(
+    '다음 메시지 작성 중',
+  );
+});
+
 test('blocking disables sending without discarding input', async () => {
   await render();
   await type('초안');
@@ -201,9 +232,34 @@ test('blocking disables sending without discarding input', async () => {
   expect(mockSend).not.toHaveBeenCalled();
   expect(tree.root.findByType(TextInput).props.value).toBe('초안');
 });
+
+test('old messages use the current peer photo even when the room was created without one', async () => {
+  (usePostAuthor as jest.Mock).mockImplementation(uid =>
+    uid === 'peer'
+      ? {
+          display_name: '친구',
+          profile_image: 'https://example.test/current-peer.jpg',
+        }
+      : undefined,
+  );
+  await render();
+  expect(room.profiles.peer.profile_image).toBeNull();
+  expect(
+    tree.root.findAllByType(Image).map(image => image.props.source.uri),
+  ).toContain('https://example.test/current-peer.jpg');
+  (usePostAuthor as jest.Mock).mockReturnValue({
+    display_name: '친구',
+    profile_image: null,
+  });
+  await act(() =>
+    tree.update(<ConversationView id="room" onBack={jest.fn()} />),
+  );
+  expect(tree.root.findAllByType(Image)).toHaveLength(0);
+});
 test('read receipt requires the latest message to be loaded and the list at the bottom', async () => {
   await render();
   const list = tree.root.findByType(FlatList);
+  await act(() => list.props.onScrollBeginDrag());
   await act(() =>
     list.props.onScroll({
       nativeEvent: {
@@ -308,6 +364,73 @@ test('composer reserves space when the keyboard opens and restores it on close',
   spy.mockRestore();
 });
 
+test.each(['android', 'ios'] as const)(
+  'latest message follows keyboard layout and delayed sent-message delivery on %s',
+  async os => {
+    jest.replaceProperty(Platform, 'OS', os);
+    const listeners: Record<string, (event: any) => void> = {};
+    jest.spyOn(Keyboard, 'addListener').mockImplementation((name, listener) => {
+      listeners[name] = listener;
+      return { remove: jest.fn() } as unknown as ReturnType<
+        typeof Keyboard.addListener
+      >;
+    });
+    jest
+      .spyOn(globalThis, 'requestAnimationFrame')
+      .mockImplementation(callback => {
+        callback(0);
+        return 1;
+      });
+    jest.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(() => {});
+    await render();
+    const list = tree.root.findByType(FlatList);
+    const scroll = jest
+      .spyOn(list.instance, 'scrollToEnd')
+      .mockImplementation(() => {});
+    await act(() => list.props.onScrollBeginDrag());
+    await act(() =>
+      list.props.onScroll({
+        nativeEvent: {
+          contentOffset: { y: 0 },
+          layoutMeasurement: { height: 300 },
+          contentSize: { height: 1000 },
+        },
+      }),
+    );
+    await act(() =>
+      listeners.keyboardDidShow({ endCoordinates: { height: 300 } }),
+    );
+    scroll.mockClear();
+    await act(() =>
+      list.props.onLayout({ nativeEvent: { layout: { height: 250 } } }),
+    );
+    expect(scroll).toHaveBeenCalled();
+    expect(
+      tree.root.findByType(FlatList).props.maintainVisibleContentPosition,
+    ).toBeUndefined();
+    await type('내 새 메시지');
+    await act(async () => sendButton().props.onPress());
+    scroll.mockClear();
+    await act(() =>
+      mockMessageNext({
+        items: [
+          {
+            ...one,
+            id: 'sent',
+            sender_uid: 'me',
+            text: '내 새 메시지',
+            createdAt: 2000,
+          },
+        ],
+        cursor: null,
+        more: false,
+      }),
+    );
+    await act(() => list.props.onContentSizeChange(360, 1200));
+    expect(scroll).toHaveBeenCalled();
+  },
+);
+
 describe('the messages list page', () => {
   const textsOf = () =>
     tree.root
@@ -338,6 +461,21 @@ describe('the messages list page', () => {
     expect(all).not.toContain('RUN TOGETHER, TALK TOGETHER');
     expect(all).not.toContain('러닝 이야기도, 다음 약속도 여기서.');
     expect(all).not.toContain('팔로잉·팔로워에서 찾기');
+  });
+
+  test('existing conversation rows use the current peer photo rather than the room snapshot', async () => {
+    (usePostAuthor as jest.Mock).mockImplementation(uid =>
+      uid === 'peer'
+        ? {
+            display_name: '친구',
+            profile_image: 'https://example.test/latest-inbox.jpg',
+          }
+        : undefined,
+    );
+    await renderList();
+    expect(
+      tree.root.findAllByType(Image).map(image => image.props.source.uri),
+    ).toContain('https://example.test/latest-inbox.jpg');
   });
 
   test('has a “같이 달리기” button above the conversations', async () => {
@@ -378,6 +516,63 @@ describe('the messages list page', () => {
 });
 
 describe('searching for someone to start a chat with', () => {
+  test('shows followed runners before searching, loads another page, and restores them after clearing search', async () => {
+    jest.useFakeTimers();
+    const followed = {
+      uid: 'followed',
+      display_name: '팔로우 친구',
+      profile_image: null,
+    };
+    (socialRequest as jest.Mock).mockImplementation(
+      async (action: string, input: any) =>
+        action === 'search'
+          ? {
+              users: [{ ...followed, uid: 'found', display_name: '검색 친구' }],
+            }
+          : input.cursor
+          ? { users: [followed, { ...followed, uid: 'second' }], cursor: null }
+          : { users: [followed], cursor: 'page2' },
+    );
+    await act(() => {
+      tree = Renderer.create(<ChatScreen onBack={jest.fn()} />);
+    });
+    await act(() =>
+      tree.root
+        .findAll(
+          n =>
+            n.props.accessibilityLabel === '새 대화' &&
+            typeof n.props.onPress === 'function',
+        )[0]
+        .props.onPress(),
+    );
+    await act(async () => {
+      jest.runOnlyPendingTimers();
+    });
+    expect(socialRequest).toHaveBeenCalledWith('connections', {
+      uid: 'me',
+      kind: 'following',
+    });
+    expect(
+      tree.root.findByType(FlatList).props.data.map((p: any) => p.uid),
+    ).toEqual(['followed']);
+    await act(async () =>
+      tree.root.findByProps({ label: '더 보기' }).props.onPress(),
+    );
+    expect(
+      tree.root.findByType(FlatList).props.data.map((p: any) => p.uid),
+    ).toEqual(['followed', 'second']);
+    await act(() => tree.root.findByType(TextInput).props.onChangeText('검색'));
+    await act(async () => {
+      jest.advanceTimersByTime(300);
+    });
+    expect(tree.root.findByType(FlatList).props.data[0].uid).toBe('found');
+    await act(() => tree.root.findByType(TextInput).props.onChangeText('  '));
+    await act(async () => {
+      jest.runOnlyPendingTimers();
+    });
+    expect(tree.root.findByType(FlatList).props.data[0].uid).toBe('followed');
+    jest.useRealTimers();
+  });
   const person = (
     uid: string,
     name: string,

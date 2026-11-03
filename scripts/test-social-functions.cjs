@@ -353,6 +353,20 @@ async function call(user, action, data = {}, name = 'socialAction') {
       assert.equal((await call(me,'rankings')).users.every(u=>u.relation===undefined),true);
     });
 
+    await test('public author lookup returns current photo for old posts and never private fields', async () => {
+      await env.withSecurityRulesDisabled(async ctx => {
+        await updateDoc(doc(ctx.firestore(), `users/${a.uid}`), {profile_image:'https://example.test/current-avatar.jpg'});
+      });
+      const result=await call(b,'publicProfiles',{uids:[a.uid,a.uid,'deleted-user']});
+      assert.equal(result.users.length,1);
+      assert.equal(result.users[0].profile_image,'https://example.test/current-avatar.jpg');
+      for(const key of ['phone','email','fcm_token','notification_settings'])assert.equal(result.users[0][key],undefined);
+      await env.withSecurityRulesDisabled(async ctx => {
+        await updateDoc(doc(ctx.firestore(), `users/${a.uid}`), {profile_image:null});
+      });
+      assert.equal((await call(b,'publicProfiles',{uids:[a.uid]})).users[0].profile_image,null);
+      for(const uids of [[],Array(31).fill(a.uid),['../users'],[123]])await assert.rejects(call(b,'publicProfiles',{uids}));
+    });
     console.log(`${passed} backend integration scenarios passed`);
   } finally {await env.cleanup();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

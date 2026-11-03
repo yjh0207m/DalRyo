@@ -152,6 +152,25 @@ export const socialAction = onCall(
         ['chatOpen', 'chatSend', 'chatRead', 'chatBlock'].includes(input.action)
       )
         return await chatAction(uid, input);
+      if (input.action === 'publicProfiles') {
+        if (
+          !Array.isArray(input.uids) ||
+          input.uids.length > 30 ||
+          !input.uids.length
+        )
+          throw new Error('프로필 목록을 확인해 주세요.');
+        const ids = [
+          ...new Set((input.uids as unknown[]).map(id => documentId(id))),
+        ];
+        const people = await db().getAll(
+          ...ids.map(id => db().collection('users').doc(id)),
+        );
+        return {
+          users: people
+            .filter(person => person.exists)
+            .map(person => publicUser(person.id, person.data()!)),
+        };
+      }
       if (input.action === 'search' || input.action === 'rankings') {
         // 검색어가 @로 시작하면 아이디로, 아니면 닉네임으로 찾는다
         const byId =

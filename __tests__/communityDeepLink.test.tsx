@@ -1,4 +1,5 @@
 import React from 'react';
+jest.mock('../src/hooks/usePostAuthor', () => ({ usePostAuthor: jest.fn() }));
 import {
   PanResponder,
   ScrollView,

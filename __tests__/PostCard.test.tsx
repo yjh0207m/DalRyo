@@ -1,5 +1,9 @@
 import React from 'react';
-jest.mock('../src/components/character/CharacterView', () => ({CharacterView: () => null}));
+import { usePostAuthor } from '../src/hooks/usePostAuthor';
+jest.mock('../src/hooks/usePostAuthor', () => ({ usePostAuthor: jest.fn() }));
+jest.mock('../src/components/character/CharacterView', () => ({
+  CharacterView: () => null,
+}));
 import { Image, View as MockView } from 'react-native';
 import Renderer, { act } from 'react-test-renderer';
 import { PostCard } from '../src/screens/community/CommunityScreen';
@@ -58,6 +62,7 @@ const post = {
 let tree: Renderer.ReactTestRenderer;
 beforeEach(() => {
   jest.clearAllMocks();
+  (usePostAuthor as jest.Mock).mockReturnValue(undefined);
   mockAction.mockResolvedValue({});
 });
 afterEach(async () => {
@@ -98,6 +103,38 @@ test('the photo feed preserves real media and profile/comment navigation', async
   expect(mockProfile).toHaveBeenCalledTimes(1);
   expect(mockComments).toHaveBeenCalledTimes(1);
   expect(mockOpen).not.toHaveBeenCalled();
+});
+
+test('old posts use the current author photo, including a removed photo', async () => {
+  (usePostAuthor as jest.Mock).mockReturnValue({
+    display_name: '새 닉네임',
+    profile_image: 'https://example.test/current.jpg',
+  });
+  await render({ ...post, author_image: 'https://example.test/old.jpg' });
+  expect(
+    tree.root.findAllByType(Image).map(image => image.props.source.uri),
+  ).toContain('https://example.test/current.jpg');
+  expect(JSON.stringify(tree.toJSON())).not.toContain(
+    'https://example.test/old.jpg',
+  );
+  await press('새 닉네임 프로필');
+  (usePostAuthor as jest.Mock).mockReturnValue({
+    display_name: '새 닉네임',
+    profile_image: null,
+  });
+  await act(() =>
+    tree.update(
+      <PostCard
+        post={post}
+        onOpen={mockOpen}
+        onComments={mockComments}
+        onProfile={mockProfile}
+      />,
+    ),
+  );
+  expect(
+    tree.root.findAllByType(Image).map(image => image.props.source.uri),
+  ).not.toContain('https://example.test/current.jpg');
 });
 test('the reorganized action row keeps desired-state like and bookmark mutations', async () => {
   await render();

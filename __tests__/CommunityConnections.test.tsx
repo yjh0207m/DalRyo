@@ -1,4 +1,5 @@
 import React from 'react';
+jest.mock('../src/hooks/usePostAuthor', () => ({ usePostAuthor: jest.fn() }));
 import { FlatList, View as MockView } from 'react-native';
 import Renderer, { act } from 'react-test-renderer';
 import { ConnectionsScreen } from '../src/screens/community/ConnectionsScreen';
@@ -27,6 +28,7 @@ jest.mock('../src/services/social.service', () => ({
   myUid: () => 'me',
   socialRequest: (...args: unknown[]) => mockAction(...args),
   socialError: (error: Error) => error.message,
+  watchPostFlags: () => () => {},
 }));
 jest.mock('../src/hooks/useServerFeed', () => ({ useServerFeed: jest.fn() }));
 jest.mock('../src/hooks/useComments', () => ({ useComments: jest.fn() }));
@@ -83,6 +85,54 @@ beforeEach(() => {
 afterEach(async () => {
   await act(() => tree?.unmount());
 });
+
+test.each(['me', 'peer'])(
+  'profile %s switches post layout without losing post navigation',
+  async uid => {
+    const post = {
+      post_id: 'run-post',
+      uid,
+      author_name: '러너',
+      author_image: null,
+      author_tier: 'none',
+      text: '아침 러닝',
+      image_url: null,
+      distance_km: 3,
+      hashtags: [],
+      like_count: 0,
+      comment_count: 0,
+      visibility: 'public',
+      createdAtMs: 1000,
+    };
+    mockAction.mockImplementation(async action =>
+      action === 'profile'
+        ? { profile: { ...person, uid }, following: false, recent_runs: [] }
+        : { posts: [post] },
+    );
+    const open = jest.fn();
+    await act(() => {
+      tree = Renderer.create(
+        <ProfilePage
+          uid={uid}
+          onBack={back}
+          onPost={open}
+          onComments={jest.fn()}
+          onMessage={message}
+        />,
+      );
+    });
+    await act(() => press('게시물 그리드 보기'));
+    expect(
+      tree.root.findByProps({ testID: 'profile-posts-grid' }),
+    ).toBeTruthy();
+    await act(() => press('아침 러닝 게시물 열기'));
+    expect(open).toHaveBeenCalledWith('run-post');
+    await act(() => press('게시물 목록 보기'));
+    expect(
+      tree.root.findAllByProps({ testID: 'profile-posts-grid' }),
+    ).toHaveLength(0);
+  },
+);
 test('following list opens a runner profile or DM directly and changes to followers', async () => {
   await act(async () => {
     tree = Renderer.create(
@@ -210,4 +260,5 @@ test('profile shows a pet and brief runs, and relationship counts navigate to li
     tree.root.findByProps({ label: '메시지 보내기' }).props.onPress(),
   );
   expect(message).toHaveBeenCalledWith('peer');
+  expect(tree.root.findByProps({ testID: 'profile-runs-list' })).toBeTruthy();
 });
