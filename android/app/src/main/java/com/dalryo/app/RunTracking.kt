@@ -94,6 +94,7 @@ object RunJournal {
     return snapshot(context)
   }
   fun gpsStatus(context: Context, value: String) { state?.put("gpsStatus", value); persist(context) }
+  fun isFinished() = state?.optString("phase") == "finished"
   fun location(context: Context, fix: Location) {
     val s = state ?: return
     if (s.getString("phase") != "running" || !fix.hasAccuracy() || fix.accuracy > 25 || fix.accuracy < 0 || !fix.latitude.isFinite() || !fix.longitude.isFinite()) return
@@ -134,7 +135,13 @@ object RunJournal {
       }
       s.getJSONArray("route").put(JSONObject().put("lat", fix.latitude).put("lng", fix.longitude).put("timestamp", fix.time))
     }
-    persist(context)
+    val metadata = s.getJSONObject("context")
+    val goal = metadata.getJSONObject("goal")
+    val goalKm = goal.optDouble("goalValue", 0.0)
+    if (metadata.optString("roomId").isNotEmpty() && goal.optString("goalType") == "distance" &&
+        goalKm > 0 && s.getDouble("distanceKm") >= goalKm) {
+      command(context, metadata.getString("uid"), s.getDouble("startedAtMs"), "finish")
+    } else persist(context)
   }
 }
 
@@ -181,7 +188,12 @@ class RunTrackingService : Service(), LocationListener {
       .setOngoing(true).setOnlyAlertOnce(true).setCategory(NotificationCompat.CATEGORY_SERVICE).build()
   }
   private fun notifyRun() {(getSystemService(NOTIFICATION_SERVICE) as NotificationManager).notify(4107, notification())}
-  override fun onLocationChanged(location: Location) {try {RunJournal.location(this, location)} catch (_: Exception) {stopSelf()}}
+  override fun onLocationChanged(location: Location) {
+    try {
+      RunJournal.location(this, location)
+      if (RunJournal.isFinished()) stopSelf()
+    } catch (_: Exception) { stopSelf() }
+  }
   override fun onProviderDisabled(provider: String) {if (provider == LocationManager.GPS_PROVIDER) RunJournal.gpsStatus(this, "error")}
   override fun onProviderEnabled(provider: String) { }
   @Deprecated("Deprecated by Android") override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) { }
