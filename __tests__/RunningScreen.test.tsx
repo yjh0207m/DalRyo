@@ -45,7 +45,7 @@ const context = {
 } as RunContext;
 const restore = { context, phase: 'running' } as RunSessionSnapshot;
 let tree: Renderer.ReactTestRenderer;
-function screen() {
+function screen(overrides: Partial<React.ComponentProps<typeof RunningScreen>> = {}) {
   return (
     <RunningScreen
       context={context}
@@ -57,6 +57,7 @@ function screen() {
       weightKg={60}
       onFinish={jest.fn()}
       onCancel={jest.fn()}
+      {...overrides}
     />
   );
 }
@@ -126,4 +127,16 @@ test.each([
   await render();
   expect(value('현재 페이스')).toBe('—');
   expect(value('평균 페이스')).toBe('5\'00"');
+});
+
+test('group goal finishes exactly once even if the native tracker already stopped', async () => {
+  const onFinish = jest.fn();
+  const result = {distanceKm: 2};
+  mockSession.finish.mockClear().mockResolvedValueOnce(result);
+  const props = {finishAtGoal: true, goalType: 'distance' as const, goalValue: 2, onFinish};
+  mockSession.phase = 'finished';
+  await act(async () => { tree = Renderer.create(screen(props)); });
+  await act(async () => tree.update(screen(props)));
+  expect(mockSession.finish).toHaveBeenCalledTimes(1);
+  expect(onFinish).toHaveBeenCalledWith(result);
 });

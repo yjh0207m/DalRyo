@@ -68,5 +68,10 @@ export class RunAccumulator {
       if (route.length >= 6000) this.state.route = route.filter((_, index) => index % 2 === 0);
       this.state.route.push({lat: fix.lat, lng: fix.lng, timestamp: fix.timestamp});
     }
+    const {roomId, goal} = this.state.context;
+    if (roomId && goal.goalType === 'distance' && goal.goalValue &&
+        this.state.distanceKm >= goal.goalValue) {
+      this.change('finished', Math.min(fix.timestamp, fix.receivedAt));
+    }
   }
 }

@@ -88,6 +88,13 @@ export function useRunSession({context, restore}: {context: RunContext; restore?
     gpsStatus: (snapshot?.gpsStatus ?? fallbackStatus) as GpsStatus, error, busy, begin,
     pause: () => change('pause'), resume: () => change('resume'),
     cancel: async () => {if (!current.current) return true; return (await change('clear')) === null && current.current === null;},
-    finish: async () => {const final = await change('finish'); return final ? sessionResult(final) : null;},
+    finish: async () => {
+      if (current.current?.phase === 'finished') {
+        stopGPS();
+        return sessionResult(current.current);
+      }
+      const final = await change('finish');
+      return final ? sessionResult(final) : null;
+    },
   };
 }

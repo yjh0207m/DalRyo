@@ -26,7 +26,6 @@ import {useRunRecovery} from '../../hooks/useRunRecovery';
 import {RunRecoveryScreen} from '../run/RunRecoveryScreen';
 import {sessionResult} from '../../utils/runSession';
 import type {RunContext, RunSessionSnapshot} from '../../types/runSession';
-import {publishRoomProgress} from '../../services/room.service';
 import {colors} from '../../theme';
 import type {CharacterDocument, CharacterStage} from '../../types/character.types';
 import type {RunDocument, RunGoalType} from '../../types/run.types';
@@ -169,11 +168,14 @@ export function MainAppScreen({user, character}: Props) {
     }
 
     if (runFlow.phase === 'running') {
+      if (runFlow.restore && runFlow.context.roomId && user) {
+        return <TogetherScreen user={user} character={character} restore={runFlow.restore}
+          onBack={() => closeRunFlow('home')} onPosted={() => closeRunFlow('community')} />;
+      }
       return (
         <RunningScreen
           context={runFlow.context}
           restore={runFlow.restore}
-          onProgress={runFlow.context.roomId ? (km, pace, paused) => {publishRoomProgress(runFlow.context.roomId!, km, pace, paused ? 'paused' : 'active').catch(() => {});} : undefined}
           goalType={runFlow.goal.goalType}
           goalValue={runFlow.goal.goalValue}
           contextLabel={runFlow.goal.parkName}
@@ -209,7 +211,12 @@ export function MainAppScreen({user, character}: Props) {
     const session = recovery.active;
     const flow = {context: session.context, goal: session.context.goal, ...session.context.before};
     return <RunRecoveryScreen session={session} onResume={() => {setRunFlow({phase: 'running', ...flow, restore: session}); recovery.dismiss();}}
-      onSave={finished => saveRun({phase: 'saving', ...flow, result: sessionResult(finished)}, sessionResult(finished))}
+      onSave={finished => {
+        if (finished.context.roomId) {
+          setRunFlow({phase: 'running', ...flow, restore: finished});
+          recovery.dismiss();
+        } else saveRun({phase: 'saving', ...flow, result: sessionResult(finished)}, sessionResult(finished));
+      }}
       onDiscard={() => {recovery.dismiss(); recovery.refresh();}}/>;
   }
 

@@ -81,3 +81,17 @@ test('out-of-order or duplicated late fixes never go backwards or double count',
  run.fix({...fix(37,101500),receivedAt:150000});
  expect(run.state.distanceKm).toBe(km);
 });
+
+test('a group distance goal freezes the record at the first qualifying GPS fix', () => {
+  const snapshot = state();
+  snapshot.context.roomId = 'friend-run';
+  snapshot.context.goal = {goalType: 'distance', goalValue: 0.1};
+  const run = new RunAccumulator(snapshot, false, 100000);
+  run.fix(fix(37, 100000));
+  walk(run, 100000, 60, 3, () => 190000);
+  const finished = run.snapshot(200000);
+  expect(finished.phase).toBe('finished');
+  expect(finished.distanceKm).toBeGreaterThanOrEqual(0.1);
+  expect(finished.distanceKm).toBeLessThan(0.105);
+  expect(finished.elapsedMs).toBe(34000);
+});

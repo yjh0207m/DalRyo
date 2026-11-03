@@ -51,7 +51,12 @@ type Props = {
   onFinish: (result: RunResult) => void;
   onCancel: () => void;
   onProgress?: (km: number, pace: number, paused: boolean) => void;
-  livePanel?: React.ReactNode;
+  renderTrack?: (progress: {
+    km: number;
+    pace: number;
+    running: boolean;
+  }) => React.ReactNode;
+  finishAtGoal?: boolean;
   cancelMessage?: string;
   contextLabel?: string;
 };
@@ -69,7 +74,8 @@ export function RunningScreen({
   onFinish,
   onCancel,
   onProgress,
-  livePanel,
+  renderTrack,
+  finishAtGoal = false,
   cancelMessage,
   contextLabel,
   equipped,
@@ -156,10 +162,28 @@ export function RunningScreen({
     return () => sub.remove();
   }, [confirmCancel]);
 
-  const finish = async () => {
-    const result = await session.finish();
+  const finishRequested = useRef(false);
+  const { finish: finishSession } = session;
+  const finish = useCallback(async () => {
+    if (finishRequested.current) return;
+    finishRequested.current = true;
+    const result = await finishSession();
     if (result) onFinish(result);
-  };
+    else finishRequested.current = false;
+  }, [finishSession, onFinish]);
+  const triedAutoFinish = useRef(false);
+  useEffect(() => {
+    if (
+      !finishAtGoal ||
+      (session.phase !== 'finished' &&
+        (session.phase !== 'running' || progress === null || progress < 1)) ||
+      session.busy ||
+      triedAutoFinish.current
+    )
+      return;
+    triedAutoFinish.current = true;
+    finish();
+  }, [finishAtGoal, progress, session.phase, session.busy, finish]);
 
   const characterSize = Math.min(
     CHARACTER_SIZE,
@@ -251,7 +275,9 @@ export function RunningScreen({
             <View style={styles.cardHeading}>
               <AppText variant="caption" color={colors.textMuted}>
                 {progress >= 1
-                  ? '목표 달성! 더 달려도 좋아요'
+                  ? finishAtGoal
+                    ? '목표 달성!'
+                    : '목표 달성! 더 달려도 좋아요'
                   : '목표까지 한 걸음씩'}
               </AppText>
               <AppText variant="label" color={colors.primaryInk}>
@@ -262,7 +288,6 @@ export function RunningScreen({
           </View>
         )}
       </Card>
-      {livePanel}
       {!!session.error && (
         <View style={styles.sessionError}>
           <AppText color={colors.danger} accessibilityRole="alert">
@@ -275,51 +300,59 @@ export function RunningScreen({
           )}
         </View>
       )}
-      <View
-        style={styles.ground}
-        onLayout={event => setWorldHeight(event.nativeEvent.layout.height)}
-      >
-        {worldHeight > 0 && (
-          <RunningWorld
-            speedKmh={session.phase === 'running' ? session.speedKmh : 0}
-            height={worldHeight}
-            groundTop={0.73}
-            cloudsTop={0.08}
-            style={StyleSheet.absoluteFill}
-          >
-            <View
-              style={[
-                styles.character,
-                {
-                  width: characterSize,
-                  height: characterSize,
-                  marginTop: -characterSize * 0.82,
-                },
-              ]}
+      {renderTrack ? (
+        renderTrack({
+          km: session.distanceKm,
+          pace: paceSec,
+          running: session.phase === 'running',
+        })
+      ) : (
+        <View
+          style={styles.ground}
+          onLayout={event => setWorldHeight(event.nativeEvent.layout.height)}
+        >
+          {worldHeight > 0 && (
+            <RunningWorld
+              speedKmh={session.phase === 'running' ? session.speedKmh : 0}
+              height={worldHeight}
+              groundTop={0.73}
+              cloudsTop={0.08}
+              style={StyleSheet.absoluteFill}
             >
-              <CharacterView
-                type={characterType}
-                stage={characterStage}
-                motion={motion}
-                equipped={equipped}
-                size={characterSize}
-                dust={session.phase === 'running'}
-              />
-              {cheer && (
-                <SpeechBubble
-                  text={cheer}
-                  style={{ bottom: characterSize * 0.98 }}
+              <View
+                style={[
+                  styles.character,
+                  {
+                    width: characterSize,
+                    height: characterSize,
+                    marginTop: -characterSize * 0.82,
+                  },
+                ]}
+              >
+                <CharacterView
+                  type={characterType}
+                  stage={characterStage}
+                  motion={motion}
+                  equipped={equipped}
+                  size={characterSize}
+                  dust={session.phase === 'running'}
                 />
-              )}
+                {cheer && (
+                  <SpeechBubble
+                    text={cheer}
+                    style={{ bottom: characterSize * 0.98 }}
+                  />
+                )}
+              </View>
+            </RunningWorld>
+          )}
+          {worldHeight >= 190 && (
+            <View pointerEvents="none" style={styles.sceneCaption}>
+              <FootstepLabel paused={paused} />
             </View>
-          </RunningWorld>
-        )}
-        {worldHeight >= 190 && (
-          <View pointerEvents="none" style={styles.sceneCaption}>
-            <FootstepLabel paused={paused} />
-          </View>
-        )}
-      </View>
+          )}
+        </View>
+      )}
       <View style={[styles.controlDock, { paddingBottom: insets.bottom + 16 }]}>
         <View style={styles.dockStatus}>
           {session.gpsStatus === 'denied' || session.gpsStatus === 'error' ? (

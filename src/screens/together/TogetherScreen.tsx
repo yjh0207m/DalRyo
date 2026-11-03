@@ -26,7 +26,8 @@ import {
 } from '../../services/room.service';
 import { myUid, socialError } from '../../services/social.service';
 import {queueRun, uploadPendingRun} from '../../services/runOutbox.service';
-import type {RunContext} from '../../types/runSession';
+import type {RunContext, RunSessionSnapshot} from '../../types/runSession';
+import { TogetherTrack } from './TogetherTrack';
 import { RunningScreen } from '../run/RunningScreen';
 import { CompletedRunScreen } from '../run/CompletedRunScreen';
 import type {RunStartSnapshot} from '../../utils/runCompletion';
@@ -34,7 +35,7 @@ import type {RunDocument} from '../../types/run.types';
 import type { RunResult } from '../../hooks/useRunSession';
 import type { CharacterDocument } from '../../types/character.types';
 import type { UserDocument } from '../../types/user.types';
-import { formatPace } from '../../utils/pace';
+import { calculateAveragePace, formatDuration, formatPace } from '../../utils/pace';
 import { colors, spacing } from '../../theme';
 type Props = {
   user: UserDocument;
@@ -44,6 +45,7 @@ type Props = {
   onPosted?: () => void;
   // 친구 프로필에서 '같이 달리기 요청'으로 들어오면 그 친구를 미리 골라 둔다
   initialFriendUid?: string;
+  restore?: RunSessionSnapshot;
 };
 export function TogetherScreen({
   user,
@@ -51,8 +53,9 @@ export function TogetherScreen({
   onBack,
   onPosted,
   initialFriendUid,
+  restore,
 }: Props) {
-  const [roomId, setRoomId] = useState<string | null>(null);
+  const [roomId, setRoomId] = useState<string | null>(restore?.context.roomId ?? null);
   const [room, setRoom] = useState<TogetherRoom | null>(null);
   const [members, setMembers] = useState<RoomMember[]>([]);
   const [friends, setFriends] = useState<RoomFriend[]>([]);
@@ -69,12 +72,12 @@ export function TogetherScreen({
   const [revision, setRevision] = useState(0);
   const [title, setTitle] = useState('같이 달료!');
   const [goal, setGoal] = useState('5');
-  const [running, setRunning] = useState(false);
+  const [running, setRunning] = useState(!!restore);
   const [result, setResult] = useState<RunResult | null>(null);
-  const [complete, setComplete] = useState(false);
+  const [showRecord, setShowRecord] = useState(false);
   const [savedRun, setSavedRun] = useState<RunDocument|null>(null);
-  const sessionContext = useRef<RunContext | null>(null);
-  const startSnapshot = useRef<RunStartSnapshot>({stageBefore: character.stage, totalKmBefore:user.total_km,wasFrozen:user.is_frozen});
+  const sessionContext = useRef<RunContext | null>(restore?.context ?? null);
+  const startSnapshot = useRef<RunStartSnapshot>(restore?.context.before ?? {stageBefore: character.stage, totalKmBefore:user.total_km,wasFrozen:user.is_frozen});
   const [syncError, setSyncError] = useState(false);
   const operation = useRef(false),
     publishing = useRef(false),
@@ -98,7 +101,7 @@ export function TogetherScreen({
         if (active) {
           setFriends(friendList.friends);
           setInvites(inviteList.invites);
-          if (current) setRoomId(current);
+          if (current && !restore) setRoomId(current);
           setStatus('success');
         }
       })
@@ -111,7 +114,7 @@ export function TogetherScreen({
     return () => {
       active = false;
     };
-  }, [revision]);
+  }, [revision, restore]);
   useEffect(() => {
     if (!roomId) {
       setRoom(null);
@@ -193,14 +196,21 @@ export function TogetherScreen({
   const back = useCallback(() => {
     if (!operation.current) onBack();
   }, [onBack]);
+  const visibleMembers = members.filter(member => member.state !== 'left');
+  const activeGoal = sessionContext.current?.goal.goalValue ?? null;
+  const friendsRunning = room?.status === 'running' && visibleMembers.some(
+    member => member.uid !== user.uid && (member.state === 'active' || member.state === 'paused'),
+  );
+  const reachedGoal = !!result && !!activeGoal && result.distanceKm >= activeGoal;
+  const keepTrack = !!activeGoal && (reachedGoal || friendsRunning);
   useEffect(() => {
-    if (running || result) return;
+    if (running || (result && (showRecord || !keepTrack))) return;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       back();
       return true;
     });
     return () => sub.remove();
-  }, [back, running, result]);
+  }, [back, running, result, keepTrack, showRecord]);
   const save = async (value: RunResult) => {
     if (operation.current || !roomId) return;
     operation.current = true;
@@ -213,7 +223,6 @@ export function TogetherScreen({
       const id = await queueRun(sessionContext.current, value);
       const run = await uploadPendingRun(user.uid, id);
       if (mounted.current) setSavedRun(run);
-      if (mounted.current) setComplete(true);
     } catch (e) {
       if (mounted.current) setError(socialError(e));
     } finally {
@@ -221,10 +230,71 @@ export function TogetherScreen({
       if (mounted.current) setBusy(false);
     }
   };
-  const visibleMembers = members.filter(m => m.state !== 'left');
   if (result) {
-    if (complete && savedRun)
-      return <CompletedRunScreen run={savedRun} before={startSnapshot.current} character={character} onPosted={onPosted} onClose={() => {setResult(null);setComplete(false);setSavedRun(null);}}/>;
+    if (savedRun && (showRecord || !keepTrack)) {
+      return (
+        <CompletedRunScreen
+          run={savedRun}
+          before={startSnapshot.current}
+          character={character}
+          onPosted={onPosted}
+          onClose={() => {
+            setShowRecord(false);
+            if (!friendsRunning) {
+              if (restore) {
+                onBack();
+                return;
+              }
+              setResult(null);
+              setSavedRun(null);
+            }
+          }}
+        />
+      );
+    }
+    if (activeGoal && keepTrack) {
+      const average = calculateAveragePace(result.durationSec, result.distanceKm);
+      return (
+        <SafeAreaView style={styles.spectator}>
+          <StatusBar barStyle="dark-content" backgroundColor={colors.sky} />
+          <View style={styles.spectatorHeader}>
+            <IconButton icon={ChevronLeft} variant="plain" accessibilityLabel="뒤로" disabled={busy} onPress={back} />
+            <AppText variant="heading">같이 달리기</AppText>
+          </View>
+          <Card style={styles.gap}>
+            <AppText variant="subheading" color={colors.primaryInk}>
+              {reachedGoal ? '완주했어요!' : '내 달리기를 마쳤어요'}
+            </AppText>
+            <AppText variant="heading">{result.distanceKm.toFixed(2)} km</AppText>
+            <View style={styles.spectatorStats}>
+              {[
+                ['시간', formatDuration(result.durationSec)],
+                ['현재 페이스', '—'],
+                ['평균 페이스', average ? formatPace(average) : '—'],
+                ['칼로리', String(result.calories)],
+              ].map(([label, value]) => (
+                <View key={label} style={styles.spectatorStat}>
+                  <AppText variant="caption" align="center" color={colors.textMuted}>{label}</AppText>
+                  <AppText variant="subheading" align="center">{value}</AppText>
+                </View>
+              ))}
+            </View>
+          </Card>
+          <TogetherTrack members={visibleMembers} uid={user.uid} character={character}
+            goalKm={activeGoal} syncError={status === 'error'}
+            own={{ current_km: result.distanceKm, pace_sec: average, state: 'finished' }} />
+          <AppText variant="caption" align="center" color={colors.textMuted}>
+            {friendsRunning ? '친구의 달리기를 보고 있어요' : room ? '같이 달리기가 끝났어요' : '방 상태를 확인하고 있어요'}
+          </AppText>
+          {error && <AppText variant="caption" color={colors.danger}>{error}</AppText>}
+          <Button
+            label={busy ? '기록 저장 중…' : savedRun ? '내 기록 보기' : '다시 저장'}
+            disabled={busy}
+            onPress={() => savedRun ? setShowRecord(true) : save(result)}
+          />
+        </SafeAreaView>
+      );
+    }
     return (
       <SafeAreaView style={styles.center}>
         <StatusBar
@@ -247,12 +317,13 @@ export function TogetherScreen({
       </SafeAreaView>
     );
   }
-  if (running && room)
+  if (running && sessionContext.current && activeGoal)
     return (
       <RunningScreen
-        context={sessionContext.current!}
+        context={sessionContext.current}
+        restore={restore}
         goalType="distance"
-        goalValue={room.goal_km}
+        goalValue={activeGoal}
         characterType={character.character_type}
         characterStage={startSnapshot.current.stageBefore}
         equipped={character.equipped}
@@ -262,23 +333,16 @@ export function TogetherScreen({
         onCancel={() => {
           setRunning(false);
           action('leave');
+          if (restore) onBack();
         }}
         onProgress={progress}
-        livePanel={
-          <View style={styles.live}>
-            <AppText variant="label">
-              실시간 순위 ·{' '}
-              {syncError ? '연결을 확인해 주세요' : '5초마다 갱신'}
-            </AppText>
-            {visibleMembers.slice(0, 3).map((m, i) => (
-              <AppText key={m.uid} variant="caption">
-                {i + 1}. {m.uid === user.uid ? '나' : m.display_name} ·{' '}
-                {m.current_km.toFixed(2)} km ·{' '}
-                {m.pace_sec ? formatPace(m.pace_sec) : '—'} /km
-              </AppText>
-            ))}
-          </View>
-        }
+        finishAtGoal
+        contextLabel="같이 달리기"
+        renderTrack={({ km, pace, running: moving }) => (
+          <TogetherTrack members={visibleMembers} uid={user.uid} character={character}
+            goalKm={activeGoal} syncError={syncError || status === 'error'}
+            own={{ current_km: km, pace_sec: pace, state: moving ? 'active' : 'paused' }} />
+        )}
       />
     );
   const me = members.find(m => m.uid === myUid());
@@ -620,7 +684,10 @@ const styles = StyleSheet.create({
   },
   checkOn: { backgroundColor: colors.primary, borderColor: colors.primary },
   gap: { gap: 10 },
-  live: { padding: 12, gap: 4, backgroundColor: colors.primarySoft },
+  spectator: { flex: 1, backgroundColor: colors.sky, paddingHorizontal: 16, paddingBottom: 12, gap: 10 },
+  spectatorHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  spectatorStats: { flexDirection: 'row', gap: 4 },
+  spectatorStat: { flex: 1, gap: 4 },
   center: {
     flex: 1,
     backgroundColor: colors.background,
