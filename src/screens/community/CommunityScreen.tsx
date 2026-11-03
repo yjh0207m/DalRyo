@@ -33,6 +33,8 @@ import {
   UserRound,
   Users,
   X,
+  LayoutGrid,
+  List,
 } from 'lucide-react-native';
 import {
   AppText,
@@ -61,6 +63,7 @@ import {
 } from '../../navigation/BottomTabBar';
 import { colors, fonts, radius, spacing } from '../../theme';
 import { useServerFeed } from '../../hooks/useServerFeed';
+import { usePostAuthor } from '../../hooks/usePostAuthor';
 import { choosePhoto, uploadPhoto } from '../../services/media.service';
 import { runInBackground } from '../../services/backgroundTask.service';
 import { fetchRecentRuns } from '../../services/run.service';
@@ -645,6 +648,9 @@ export function PostCard({
   detail?: boolean;
 }) {
   const [flags, setFlags] = useState({ liked: false, saved: false });
+  const author = usePostAuthor(post.uid, post);
+  const authorName = author?.display_name ?? post.author_name;
+  const authorImage = author ? author.profile_image : post.author_image;
   // 요청이 끝나기 전에 연타해도 서버에 엇갈린 값이 가지 않도록 종류별로 하나만 보낸다
   const inFlight = useRef({ like: false, bookmark: false });
   useEffect(
@@ -702,12 +708,12 @@ export function PostCard({
   const own = post.uid === myUid();
   const sharePost = () =>
     Share.share({
-      message: `달료 · ${post.author_name}\n${post.text}${
+      message: `달료 · ${authorName}\n${post.text}${
         post.run_id ? `\n${post.distance_km?.toFixed(2)}km` : ''
       }`,
     }).catch(errorAlert);
   const menu = () =>
-    Alert.alert('게시물', post.author_name, [
+    Alert.alert('게시물', authorName, [
       { text: '게시물 보기', onPress: onOpen },
       { text: '프로필 보기', onPress: onProfile },
       { text: '취소', style: 'cancel' },
@@ -724,14 +730,14 @@ export function PostCard({
       <View style={styles.postHeader}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`${post.author_name} 프로필`}
+          accessibilityLabel={`${authorName} 프로필`}
           onPress={onProfile}
           style={styles.author}
         >
-          <Avatar uri={post.author_image} size={36} />
+          <Avatar uri={authorImage} size={36} />
           <View style={styles.grow}>
             <AppText variant="subheading" numberOfLines={1}>
-              {post.author_name}
+              {authorName}
             </AppText>
             <AppText variant="label" color={colors.textMuted}>
               {post.run_id
@@ -880,7 +886,7 @@ export function PostCard({
               numberOfLines={detail ? undefined : 3}
               selectable={detail}
             >
-              <AppText variant="subheading">{post.author_name} </AppText>
+              <AppText variant="subheading">{authorName} </AppText>
               {post.text}
             </AppText>
           </Pressable>
@@ -1357,6 +1363,43 @@ function PeoplePage({
     </Page>
   );
 }
+function ProfileViewSwitch({
+  value,
+  onChange,
+  label,
+}: {
+  value: 'list' | 'grid';
+  onChange: (value: 'list' | 'grid') => void;
+  label: string;
+}) {
+  return (
+    <View style={styles.profileViewSwitch}>
+      {(['list', 'grid'] as const).map(mode => {
+        const Icon = mode === 'list' ? List : LayoutGrid;
+        return (
+          <Pressable
+            key={mode}
+            accessibilityRole="button"
+            accessibilityLabel={`${label} ${
+              mode === 'list' ? '목록' : '그리드'
+            } 보기`}
+            accessibilityState={{ selected: value === mode }}
+            onPress={() => onChange(mode)}
+            style={[
+              styles.profileViewButton,
+              value === mode && styles.profileViewSelected,
+            ]}
+          >
+            <Icon
+              size={19}
+              color={value === mode ? colors.primaryInk : colors.textMuted}
+            />
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
 export function ProfilePage({
   uid,
   bottomInset = 0,
@@ -1379,6 +1422,8 @@ export function ProfilePage({
 }) {
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [runner, setRunner] = useState<RunnerProfile | null>(null);
+  const [runView, setRunView] = useState<'list' | 'grid'>('list');
+  const [postView, setPostView] = useState<'list' | 'grid'>('list');
   const [following, setFollowing] = useState(false);
   const [friend, setFriend] = useState(false);
   const [posts, setPosts] = useState<SocialPost[]>([]);
@@ -1560,7 +1605,14 @@ export function ProfilePage({
                   </Card>
                 )}
               <Card style={styles.runnerRecords}>
-                <AppText variant="subheading">러닝 발자국</AppText>
+                <View style={styles.profileSectionHeader}>
+                  <AppText variant="subheading">러닝 발자국</AppText>
+                  <ProfileViewSwitch
+                    label="최근 러닝"
+                    value={runView}
+                    onChange={setRunView}
+                  />
+                </View>
                 <View style={styles.runnerStats}>
                   <View>
                     <AppText variant="heading">
@@ -1575,30 +1627,93 @@ export function ProfilePage({
                     <AppText variant="caption">완료한 러닝</AppText>
                   </View>
                 </View>
-                {(runner?.recent_runs ?? []).map((run, index) => (
-                  <View key={index} style={styles.runnerRecordRow}>
-                    <AppText variant="caption" color={colors.textMuted}>
-                      {run.day}
-                    </AppText>
-                    <AppText variant="caption">
-                      {run.distance_km.toFixed(2)}km ·{' '}
-                      {formatDuration(run.duration_sec)} ·{' '}
-                      {run.avg_pace_sec ? formatPace(run.avg_pace_sec) : '—'}
-                    </AppText>
-                  </View>
-                ))}
+                <View
+                  testID={`profile-runs-${runView}`}
+                  style={runView === 'grid' ? styles.profileGrid : undefined}
+                >
+                  {(runner?.recent_runs ?? []).map((run, index) => (
+                    <View
+                      key={index}
+                      style={
+                        runView === 'grid'
+                          ? styles.runnerRecordTile
+                          : styles.runnerRecordRow
+                      }
+                    >
+                      <AppText variant="caption" color={colors.textMuted}>
+                        {run.day}
+                      </AppText>
+                      <AppText
+                        variant={runView === 'grid' ? 'subheading' : 'caption'}
+                      >
+                        {run.distance_km.toFixed(2)}km
+                      </AppText>
+                      <AppText variant="caption" color={colors.textMuted}>
+                        {formatDuration(run.duration_sec)} ·{' '}
+                        {run.avg_pace_sec ? formatPace(run.avg_pace_sec) : '—'}
+                      </AppText>
+                    </View>
+                  ))}
+                </View>
                 {!runner?.recent_runs?.length && (
                   <AppText color={colors.textMuted}>
                     아직 완료한 러닝이 없어요.
                   </AppText>
                 )}
               </Card>
-              <AppText variant="subheading">최근 게시물</AppText>
+              <View style={styles.profileSectionHeader}>
+                <AppText variant="subheading">최근 게시물</AppText>
+                <ProfileViewSwitch
+                  label="게시물"
+                  value={postView}
+                  onChange={setPostView}
+                />
+              </View>
               {posts.length === 0 ? (
                 <Empty
                   title="공개된 글이 없어요"
                   detail="볼 수 있는 최근 게시물이 없습니다."
                 />
+              ) : postView === 'grid' ? (
+                <View testID="profile-posts-grid" style={styles.profileGrid}>
+                  {posts.map(post => (
+                    <Pressable
+                      key={post.post_id}
+                      onPress={() => onPost(post.post_id)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${
+                        post.text || '러닝 기록'
+                      } 게시물 열기`}
+                      style={styles.profilePostTile}
+                    >
+                      {post.image_url ? (
+                        <Image
+                          source={{ uri: post.image_url }}
+                          style={styles.profilePostImage}
+                        />
+                      ) : (
+                        <View style={styles.profilePostPlaceholder}>
+                          <Footprints size={28} color={colors.primaryInk} />
+                          {post.distance_km != null && (
+                            <AppText variant="subheading">
+                              {post.distance_km.toFixed(2)} km
+                            </AppText>
+                          )}
+                        </View>
+                      )}
+                      <View style={styles.profilePostCaption}>
+                        <AppText variant="caption" numberOfLines={2}>
+                          {post.text || '오늘의 러닝'}
+                        </AppText>
+                        <AppText variant="label" color={colors.textMuted}>
+                          {new Date(post.createdAtMs).toLocaleDateString(
+                            'ko-KR',
+                          )}
+                        </AppText>
+                      </View>
+                    </Pressable>
+                  ))}
+                </View>
               ) : (
                 posts.map(post => (
                   <PostCard
@@ -1704,6 +1819,54 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   runnerRecords: { gap: 14 },
+  profileSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  profileViewSwitch: {
+    flexDirection: 'row',
+    gap: 2,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 12,
+    padding: 2,
+  },
+  profileViewButton: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+  },
+  profileViewSelected: { backgroundColor: colors.primarySoft },
+  profileGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  runnerRecordTile: {
+    width: '48%',
+    flexGrow: 0,
+    padding: 12,
+    gap: 8,
+    borderRadius: 14,
+    backgroundColor: colors.primarySoft,
+  },
+  profilePostTile: {
+    width: '48%',
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  profilePostImage: { width: '100%', aspectRatio: 1 },
+  profilePostPlaceholder: {
+    width: '100%',
+    aspectRatio: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: colors.primarySoft,
+  },
+  profilePostCaption: { padding: 10, gap: 6 },
   runnerStats: { flexDirection: 'row', justifyContent: 'space-between' },
   runnerRecordRow: {
     flexDirection: 'row',

@@ -23,6 +23,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { usePostAuthor } from '../../hooks/usePostAuthor';
 import {
   ArrowUp,
   ChevronLeft,
@@ -344,7 +345,7 @@ export function ChatScreen({
                 onPress={() => setRoomId(item.id)}
                 style={s.roomRow}
               >
-                <Avatar profile={item.profiles[peer]} />
+                <ConversationAvatar room={item} uid={peer} />
                 <View style={s.grow}>
                   <AppText variant="subheading" numberOfLines={1}>
                     {item.profiles[peer]?.display_name ?? '러너'}
@@ -404,6 +405,17 @@ export function byRelation(users: PublicProfile[]) {
     .map(item => item.user);
 }
 
+function ConversationAvatar({
+  room,
+  uid,
+}: {
+  room: Conversation;
+  uid: string;
+}) {
+  const current = usePostAuthor(uid, room);
+  return <Avatar profile={current ?? room.profiles[uid]} />;
+}
+
 function NewChat({
   onBack,
   onSelect,
@@ -418,36 +430,85 @@ function NewChat({
     [loading, setLoading] = useState(false),
     [error, setError] = useState('');
   const request = useRef(0);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [revision, setRevision] = useState(0);
+  const paging = useRef(false);
   useEffect(() => {
     const version = ++request.current;
     setPeople([]);
     setError('');
-    if (!query.trim()) {
-      setLoading(false);
-      return undefined;
-    }
+    setNextCursor(null);
+    setLoadingMore(false);
+    paging.current = false;
     setLoading(true);
     let live = true;
-    const timer = setTimeout(() => {
-      socialRequest<{ users: PublicProfile[] }>('search', {
-        query: query.trim(),
-      })
-        .then(result => {
-          if (live && version === request.current)
-            setPeople(byRelation(result.users.filter(p => p.uid !== myUid())));
-        })
-        .catch(e => {
-          if (live && version === request.current) setError(chatError(e));
-        })
-        .finally(() => {
-          if (live && version === request.current) setLoading(false);
-        });
-    }, 300);
+    const timer = setTimeout(
+      () => {
+        const searching = !!query.trim();
+        socialRequest<{ users: PublicProfile[]; cursor?: string | null }>(
+          searching ? 'search' : 'connections',
+          searching
+            ? { query: query.trim() }
+            : { uid: myUid(), kind: 'following' },
+        )
+          .then(result => {
+            if (live && version === request.current) {
+              setPeople(
+                byRelation(result.users.filter(p => p.uid !== myUid())),
+              );
+              setNextCursor(searching ? null : result.cursor ?? null);
+            }
+          })
+          .catch(e => {
+            if (live && version === request.current) setError(chatError(e));
+          })
+          .finally(() => {
+            if (live && version === request.current) setLoading(false);
+          });
+      },
+      query.trim() ? 300 : 0,
+    );
     return () => {
       live = false;
+      request.current = version + 1;
       clearTimeout(timer);
     };
-  }, [query]);
+  }, [query, revision]);
+  const loadMore = async () => {
+    if (!nextCursor || paging.current || query.trim()) return;
+    const version = request.current;
+    paging.current = true;
+    setLoadingMore(true);
+    setError('');
+    try {
+      const page = await socialRequest<{
+        users: PublicProfile[];
+        cursor: string | null;
+      }>('connections', {
+        uid: myUid(),
+        kind: 'following',
+        cursor: nextCursor,
+      });
+      if (version !== request.current) return;
+      setPeople(old => [
+        ...new Map(
+          [...old, ...page.users.filter(p => p.uid !== myUid())].map(p => [
+            p.uid,
+            p,
+          ]),
+        ).values(),
+      ]);
+      setNextCursor(page.cursor);
+    } catch (e) {
+      if (version === request.current) setError(chatError(e));
+    } finally {
+      if (version === request.current) {
+        paging.current = false;
+        setLoadingMore(false);
+      }
+    }
+  };
   return (
     <SafeAreaView style={s.screen}>
       <Header title="새 대화" onBack={onBack} />
@@ -459,7 +520,6 @@ function NewChat({
       <View style={s.search}>
         <Search size={20} color={colors.textMuted} />
         <TextInput
-          autoFocus
           value={query}
           onChangeText={setQuery}
           maxLength={21}
@@ -469,6 +529,9 @@ function NewChat({
           accessibilityLabel="대화 상대 검색"
         />
       </View>
+      <AppText variant="label" color={colors.textMuted} style={s.notice}>
+        {query.trim() ? '검색 결과' : '내가 팔로우하는 러너'}
+      </AppText>
       {loading ? (
         <ActivityIndicator color={colors.primary} />
       ) : (
@@ -480,10 +543,31 @@ function NewChat({
           ListEmptyComponent={
             <AppText align="center" color={colors.textMuted}>
               {error ||
-                (query
+                (query.trim()
                   ? '검색 결과가 없어요.'
-                  : '대화할 러너의 닉네임을 입력해 주세요.')}
+                  : '아직 팔로우한 러너가 없어요. 닉네임으로 검색해 보세요.')}
             </AppText>
+          }
+          ListFooterComponent={
+            <View>
+              {!!error && people.length > 0 && (
+                <AppText color={colors.danger}>{error}</AppText>
+              )}
+              {nextCursor ? (
+                <Button
+                  label={loadingMore ? '불러오는 중…' : '더 보기'}
+                  disabled={loadingMore}
+                  onPress={loadMore}
+                  variant="secondary"
+                />
+              ) : error ? (
+                <Button
+                  label="다시 시도"
+                  onPress={() => setRevision(v => v + 1)}
+                  variant="secondary"
+                />
+              ) : null}
+            </View>
           }
           renderItem={({ item }) => (
             <Pressable
@@ -544,16 +628,28 @@ export function ConversationView({
   const [atLatest, setAtLatest] = useState(true);
   const atLatestRef = useRef(true);
   const initialScroll = useRef(true);
+  const pinToLatest = useRef(true);
+  const scrollFrame = useRef<number | null>(null);
   const cursor = useRef<ChatCursor | null>(null),
     pending = useRef<{ id: string; text: string } | null>(null),
     sending = useRef(false),
     readRequest = useRef(''),
     list = useRef<FlatList<ChatMessage>>(null),
     alive = useRef(true);
+  const scrollToLatest = useCallback(() => {
+    if (scrollFrame.current !== null) cancelAnimationFrame(scrollFrame.current);
+    scrollFrame.current = requestAnimationFrame(() => {
+      scrollFrame.current = null;
+      if (alive.current && pinToLatest.current)
+        list.current?.scrollToEnd({ animated: false });
+    });
+  }, []);
   useEffect(() => {
     alive.current = true;
     return () => {
       alive.current = false;
+      if (scrollFrame.current !== null)
+        cancelAnimationFrame(scrollFrame.current);
     };
   }, []);
   useEffect(() => {
@@ -563,9 +659,13 @@ export function ConversationView({
     return () => sub.remove();
   }, []);
   useEffect(() => {
-    const show = Keyboard.addListener('keyboardDidShow', event =>
-      setKeyboardHeight(event.endCoordinates.height),
-    );
+    const show = Keyboard.addListener('keyboardDidShow', event => {
+      pinToLatest.current = true;
+      atLatestRef.current = true;
+      setAtLatest(true);
+      setKeyboardHeight(event.endCoordinates.height);
+      scrollToLatest();
+    });
     const hide = Keyboard.addListener('keyboardDidHide', () =>
       setKeyboardHeight(0),
     );
@@ -573,13 +673,10 @@ export function ConversationView({
       show.remove();
       hide.remove();
     };
-  }, []);
+  }, [scrollToLatest]);
   useEffect(() => {
-    if (atLatestRef.current)
-      requestAnimationFrame(() =>
-        list.current?.scrollToEnd({ animated: false }),
-      );
-  }, [keyboardInset]);
+    if (pinToLatest.current) scrollToLatest();
+  }, [keyboardInset, keyboardHeight, windowHeight, scrollToLatest]);
   useEffect(() => {
     setError('');
     setLoading(true);
@@ -633,9 +730,10 @@ export function ConversationView({
       readRequest.current = '';
     });
   }, [room, uid, id, newest, foreground, atLatest]);
-  const peer = room?.members.find(member => member !== uid),
-    profile = peer ? room?.profiles[peer] : undefined,
-    blocked = !!room?.blocked_by.length;
+  const peer = room?.members.find(member => member !== uid);
+  const currentProfile = usePostAuthor(peer, room);
+  const profile = currentProfile ?? (peer ? room?.profiles[peer] : undefined);
+  const blocked = !!room?.blocked_by.length;
   const send = async () => {
     const value = body.trim();
     if (!value || sending.current || blocked || !room || loading || error)
@@ -651,11 +749,12 @@ export function ConversationView({
     try {
       await sendMessage(id, attempt.id, value);
       if (alive.current) {
-        setBody('');
+        setBody(current => (current.trim() === value ? '' : current));
         pending.current = null;
+        pinToLatest.current = true;
         atLatestRef.current = true;
         setAtLatest(true);
-        list.current?.scrollToEnd({ animated: true });
+        scrollToLatest();
       }
     } catch (e) {
       if (alive.current) setSendError(chatError(e));
@@ -668,6 +767,7 @@ export function ConversationView({
     if (!cursor.current || loadingMore) return;
     setLoadingMore(true);
     historyLoaded.current = true;
+    pinToLatest.current = false;
     atLatestRef.current = false;
     setAtLatest(false);
     try {
@@ -748,13 +848,19 @@ export function ConversationView({
           ) : (
             <FlatList
               ref={list}
+              onLayout={scrollToLatest}
+              onScrollBeginDrag={() => {
+                pinToLatest.current = false;
+              }}
               onScroll={event => {
+                if (pinToLatest.current) return;
                 const { contentOffset, layoutMeasurement, contentSize } =
                   event.nativeEvent;
                 const latest =
                   contentOffset.y + layoutMeasurement.height >=
                   contentSize.height - 60;
                 atLatestRef.current = latest;
+                if (latest) pinToLatest.current = true;
                 setAtLatest(latest);
               }}
               scrollEventThrottle={150}
@@ -762,13 +868,15 @@ export function ConversationView({
               onContentSizeChange={() => {
                 if (initialScroll.current || atLatestRef.current) {
                   initialScroll.current = false;
-                  list.current?.scrollToEnd({ animated: false });
+                  scrollToLatest();
                 }
               }}
               keyExtractor={m => m.id}
               contentContainerStyle={s.messageList}
               keyboardShouldPersistTaps="handled"
-              maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+              maintainVisibleContentPosition={
+                atLatest ? undefined : { minIndexForVisible: 0 }
+              }
               ListHeaderComponent={
                 more ? (
                   <Button
@@ -864,7 +972,7 @@ export function ConversationView({
               multiline
               maxLength={2000}
               value={body}
-              editable={!busy && !blocked && !error}
+              editable={!blocked && !error}
               onChangeText={setBody}
               placeholder={
                 blocked ? '메시지를 보낼 수 없어요' : '메시지 보내기…'
