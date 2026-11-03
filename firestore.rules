@@ -17,9 +17,13 @@ service cloud.firestore {
       return d is map && d.keys().hasOnly(['push','growth','social','stone']) && d.keys().hasAll(['push','growth','social','stone'])
         && d.push is bool && d.growth is bool && d.social is bool && d.stone is bool;
     }
+    function validPrivacy(d) {
+      return d is map && d.keys().hasOnly(['runs_public','connections_public'])
+        && d.get('runs_public',true) is bool && d.get('connections_public',true) is bool;
+    }
     function validUser(d) {
       return d.keys().hasAll(['uid','display_name','pet_name','region','dialect','total_km','total_exp','is_frozen','follower_count','following_count','influencer_tier','created_at','updated_at'])
-        && d.keys().hasOnly(['uid','email','phone','display_name','user_id','pet_name','profile_image','website','height_cm','weight_kg','gender','region','total_km','total_exp','last_run_at','is_frozen','influencer_tier','follower_count','following_count','dialect','fcm_token','notification_settings','created_at','updated_at'])
+        && d.keys().hasOnly(['uid','email','phone','display_name','user_id','pet_name','profile_image','website','height_cm','weight_kg','gender','region','total_km','total_exp','last_run_at','is_frozen','influencer_tier','follower_count','following_count','dialect','fcm_token','notification_settings','privacy','created_at','updated_at'])
         && d.uid is string && validName(d.display_name) && validName(d.pet_name)
         && (!('user_id' in d) || (d.user_id is string && d.user_id.matches('^[a-z0-9_]{4,20}$')))
         && nullableString(d.get('email',null),320) && nullableString(d.get('phone',null),30)
@@ -36,6 +40,7 @@ service cloud.firestore {
         && (d.get('last_run_at',null) == null || d.last_run_at is timestamp)
         && nullableString(d.get('fcm_token',null),4096)
         && (!('notification_settings' in d) || validPreferences(d.notification_settings))
+        && (!('privacy' in d) || validPrivacy(d.privacy))
         && d.created_at is timestamp && d.updated_at is timestamp;
     }
     function validCharacter(d) {

@@ -3,6 +3,7 @@ import { usePostAuthor } from '../src/hooks/usePostAuthor';
 jest.mock('../src/hooks/usePostAuthor', () => ({ usePostAuthor: jest.fn() }));
 import {
   AppState,
+  BackHandler,
   FlatList,
   Image,
   Keyboard,
@@ -650,5 +651,73 @@ describe('searching for someone to start a chat with', () => {
       person('e', 'e'),
     ]);
     expect(sorted.map(p => p.uid)).toEqual(['b', 'd', 'c', 'a', 'e']);
+  });
+});
+
+describe('the back button of the messages list', () => {
+  const backs = () =>
+    tree.root.findAll(
+      node => node.props?.accessibilityLabel === '대화에서 뒤로',
+    );
+  beforeEach(() => {
+    mockWatchInbox.mockImplementation(next => {
+      next({ items: [room], cursor: null, more: false });
+      return () => {};
+    });
+  });
+
+  test('is there by default', async () => {
+    await act(async () => {
+      tree = Renderer.create(<ChatScreen onBack={jest.fn()} />);
+    });
+    expect(backs().length).toBeGreaterThan(0);
+  });
+
+  test('can be left out, and the title then lines up with the content', async () => {
+    await act(async () => {
+      tree = Renderer.create(<ChatScreen hideBack onBack={jest.fn()} />);
+    });
+    expect(backs()).toHaveLength(0);
+    expect(
+      tree.root.findAll(
+        node =>
+          typeof node.type === 'string' &&
+          StyleSheet.flatten(node.props.style)?.paddingLeft === 20,
+      ).length,
+    ).toBeGreaterThan(0);
+  });
+
+  test('is still there inside a new chat or a conversation, which are pages of their own', async () => {
+    await act(async () => {
+      tree = Renderer.create(<ChatScreen hideBack onBack={jest.fn()} />);
+    });
+    await act(async () => {
+      tree.root
+        .findAll(n => n.props?.accessibilityLabel === '새 대화')[0]
+        .props.onPress();
+    });
+    expect(backs().length).toBeGreaterThan(0);
+  });
+
+  test('the system back button still works from the list', async () => {
+    const onBack = jest.fn();
+    const handlers: Array<() => boolean> = [];
+    const spy = jest
+      .spyOn(BackHandler, 'addEventListener')
+      .mockImplementation((_name, handler) => {
+        handlers.push(handler as () => boolean);
+        return { remove: () => undefined } as never;
+      });
+    try {
+      await act(async () => {
+        tree = Renderer.create(<ChatScreen hideBack onBack={onBack} />);
+      });
+      await act(async () => {
+        handlers.at(-1)!();
+      });
+      expect(onBack).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

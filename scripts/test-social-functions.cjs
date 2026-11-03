@@ -469,6 +469,88 @@ async function call(user, action, data = {}, name = 'socialAction') {
       assert.equal((await call(me,'profile',{uid:them.uid})).blocked,false);
     });
 
+    await test('the profile counts visible posts, reports character stats, and lists runs in pages',async()=>{
+      const owner=await socialUser('러너Pf'),fan=await socialUser('팬Pf'),other=await socialUser('남Pf');
+      await env.withSecurityRulesDisabled(async ctx=>{
+        const db=ctx.firestore();
+        await setDoc(doc(db,`users/${owner.uid}/character/${owner.uid}`),{uid:owner.uid,pet_name:'달료',stage:'baby',character_type:'duck',exp:12,stat_stamina:30,stat_speed:20,stat_endurance:10,equipped:{back:'mint-glow',hat:'없는-아이템',bogus:'x'}});
+        for(let i=0;i<33;i++)await setDoc(doc(db,`runs/pf-run-${i}`),{uid:owner.uid,started_at:Timestamp.fromMillis(1_700_000_000_000+i*3_600_000),distance_km:i+1,duration_sec:600,avg_pace_sec:300});
+      });
+      for(const [id,visibility] of [['pf-1','public'],['pf-2','public'],['pf-3','followers'],['pf-4','private']])await call(owner,'createPost',{postId:`${id}`,text:'글',visibility});
+      await call(owner,'createPost',{postId:'pf-gone',text:'글',visibility:'public'});
+      await call(owner,'deletePost',{postId:'pf-gone'});
+      await call(fan,'follow',{uid:owner.uid,following:true});
+      // 삭제한 글과 비공개 글은 세지 않고, 팔로워 공개 글은 본인과 팔로워에게만 센다
+      assert.equal((await call(owner,'profile',{uid:owner.uid})).post_count,3);
+      assert.equal((await call(fan,'profile',{uid:owner.uid})).post_count,3);
+      const seen=await call(other,'profile',{uid:owner.uid});
+      assert.equal(seen.post_count,2);
+      // 기록이 들어가면 onRunCreate가 스탯을 더 올리므로 넣어 둔 값 이상인지만 본다
+      assert.ok(seen.pet.stat_stamina>=30&&seen.pet.stat_speed>=20&&seen.pet.stat_endurance>=10,JSON.stringify(seen.pet));
+      // 입고 있는 아이템은 카탈로그에 있는 것만 내려 준다(홈 화면과 같은 모습으로 보여 주기 위해)
+      assert.deepEqual(seen.pet.equipped,{back:'mint-glow'});
+      // 말풍선용 최근 기록은 10개, 최신순이고, 나머지는 기록 화면에서 이어서 본다
+      assert.equal(seen.recent_runs.length,10);
+      assert.equal(seen.recent_runs[0].distance_km,33);
+      assert.equal(seen.run_count,33);
+      const first=await call(other,'profileRuns',{uid:owner.uid});
+      assert.equal(first.runs.length,30);
+      assert.equal(first.hasMore,true);
+      assert.equal(first.runs[0].distance_km,33);
+      const second=await call(other,'profileRuns',{uid:owner.uid,afterMs:first.runs.at(-1).startedAtMs});
+      assert.deepEqual(second.runs.map(run=>run.distance_km),[3,2,1]);
+      assert.equal(second.hasMore,false);
+      await assert.rejects(call(other,'profileRuns',{uid:owner.uid,afterMs:'어제'}),{code:'INVALID_ARGUMENT'});
+      // 차단하면 기록도 보이지 않는다
+      await call(owner,'blockUser',{uid:other.uid,blocked:true});
+      assert.deepEqual((await call(other,'profileRuns',{uid:owner.uid})).runs,[]);
+      assert.deepEqual((await call(owner,'profileRuns',{uid:other.uid})).runs,[]);
+    });
+
+    await test('private runs and follower lists are hidden from others, not from the owner, and each setting changes on its own',async()=>{
+      const owner=await socialUser('주인Pv'),viewer=await socialUser('손님Pv'),friend=await socialUser('친구Pv');
+      await env.withSecurityRulesDisabled(async ctx=>{
+        for(let i=0;i<3;i++)await setDoc(doc(ctx.firestore(),`runs/pv-run-${i}`),{uid:owner.uid,started_at:Timestamp.fromMillis(1_700_000_000_000+i*3_600_000),distance_km:i+1,duration_sec:600,avg_pace_sec:300});
+      });
+      await call(friend,'follow',{uid:owner.uid,following:true});
+      // 처음에는 모두 공개다
+      let seen=await call(viewer,'profile',{uid:owner.uid});
+      assert.equal(seen.runs_hidden,false);assert.equal(seen.connections_hidden,false);
+      assert.equal(seen.run_count,3);
+      // 다른 사람에게는 설정 값을 내려 주지 않는다(없는 값은 null로 온다)
+      assert.ok(!seen.privacy);
+      assert.deepEqual((await call(owner,'profile',{uid:owner.uid})).privacy,{runs_public:true,connections_public:true});
+      assert.equal((await call(viewer,'connections',{uid:owner.uid,kind:'followers'})).users.length,1);
+      // 러닝 기록만 비공개로 바꾸면 팔로워 목록은 그대로 공개다
+      assert.deepEqual(await call(owner,'setPrivacy',{runsPublic:false}),{runs_public:false,connections_public:true});
+      seen=await call(viewer,'profile',{uid:owner.uid});
+      assert.equal(seen.runs_hidden,true);assert.equal(seen.connections_hidden,false);
+      assert.equal(seen.run_count,null);assert.deepEqual(seen.recent_runs,[]);
+      const hiddenRuns=await call(viewer,'profileRuns',{uid:owner.uid});
+      assert.deepEqual([hiddenRuns.runs,hiddenRuns.hidden],[[],true]);
+      assert.equal((await call(viewer,'connections',{uid:owner.uid,kind:'followers'})).users.length,1);
+      // 본인에게는 계속 다 보이고, 서로 팔로우한 사람이라도 비공개는 비공개다
+      const mine=await call(owner,'profile',{uid:owner.uid});
+      assert.equal(mine.run_count,3);assert.equal(mine.recent_runs.length,3);assert.equal(mine.runs_hidden,false);
+      assert.equal((await call(owner,'profileRuns',{uid:owner.uid})).runs.length,3);
+      assert.equal((await call(friend,'profile',{uid:owner.uid})).runs_hidden,true);
+      // 팔로워·팔로잉 목록을 비공개로 바꾸면 숫자는 보이되 목록은 비어 있고 숨겼다고 알려 준다
+      assert.deepEqual(await call(owner,'setPrivacy',{connectionsPublic:false}),{runs_public:false,connections_public:false});
+      seen=await call(viewer,'profile',{uid:owner.uid});
+      assert.equal(seen.connections_hidden,true);assert.equal(seen.profile.follower_count,1);
+      const list=await call(viewer,'connections',{uid:owner.uid,kind:'followers'});
+      assert.deepEqual([list.users,list.hidden],[[],true]);
+      assert.equal((await call(owner,'connections',{uid:owner.uid,kind:'followers'})).users.length,1);
+      // 다시 공개하면 원래대로 보인다
+      await call(owner,'setPrivacy',{runsPublic:true,connectionsPublic:true});
+      seen=await call(viewer,'profile',{uid:owner.uid});
+      assert.deepEqual([seen.runs_hidden,seen.connections_hidden,seen.run_count],[false,false,3]);
+      // 잘못된 요청은 거절하고 설정을 바꾸지 않는다
+      await assert.rejects(call(owner,'setPrivacy',{}),{code:'INVALID_ARGUMENT'});
+      await assert.rejects(call(owner,'setPrivacy',{runsPublic:'no'}),{code:'INVALID_ARGUMENT'});
+      assert.deepEqual((await read(`users/${owner.uid}`)).privacy,{runs_public:true,connections_public:true});
+    });
+
     console.log(`${passed} backend integration scenarios passed`);
   } finally {await env.cleanup();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -22,9 +22,13 @@ import {
   Footprints,
   MoreHorizontal,
   Bookmark,
+  Award,
   Ban,
   ChevronLeft,
+  Settings as SettingsIcon,
   EyeOff,
+  Footprints as FootprintsIcon,
+  MapPin,
   MessageCircle,
   MessageSquare,
   Pencil,
@@ -52,13 +56,9 @@ import { RunningShoeIcon } from '../../components/ui/RunningShoeIcon';
 import { SlideScreen } from '../../navigation/slide';
 import { ChatScreen } from './ChatScreen';
 import { CommentsSheet } from './CommentsSheet';
+import { RunnerStatsCard } from './RunnerStatsCard';
 import { ConnectionsScreen, type ConnectionKind } from './ConnectionsScreen';
 import { CommunitySubNav, ROW_HEIGHT, type SubNavKey } from './CommunitySubNav';
-import { CharacterView } from '../../components/character/CharacterView';
-import {
-  CHARACTER_TYPES,
-  CHARACTER_STAGE_ORDER,
-} from '../../types/character.types';
 import { hasUnread, watchConversations } from '../../services/chat.service';
 import {
   TAB_BAR_BODY_HEIGHT,
@@ -82,6 +82,7 @@ import {
   watchPostFlags,
   type PublicProfile,
   type SocialPost,
+  type RunSummary,
   type RunnerProfile,
 } from '../../services/social.service';
 import { formatDuration, formatPace } from '../../utils/pace';
@@ -92,6 +93,8 @@ type Props = {
   hasUnread?: boolean;
   onNotificationPress: () => void;
   onSettingsPress: () => void;
+  // 내 프로필 메뉴의 "프로필 설정". 설정을 프로필 항목으로 바로 연다
+  onProfileSettingsPress?: () => void;
   // friendUid가 있으면 그 친구를 골라 둔 채로 같이 달리기 화면을 연다
   onTogetherPress?: (friendUid?: string) => void;
   onSubpageChange?: (open: boolean) => void;
@@ -111,6 +114,7 @@ type Route =
   | { page: 'post'; id: string }
   | { page: 'profile'; uid: string }
   | { page: 'connections'; uid: string; kind: ConnectionKind }
+  | { page: 'runs'; uid: string }
   | { page: 'search' }
   | { page: 'rankings' }
   | { page: 'saved' }
@@ -289,6 +293,8 @@ function CommunityContent(
           onBack={goBack}
           onPost={showPost}
           onEdit={editPost}
+          onSettings={props.onProfileSettingsPress}
+          onRuns={() => push({ page: 'runs', uid: route.uid })}
           onTogether={props.onTogetherPress}
           onComments={showComments}
           onMessage={uid => push({ page: 'chat', peer: uid })}
@@ -305,6 +311,8 @@ function CommunityContent(
           onProfile={showProfile}
         />
       );
+    if (route.page === 'runs')
+      return <RunsPage uid={route.uid} onBack={goBack} />;
     if (route.page === 'saved')
       return (
         <SavedPage
@@ -334,6 +342,7 @@ function CommunityContent(
     if (section === 'messages')
       return (
         <ChatScreen
+          hideBack
           onBack={leaveSection}
           onProfile={showProfile}
           onTogether={
@@ -348,10 +357,13 @@ function CommunityContent(
         <ProfilePage
           key="me"
           uid={myUid()}
+          hideBack
           bottomInset={sectionReserve}
           onBack={leaveSection}
           onPost={showPost}
           onEdit={editPost}
+          onSettings={props.onProfileSettingsPress}
+          onRuns={() => push({ page: 'runs', uid: myUid() })}
           onTogether={props.onTogetherPress}
           onComments={showComments}
           onMessage={uid => push({ page: 'chat', peer: uid })}
@@ -471,7 +483,7 @@ function CommunityContent(
           {sectionPage()}
         </View>
       )}
-      {chrome && (section === 'feed' || section === 'explore') && (
+      {chrome && section !== 'messages' && (
         <Animated.View
           pointerEvents="box-none"
           style={[
@@ -516,7 +528,9 @@ function CommunityContent(
 function routeKey(route: Route) {
   return route.page === 'post'
     ? `post:${route.id}`
-    : route.page === 'profile' || route.page === 'connections'
+    : route.page === 'profile' ||
+      route.page === 'connections' ||
+      route.page === 'runs'
     ? `${route.page}:${route.uid}`
     : route.page === 'compose'
     ? `compose:${route.post?.post_id ?? 'new'}`
@@ -530,6 +544,8 @@ function Page({
   headerText,
   headerRight,
   onBack,
+  hideBack = false,
+  testID,
   children,
   feed = false,
 }: {
@@ -539,6 +555,9 @@ function Page({
   headerText?: string;
   headerRight?: React.ReactNode;
   onBack?: () => void;
+  // 서브 네비게이션으로 오가는 화면처럼 뒤로 가기 버튼이 필요 없는 화면. 시스템 뒤로 가기는 그대로 동작한다
+  hideBack?: boolean;
+  testID?: string;
   children: React.ReactNode;
 }) {
   useEffect(() => {
@@ -551,18 +570,21 @@ function Page({
   }, [onBack]);
   return (
     <SafeAreaView
+      testID={testID}
       style={[styles.screen, feed && styles.feedScreen]}
       edges={['top']}
     >
       <StatusBar barStyle="dark-content" />
       {onBack && (
-        <View style={styles.header}>
-          <IconButton
-            icon={ChevronLeft}
-            variant="plain"
-            accessibilityLabel={`${title}에서 뒤로`}
-            onPress={onBack}
-          />
+        <View style={[styles.header, hideBack && styles.headerNoBack]}>
+          {!hideBack && (
+            <IconButton
+              icon={ChevronLeft}
+              variant="plain"
+              accessibilityLabel={`${title}에서 뒤로`}
+              onPress={onBack}
+            />
+          )}
           <AppText variant="heading" numberOfLines={1} style={styles.grow}>
             {headerText ?? title}
           </AppText>
@@ -661,6 +683,7 @@ export function PostCard({
   onEdit,
   onDeleted,
   detail = false,
+  flush = false,
 }: {
   post: SocialPost;
   onOpen: () => void;
@@ -670,6 +693,8 @@ export function PostCard({
   // 삭제·보지 않음·차단으로 이 글이 사라졌을 때
   onDeleted?: () => void;
   detail?: boolean;
+  // 이미 좌우 여백이 있는 화면에 놓일 때. 카드 자체의 좌우 여백을 뺀다
+  flush?: boolean;
 }) {
   const [post, setPost] = useState(initialPost);
   // 삭제됐거나 보지 않기로 해서 더 보여 주지 않는 글
@@ -832,7 +857,13 @@ export function PostCard({
     : '';
   const hasMedia = !!post.image_url || !!post.run_id;
   return (
-    <View style={[styles.post, detail && styles.detailPost]}>
+    <View
+      style={[
+        styles.post,
+        flush && styles.flushPost,
+        detail && styles.detailPost,
+      ]}
+    >
       <View style={styles.postHeader}>
         <Pressable
           accessibilityRole="button"
@@ -1306,6 +1337,8 @@ function ExplorePage({
   return (
     <Page
       title="탐색"
+      testID="section-explore"
+      hideBack
       onBack={onBack}
       headerRight={
         <IconButton
@@ -1501,9 +1534,12 @@ function ProfileViewSwitch({
 export function ProfilePage({
   uid,
   bottomInset = 0,
+  hideBack = false,
   onBack,
   onPost,
   onEdit,
+  onSettings,
+  onRuns,
   onTogether,
   onComments,
   onMessage,
@@ -1512,9 +1548,15 @@ export function ProfilePage({
   uid: string;
   // 화면 아래에 떠 있는 바에 끝이 가려지지 않도록 비워 둘 높이
   bottomInset?: number;
+  // 서브 네비게이션의 "내 프로필"처럼 뒤로 가기 버튼이 필요 없는 자리에서
+  hideBack?: boolean;
   onBack: () => void;
   onPost: (id: string) => void;
   onEdit?: (post: SocialPost) => void;
+  // 내 프로필 메뉴의 "프로필 설정"
+  onSettings?: () => void;
+  // 전체 러닝 기록 화면을 연다
+  onRuns?: () => void;
   onTogether?: (friendUid: string) => void;
   onMessage: (uid: string) => void;
   onComments: (id: string) => void;
@@ -1523,6 +1565,8 @@ export function ProfilePage({
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [runner, setRunner] = useState<RunnerProfile | null>(null);
   const [postView, setPostView] = useState<'list' | 'grid'>('list');
+  const [runsOpen, setRunsOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState<boolean | null>(null);
   const [following, setFollowing] = useState(false);
   const [friend, setFriend] = useState(false);
   const [posts, setPosts] = useState<SocialPost[]>([]);
@@ -1591,9 +1635,95 @@ export function ProfilePage({
       task: () => socialRequest('blockUser', { uid, blocked: false }),
       onSuccess: () => setRevision(v => v + 1),
     });
+  const mine = uid === myUid();
+  const blockRunner = () =>
+    Alert.alert(
+      `${profile?.display_name ?? '러너'}님을 차단할까요?`,
+      '서로의 팔로우가 끊기고, 이 러너의 글과 댓글이 보이지 않아요. 차단은 설정에서 해제할 수 있어요.',
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: '차단',
+          style: 'destructive',
+          onPress: () =>
+            runInBackground({
+              label: '차단하는 중',
+              successLabel: `${profile?.display_name ?? '러너'}님을 차단했어요`,
+              failureLabel: '차단하지 못했어요',
+              retryable: false,
+              describeError: socialError,
+              task: () => socialRequest('blockUser', { uid, blocked: true }),
+              onSuccess: () => setRevision(v => v + 1),
+            }),
+        },
+      ],
+    );
+  // 공개 범위 설정. 화면은 바로 바꾸고, 실패하면 되돌린다
+  const togglePrivacy = (
+    key: 'runsPublic' | 'connectionsPublic',
+    field: 'runs_public' | 'connections_public',
+  ) => {
+    const current = runner?.privacy;
+    if (!current) return;
+    const next = !current[field];
+    const set = (value: boolean) =>
+      setRunner(old =>
+        old?.privacy
+          ? { ...old, privacy: { ...old.privacy, [field]: value } }
+          : old,
+      );
+    set(next);
+    runInBackground({
+      label: '',
+      failureLabel: '공개 설정을 바꾸지 못했어요',
+      silent: true,
+      retryable: false,
+      describeError: socialError,
+      task: () => socialRequest('setPrivacy', { [key]: next }),
+      onFailure: () => set(!next),
+    });
+  };
+  const state = (on?: boolean) => (on === false ? '꺼짐' : '켜짐');
+  const menuItems: ActionSheetItem[] = mine
+    ? [
+        ...(onSettings
+          ? [
+              {
+                label: '프로필 설정',
+                icon: SettingsIcon,
+                onPress: onSettings,
+              },
+            ]
+          : []),
+        {
+          label: `러닝 기록 공개 · ${state(runner?.privacy?.runs_public)}`,
+          icon: FootprintsIcon,
+          onPress: () => togglePrivacy('runsPublic', 'runs_public'),
+        },
+        {
+          label: `팔로워·팔로잉 공개 · ${state(
+            runner?.privacy?.connections_public,
+          )}`,
+          icon: Users,
+          onPress: () =>
+            togglePrivacy('connectionsPublic', 'connections_public'),
+        },
+      ]
+    : blocked
+    ? [{ label: '차단 해제', icon: Ban, onPress: unblock }]
+    : [
+        {
+          label: `${profile?.display_name ?? '러너'} 차단`,
+          icon: Ban,
+          danger: true,
+          onPress: blockRunner,
+        },
+      ];
   return (
     <Page
       title="러너 프로필"
+      hideBack={hideBack}
+      testID={hideBack ? 'section-profile' : undefined}
       // 맨 위에는 아이디를 보여 준다. 아이디가 없는 기존 사용자는 닉네임을 보여 준다
       headerText={
         profile
@@ -1605,8 +1735,10 @@ export function ProfilePage({
       onBack={onBack}
     >
       <ScrollView
+        onScrollBeginDrag={() => setRunsOpen(false)}
         contentContainerStyle={[
           styles.content,
+          styles.profileContent,
           bottomInset ? { paddingBottom: bottomInset + spacing.xl } : null,
         ]}
       >
@@ -1619,41 +1751,69 @@ export function ProfilePage({
             <>
               <Card style={styles.runnerHero}>
                 <View style={styles.runnerIdentity}>
-                  <Avatar uri={profile.profile_image} size={64} />
+                  <Avatar uri={profile.profile_image} size={80} />
                   <View style={styles.runnerIdentityText}>
-                    <AppText variant="label" color={colors.primaryInk}>
-                      DALRYO RUNNER
-                    </AppText>
                     <AppText variant="heading" numberOfLines={1}>
                       {profile.display_name}
                     </AppText>
-                    <AppText variant="caption" color={colors.textMuted}>
-                      {profile.region}에서 함께 달려요
-                    </AppText>
+                    {/* 칭호 기능이 생기면 실제 칭호로 바꾼다 */}
+                    <View style={styles.runnerLine}>
+                      <Award size={14} color={colors.primaryInk} />
+                      <AppText variant="label" color={colors.primaryInk}>
+                        칭호
+                      </AppText>
+                    </View>
+                    <View style={styles.runnerLine}>
+                      <MapPin size={14} color={colors.textMuted} />
+                      <AppText variant="caption" color={colors.textMuted}>
+                        {profile.region}
+                      </AppText>
+                    </View>
+                  </View>
+                  <View style={styles.runnerMenu}>
+                    <IconButton
+                      icon={MoreHorizontal}
+                      variant="plain"
+                      accessibilityLabel="프로필 메뉴"
+                      onPress={() => setMenuOpen(true)}
+                    />
                   </View>
                 </View>
+                {/* 세 칸은 폭이 같고 글자는 작고 연하게, 숫자는 한 단계 크고 진하게 보여 준다 */}
                 <View style={styles.runnerCounts}>
+                  <View style={styles.runnerCount}>
+                    <AppText variant="caption" color={colors.textMuted}>
+                      게시물
+                    </AppText>
+                    <AppText variant="subheading">
+                      {blocked ? 0 : runner?.post_count ?? posts.length}
+                    </AppText>
+                  </View>
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel="팔로워 목록"
-                    style={styles.runnerCount}
+                    style={[styles.runnerCount, styles.runnerCountDivider]}
                     onPress={() => onConnections?.('followers')}
                   >
+                    <AppText variant="caption" color={colors.textMuted}>
+                      팔로워
+                    </AppText>
                     <AppText variant="subheading">
                       {profile.follower_count}
                     </AppText>
-                    <AppText variant="caption">팔로워</AppText>
                   </Pressable>
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel="팔로잉 목록"
-                    style={styles.runnerCount}
+                    style={[styles.runnerCount, styles.runnerCountDivider]}
                     onPress={() => onConnections?.('following')}
                   >
+                    <AppText variant="caption" color={colors.textMuted}>
+                      팔로잉
+                    </AppText>
                     <AppText variant="subheading">
                       {profile.following_count}
                     </AppText>
-                    <AppText variant="caption">팔로잉</AppText>
                   </Pressable>
                 </View>
                 {blocked && (
@@ -1670,8 +1830,8 @@ export function ProfilePage({
                     />
                   </>
                 )}
-                <View style={styles.runnerActions}>
-                  {uid !== myUid() && !blocked && (
+                {uid !== myUid() && !blocked && (
+                  <View style={styles.runnerActions}>
                     <Button
                       style={styles.runnerAction}
                       label={following ? '팔로잉' : '팔로우'}
@@ -1679,8 +1839,6 @@ export function ProfilePage({
                       variant={following ? 'secondary' : 'primary'}
                       onPress={follow}
                     />
-                  )}
-                  {uid !== myUid() && !blocked && (
                     <Button
                       style={styles.runnerAction}
                       icon={MessageSquare}
@@ -1689,8 +1847,8 @@ export function ProfilePage({
                       variant="secondary"
                       onPress={() => onMessage(uid)}
                     />
-                  )}
-                </View>
+                  </View>
+                )}
                 {friend && onTogether && (
                   <Button
                     label="같이 달리기 요청"
@@ -1699,76 +1857,13 @@ export function ProfilePage({
                   />
                 )}
               </Card>
-              {!blocked &&
-                runner?.pet &&
-                CHARACTER_TYPES.includes(runner.pet.character_type) &&
-                CHARACTER_STAGE_ORDER.includes(runner.pet.stage) && (
-                  <Card style={styles.runnerPet}>
-                    <AppText variant="label" color={colors.primaryInk}>
-                      RUNNING MATE
-                    </AppText>
-                    <AppText variant="heading">{runner.pet.pet_name}</AppText>
-                    <AppText variant="caption" color={colors.primaryInk}>
-                      {
-                        ['알', '아기', '어린이', '러너'][
-                          CHARACTER_STAGE_ORDER.indexOf(runner.pet.stage)
-                        ]
-                      }
-                    </AppText>
-                    <CharacterView
-                      type={runner.pet.character_type}
-                      stage={runner.pet.stage}
-                      motion={runner.pet.is_frozen ? 'stone' : 'idle'}
-                      size={190}
-                    />
-                    <AppText variant="caption" color={colors.textMuted}>
-                      {runner.pet.is_frozen
-                        ? '다음 달리기를 기다리는 중'
-                        : '함께 달리며 자라고 있어요'}
-                    </AppText>
-                  </Card>
-                )}
-              {!blocked && (
-                <Card style={styles.runnerRecords}>
-                  <AppText variant="subheading">러닝 발자국</AppText>
-                  <View style={styles.runnerStats}>
-                    <View>
-                      <AppText variant="heading">
-                        {profile.total_km.toFixed(1)} km
-                      </AppText>
-                      <AppText variant="caption">누적 거리</AppText>
-                    </View>
-                    <View>
-                      <AppText variant="heading">
-                        {runner?.run_count ?? '—'}
-                      </AppText>
-                      <AppText variant="caption">완료한 러닝</AppText>
-                    </View>
-                  </View>
-                  <View testID="profile-runs-list">
-                    {(runner?.recent_runs ?? []).map((run, index) => (
-                      <View key={index} style={styles.runnerRecordRow}>
-                        <AppText variant="caption" color={colors.textMuted}>
-                          {run.day}
-                        </AppText>
-                        <AppText variant="caption">
-                          {run.distance_km.toFixed(2)}km
-                        </AppText>
-                        <AppText variant="caption" color={colors.textMuted}>
-                          {formatDuration(run.duration_sec)} ·{' '}
-                          {run.avg_pace_sec
-                            ? formatPace(run.avg_pace_sec)
-                            : '—'}
-                        </AppText>
-                      </View>
-                    ))}
-                  </View>
-                  {!runner?.recent_runs?.length && (
-                    <AppText color={colors.textMuted}>
-                      아직 완료한 러닝이 없어요.
-                    </AppText>
-                  )}
-                </Card>
+              {!blocked && runner && (
+                <RunnerStatsCard
+                  runner={runner}
+                  runsOpen={runsOpen}
+                  onToggleRuns={setRunsOpen}
+                  onOpenRuns={onRuns}
+                />
               )}
               {!blocked && (
                 <View style={styles.profileSectionHeader}>
@@ -1830,6 +1925,7 @@ export function ProfilePage({
                   <PostCard
                     key={post.post_id}
                     post={post}
+                    flush
                     onComments={() => onComments(post.post_id)}
                     onOpen={() => onPost(post.post_id)}
                     onProfile={() => {}}
@@ -1841,9 +1937,110 @@ export function ProfilePage({
           )
         )}
       </ScrollView>
+      {menuOpen !== null && (
+        <ActionSheet
+          visible={menuOpen}
+          onClose={() => setMenuOpen(false)}
+          items={menuItems}
+        />
+      )}
     </Page>
   );
 }
+// 러너의 전체 러닝 기록. 프로필의 발자국 말풍선에서 "자세히 보기"로 들어온다
+function RunsPage({ uid, onBack }: { uid: string; onBack: () => void }) {
+  const [runs, setRuns] = useState<RunSummary[]>([]);
+  const [status, setStatus] = useState<'loading' | 'success' | 'error'>(
+    'loading',
+  );
+  const [more, setMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [moreError, setMoreError] = useState(false);
+  const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    let live = true;
+    setStatus('loading');
+    socialRequest<{ runs: RunSummary[]; hasMore: boolean }>('profileRuns', {
+      uid,
+    })
+      .then(result => {
+        if (!live) return;
+        setRuns(result.runs);
+        setMore(result.hasMore);
+        setStatus('success');
+      })
+      .catch(() => {
+        if (live) setStatus('error');
+      });
+    return () => {
+      live = false;
+    };
+  }, [uid, revision]);
+  const loadMore = async () => {
+    if (loadingMore) return;
+    setLoadingMore(true);
+    setMoreError(false);
+    try {
+      const result = await socialRequest<{
+        runs: RunSummary[];
+        hasMore: boolean;
+      }>('profileRuns', { uid, afterMs: runs.at(-1)?.startedAtMs });
+      setRuns(old => [...old, ...result.runs]);
+      setMore(result.hasMore);
+    } catch {
+      setMoreError(true);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+  return (
+    <Page title="러닝 기록" onBack={onBack}>
+      <ScrollView contentContainerStyle={styles.content}>
+        {status === 'loading' ? (
+          <Loading />
+        ) : status === 'error' ? (
+          <Failure retry={() => setRevision(v => v + 1)} />
+        ) : runs.length === 0 ? (
+          <Empty
+            title="아직 완료한 러닝이 없어요"
+            detail="달리기를 마치면 여기에 쌓여요."
+          />
+        ) : (
+          runs.map((run, index) => (
+            <Card key={run.startedAtMs ?? index} style={styles.runRow}>
+              <AppText variant="caption" color={colors.textMuted}>
+                {run.day}
+              </AppText>
+              <View style={styles.runValues}>
+                <AppText variant="heading">
+                  {run.distance_km.toFixed(2)}km
+                </AppText>
+                <AppText variant="caption" color={colors.textMuted}>
+                  {formatDuration(run.duration_sec)} ·{' '}
+                  {run.avg_pace_sec ? formatPace(run.avg_pace_sec) : '—'} /km
+                </AppText>
+              </View>
+            </Card>
+          ))
+        )}
+        {moreError && (
+          <AppText color={colors.danger}>
+            이전 기록을 불러오지 못했어요. 다시 시도해 주세요.
+          </AppText>
+        )}
+        {more && (
+          <Button
+            label={loadingMore ? '불러오는 중…' : '이전 기록 더 보기'}
+            variant="secondary"
+            disabled={loadingMore}
+            onPress={loadMore}
+          />
+        )}
+      </ScrollView>
+    </Page>
+  );
+}
+
 function SavedPage({
   wanted,
   onBack,
@@ -1912,31 +2109,33 @@ function SavedPage({
 }
 
 const styles = StyleSheet.create({
-  runnerHero: { gap: 16 },
-  runnerIdentity: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  // 아래쪽 여백은 위보다 좁게 둔다. 세 칸 줄이 카드 바닥에서 떠 보이지 않게 한다
+  runnerHero: { gap: spacing.md, paddingBottom: spacing.md },
+  runnerIdentity: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   runnerIdentityText: { flex: 1, gap: 4 },
+  runnerLine: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  // 오른쪽 위 구석에 붙이되 눌리는 영역은 그대로 둔다
+  runnerMenu: { alignSelf: 'flex-start', marginTop: -8, marginRight: -10 },
+  // 배경 없이 위에 가는 선만 긋고, 세 칸을 같은 폭으로 나눠 사이에 세로선을 둔다
   runnerCounts: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingVertical: 10,
-    borderRadius: 18,
-    backgroundColor: colors.primarySoft,
+    paddingTop: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
   },
   runnerCount: {
-    alignItems: 'center',
-    gap: 4,
-    minWidth: 100,
-    minHeight: 48,
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'baseline',
     justifyContent: 'center',
+    gap: 6,
+  },
+  runnerCountDivider: {
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderLeftColor: colors.border,
   },
   runnerActions: { flexDirection: 'row', gap: 10 },
   runnerAction: { flex: 1 },
-  runnerPet: {
-    alignItems: 'center',
-    backgroundColor: colors.primarySoft,
-    gap: 8,
-  },
-  runnerRecords: { gap: 14 },
   profileSectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1958,7 +2157,13 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   profileViewSelected: { backgroundColor: colors.primarySoft },
-  profileGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  // 두 칸을 양 끝에 붙여 위 구역들과 좌우 끝을 맞춘다
+  profileGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    rowGap: 10,
+  },
   profilePostTile: {
     width: '48%',
     borderRadius: 16,
@@ -1967,24 +2172,25 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  profilePostImage: { width: '100%', aspectRatio: 1 },
+  // 오운완 카드(4:5)의 위아래 글자가 잘리지 않는 규격. 다른 비율의 사진은 잘릴 수 있다
+  profilePostImage: { width: '100%', aspectRatio: 4 / 5 },
   profilePostPlaceholder: {
     width: '100%',
-    aspectRatio: 1,
+    aspectRatio: 4 / 5,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
     backgroundColor: colors.primarySoft,
   },
   profilePostCaption: { padding: 10, gap: 6 },
-  runnerStats: { flexDirection: 'row', justifyContent: 'space-between' },
-  runnerRecordRow: {
+  // 카드와 카드, 카드와 "최근 게시물" 머리글 사이를 같은 간격으로 맞춘다
+  profileContent: { gap: spacing.lg },
+  runRow: { gap: 4 },
+  runValues: {
     flexDirection: 'row',
+    alignItems: 'baseline',
     justifyContent: 'space-between',
     gap: 8,
-    paddingVertical: 12,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
   },
   screen: { flex: 1, backgroundColor: colors.background },
   header: {
@@ -1993,6 +2199,8 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingHorizontal: spacing.md,
   },
+  // 뒤로 가기 버튼이 없으면 제목을 본문과 같은 왼쪽 선에 맞춘다
+  headerNoBack: { paddingLeft: spacing.xl, minHeight: 52 },
   content: { padding: spacing.xl, paddingBottom: 60, gap: spacing.md },
   feedCanvas: { backgroundColor: colors.background },
   // 하단 탭 바와 그 위의 서브 네비게이션에 마지막 글이 가려지지 않게 비워 둔다
@@ -2082,6 +2290,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     paddingBottom: 18,
   },
+  flushPost: { marginHorizontal: 0 },
   detailPost: {
     marginHorizontal: 0,
     marginBottom: 0,

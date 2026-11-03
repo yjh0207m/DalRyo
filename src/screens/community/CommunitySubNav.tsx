@@ -191,6 +191,31 @@ export function CommunitySubNav({
   const expanded = mode !== 'closed';
   // 화면에서 사라지면 접힌 상태로 돌려 놓는다(함께 움직이던 요소가 올라간 채 남지 않게)
   useEffect(() => () => grow.setValue(0), [grow]);
+  const idle = useMemo(
+    () => grow.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
+    [grow],
+  );
+  const pillScale = useMemo(
+    () => grow.interpolate({ inputRange: [0, 1], outputRange: [0.2, 1] }),
+    [grow],
+  );
+  const renderItem = (item: (typeof SUB_NAV_ITEMS)[number], travel: number) => (
+    <Item
+      key={item.key}
+      item={item}
+      grow={grow}
+      open={expanded}
+      // 가운데에서 바깥으로 펼쳐지도록, 접힌 위치는 가운데 쪽이다
+      travel={travel}
+      hovered={hover === item.key}
+      current={current === item.key}
+      dot={item.key === 'messages' && !!unreadMessages}
+      onPress={() => choose(item.key)}
+    />
+  );
+  // 항목과 배경은 접혀 있어도 지우지 않고 투명하게 둔다.
+  // 지우면 닫히는 모습이 보이지 않고, 값에 연결된 뷰가 하나도 남지 않은 화면(글쓰기 버튼이 없는 메시지)에서는
+  // 애니메이션 값이 멈춰 버려(AnimatedValue.__detach) 다음에 열 때도 끊긴다
   return (
     <View pointerEvents="box-none" style={styles.root}>
       {mode === 'open' && (
@@ -203,39 +228,15 @@ export function CommunitySubNav({
       )}
       <View pointerEvents="box-none" style={[styles.dock, { bottom }]}>
         <View style={styles.row} pointerEvents="box-none">
-          {expanded && (
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                styles.pill,
-                {
-                  opacity: grow,
-                  transform: [
-                    {
-                      scaleX: grow.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [0.2, 1],
-                      }),
-                    },
-                  ],
-                },
-              ]}
-            />
-          )}
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.pill,
+              { opacity: grow, transform: [{ scaleX: pillScale }] },
+            ]}
+          />
           {SUB_NAV_ITEMS.slice(0, 2).map((item, index) =>
-            expanded ? (
-              <Item
-                key={item.key}
-                item={item}
-                grow={grow}
-                // 가운데에서 바깥으로 펼쳐지도록, 접힌 위치는 가운데 쪽이다
-                travel={travelFrom(1 - index)}
-                hovered={hover === item.key}
-                current={current === item.key}
-                dot={false}
-                onPress={() => choose(item.key)}
-              />
-            ) : null,
+            renderItem(item, travelFrom(1 - index)),
           )}
           <View
             {...responder.panHandlers}
@@ -251,28 +252,31 @@ export function CommunitySubNav({
             onAccessibilityAction={event =>
               choose(event.nativeEvent.actionName as SubNavKey)
             }
-            style={[styles.center, expanded && styles.centerActive]}
+            style={styles.center}
           >
-            <Menu
-              color={expanded ? colors.textOnPrimary : colors.primaryInk}
-              size={22}
-              strokeWidth={2.2}
+            {/* 색도 함께 서서히 바뀌도록, 접힌 모습과 펼친 모습을 겹쳐 두고 번갈아 드러낸다 */}
+            <Animated.View
+              pointerEvents="none"
+              style={[styles.centerActive, { opacity: grow }]}
             />
-            {!expanded && unreadMessages && <View style={styles.dot} />}
+            <Animated.View pointerEvents="none" style={{ opacity: idle }}>
+              <Menu color={colors.primaryInk} size={22} strokeWidth={2.2} />
+            </Animated.View>
+            <Animated.View
+              pointerEvents="none"
+              style={[styles.centerIconActive, { opacity: grow }]}
+            >
+              <Menu color={colors.textOnPrimary} size={22} strokeWidth={2.2} />
+            </Animated.View>
+            {unreadMessages && (
+              <Animated.View
+                pointerEvents="none"
+                style={[styles.dot, { opacity: idle }]}
+              />
+            )}
           </View>
           {SUB_NAV_ITEMS.slice(2).map((item, index) =>
-            expanded ? (
-              <Item
-                key={item.key}
-                item={item}
-                grow={grow}
-                travel={-travelFrom(index)}
-                hovered={hover === item.key}
-                current={current === item.key}
-                dot={item.key === 'messages' && !!unreadMessages}
-                onPress={() => choose(item.key)}
-              />
-            ) : null,
+            renderItem(item, -travelFrom(index)),
           )}
         </View>
       </View>
@@ -283,6 +287,7 @@ export function CommunitySubNav({
 function Item({
   item,
   grow,
+  open,
   travel,
   hovered,
   current,
@@ -291,6 +296,8 @@ function Item({
 }: {
   item: (typeof SUB_NAV_ITEMS)[number];
   grow: Animated.Value;
+  // 펼쳐져 있는지. 접혀 있으면 보이지 않으니 누를 수도, 읽을 수도 없다
+  open: boolean;
   travel: number;
   hovered: boolean;
   current: boolean;
@@ -298,29 +305,28 @@ function Item({
   onPress: () => void;
 }) {
   const Icon = item.icon;
+  const translateX = useMemo(
+    () => grow.interpolate({ inputRange: [0, 1], outputRange: [travel, 0] }),
+    [grow, travel],
+  );
+  const scale = useMemo(
+    () =>
+      grow.interpolate({
+        inputRange: [0, 1],
+        outputRange: [0.6, hovered ? 1.12 : 1],
+      }),
+    [grow, hovered],
+  );
   return (
     <Animated.View
-      style={{
-        opacity: grow,
-        transform: [
-          {
-            translateX: grow.interpolate({
-              inputRange: [0, 1],
-              outputRange: [travel, 0],
-            }),
-          },
-          {
-            scale: grow.interpolate({
-              inputRange: [0, 1],
-              outputRange: [0.6, hovered ? 1.12 : 1],
-            }),
-          },
-        ],
-      }}
+      pointerEvents={open ? 'auto' : 'none'}
+      accessibilityElementsHidden={!open}
+      importantForAccessibility={open ? 'auto' : 'no-hide-descendants'}
+      style={{ opacity: grow, transform: [{ translateX }, { scale }] }}
     >
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={item.label}
+        accessibilityLabel={open ? item.label : undefined}
         accessibilityState={{ selected: hovered }}
         onPress={onPress}
         style={[
@@ -387,9 +393,11 @@ const styles = StyleSheet.create({
     ...shadow.floating,
   },
   centerActive: {
+    ...StyleSheet.absoluteFill,
+    borderRadius: CENTER_SIZE / 2,
     backgroundColor: colors.primary,
-    borderColor: colors.primary,
   },
+  centerIconActive: { position: 'absolute' },
   item: {
     width: ITEM_WIDTH,
     height: ROW_HEIGHT - 8,

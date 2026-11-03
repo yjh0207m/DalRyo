@@ -2,6 +2,7 @@ import {
   adjacentTab,
   isHorizontalDrag,
   isTabSwipe,
+  startsInSwipeZone,
   SWIPE_TAB_ORDER,
 } from '../src/navigation/tabSwipe';
 
@@ -61,5 +62,18 @@ describe('when letting go moves on to the next tab', () => {
     expect(isTabSwipe({ dx: -150, dy: 100 }, WIDTH)).toBe(false);
     expect(isTabSwipe({ dx: -150, dy: 80 }, WIDTH)).toBe(false);
     expect(isTabSwipe({ dx: -150, dy: 60 }, WIDTH)).toBe(true);
+  });
+});
+
+describe('where a swipe may start', () => {
+  const W = 390;
+  test('the left and right thirds of the screen can swipe', () => {
+    for (const x of [0, 60, 129, 261, 330, 390])
+      expect(startsInSwipeZone(x, W)).toBe(true);
+  });
+
+  test('the middle third, where the community sub navigation sits, cannot', () => {
+    for (const x of [131, 195, 259])
+      expect(startsInSwipeZone(x, W)).toBe(false);
   });
 });

@@ -1,5 +1,11 @@
 import React from 'react';
-import { Animated, PanResponder, useWindowDimensions } from 'react-native';
+import {
+  Animated,
+  PanResponder,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+} from 'react-native';
 import Renderer, { act } from 'react-test-renderer';
 import {
   CommunitySubNav,
@@ -224,6 +230,23 @@ describe('the menu button', () => {
 });
 
 describe('unread messages', () => {
+  // 점은 접혀 있어도 지우지 않고 투명도로 드러낸다
+  const dotOpacities = () =>
+    tree.root
+      .findAll(
+        node =>
+          typeof node.type === 'string' &&
+          StyleSheet.flatten(node.props.style)?.width === 8,
+      )
+      .map(node => {
+        // 메뉴 항목의 점은 항목 전체의 투명도를 따른다
+        let opacity = StyleSheet.flatten(node.props.style)?.opacity;
+        for (let up = node.parent; opacity === undefined && up; up = up.parent)
+          if (typeof up.type === 'string')
+            opacity = StyleSheet.flatten(up.props.style)?.opacity;
+        return opacity;
+      });
+
   test('a dot shows on the middle button while folded and on the message menu when spread', async () => {
     await act(async () => {
       tree.update(
@@ -233,19 +256,66 @@ describe('unread messages', () => {
         </>,
       );
     });
-    const dots = () =>
-      tree.root.findAll(
-        node =>
-          typeof node.type === 'string' &&
-          []
-            .concat(node.props.style)
-            .flat()
-            .some((s: any) => s?.width === 8),
-      ).length;
-    expect(dots()).toBe(1);
+    // [메뉴 버튼, 메시지 메뉴] 순서
+    expect(dotOpacities()).toEqual([1, 0]);
+    await grant();
+    expect(dotOpacities()).toEqual([0, 1]);
+  });
+
+  test('no dots at all without unread messages', async () => {
+    expect(dotOpacities()).toEqual([]);
+  });
+});
+
+describe('moving smoothly in both directions', () => {
+  const items = ['피드', '탐색', '메시지', '내 프로필'];
+  // 항목은 접혀도 그대로 남아 있어야 닫히는 모습이 보인다
+  const mounted = () =>
+    tree.root
+      .findAllByType(Text)
+      .map(node => node.props.children)
+      .filter(text => items.includes(text));
+
+  test('the menus stay on screen while folding, invisible and untouchable once folded', async () => {
+    expect(mounted()).toEqual(items);
     await grant();
     await holdLongEnough();
-    expect(dots()).toBe(1);
+    expect(mounted()).toEqual(items);
+    await release();
+    expect(mounted()).toEqual(items);
+    const wrapper = tree.root.findAll(
+      node =>
+        typeof node.type === 'string' &&
+        node.props.pointerEvents === 'none' &&
+        node.props.accessibilityElementsHidden === true,
+    );
+    expect(wrapper).toHaveLength(4);
+  });
+
+  test('its animated value keeps something attached, so React Native never stops it midway', async () => {
+    const progress = new Animated.Value(0) as unknown as Animated.Value & {
+      __getChildren: () => unknown[];
+    };
+    await act(async () => {
+      tree.update(
+        <>
+          <Probe />
+          <CommunitySubNav
+            bottom={BOTTOM}
+            progress={progress}
+            onSelect={onSelect}
+          />
+        </>,
+      );
+    });
+    const attached = () => progress.__getChildren().length;
+    expect(attached()).toBeGreaterThan(0);
+    await grant();
+    await holdLongEnough();
+    await release();
+    expect(attached()).toBeGreaterThan(0);
+    await grant();
+    expect(attached()).toBeGreaterThan(0);
   });
 });
 

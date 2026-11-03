@@ -21,6 +21,9 @@ export function normalizeCharacterStage(stage: unknown, totalKm: number): Charac
   return CHARACTER_STAGE_ORDER.includes(stage as CharacterStage) ? (stage as CharacterStage) : getCharacterStage(totalKm);
 }
 
+// 스탯 막대의 가득 찬 값
+export const STAT_MAX = 100;
+
 export const STAGE_LABELS: Record<CharacterStage, string> = {
   egg: '알',
   baby: '아기',

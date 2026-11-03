@@ -13,6 +13,7 @@ type HeaderProps = {
   onInitialRouteHandled?: () => void;
   onSubpageChange?: (open: boolean) => void;
   onReady?: () => void;
+  onProfileSettingsPress?: () => void;
 };
 // 화면들은 이동에 쓰는 버튼만 그려 주는 가짜로 바꾼다
 function fakeTab(name: string) {
@@ -40,6 +41,10 @@ function fakeTab(name: string) {
         <Pressable
           accessibilityLabel={`${name} 준비 끝`}
           onPress={props.onReady}
+        />
+        <Pressable
+          accessibilityLabel={`${name} 프로필 설정`}
+          onPress={props.onProfileSettingsPress}
         />
         <Pressable
           accessibilityLabel={`${name} 알림`}
@@ -94,6 +99,7 @@ const mockSettings = jest.fn();
 const mockInventory = jest.fn();
 jest.mock('../src/screens/profile/SettingsScreen', () => ({
   SettingsScreen: (props: {
+    initialSection?: string;
     onBack: () => void;
     onPreviewCharacter?: () => void;
     onOpenSaved?: () => void;
@@ -106,6 +112,8 @@ jest.mock('../src/screens/profile/SettingsScreen', () => ({
       N.View,
       null,
       R.createElement(N.Text, null, '설정 화면'),
+      !!props.initialSection &&
+        R.createElement(N.Text, null, `설정 첫 화면 ${props.initialSection}`),
       R.createElement(N.Pressable, {
         accessibilityLabel: '설정 뒤로',
         onPress: props.onBack,
@@ -443,7 +451,7 @@ describe('swiping between the main tabs', () => {
   type Config = {
     onMoveShouldSetPanResponder: (
       event: unknown,
-      gesture: { dx: number; dy: number },
+      gesture: { dx: number; dy: number; moveX: number },
     ) => boolean;
     onPanResponderRelease: (
       event: unknown,
@@ -509,9 +517,9 @@ describe('swiping between the main tabs', () => {
     await render();
     await pressTab('커뮤니티');
     await press('커뮤니티 하위 화면 열기');
-    expect(config.onMoveShouldSetPanResponder({}, { dx: 80, dy: 0 })).toBe(
-      false,
-    );
+    expect(
+      config.onMoveShouldSetPanResponder({}, { dx: 80, dy: 0, moveX: 80 }),
+    ).toBe(false);
     await swipe(-200);
     await swipe(200);
     expect(texts()).toContain('커뮤니티 화면');
@@ -525,22 +533,22 @@ describe('swiping between the main tabs', () => {
 
   test('while a full screen such as settings is open the swipe is off, and works again after it closes', async () => {
     await render();
-    expect(config.onMoveShouldSetPanResponder({}, { dx: 80, dy: 0 })).toBe(
-      true,
-    );
+    expect(
+      config.onMoveShouldSetPanResponder({}, { dx: 80, dy: 0, moveX: 80 }),
+    ).toBe(true);
     await press('홈 설정');
     expect(texts()).toContain('설정 화면');
-    expect(config.onMoveShouldSetPanResponder({}, { dx: 80, dy: 0 })).toBe(
-      false,
-    );
+    expect(
+      config.onMoveShouldSetPanResponder({}, { dx: 80, dy: 0, moveX: 80 }),
+    ).toBe(false);
     await swipe(-200);
     await press('설정 뒤로');
     // 설정이 열려 있는 동안의 스와이프로 아래 탭이 바뀌지 않았다
     expect(texts()).toContain('홈 화면');
     expect(texts()).not.toContain('성장 화면');
-    expect(config.onMoveShouldSetPanResponder({}, { dx: 80, dy: 0 })).toBe(
-      true,
-    );
+    expect(
+      config.onMoveShouldSetPanResponder({}, { dx: 80, dy: 0, moveX: 80 }),
+    ).toBe(true);
   });
 });
 
@@ -576,4 +584,18 @@ test('the app is told when the home screen has finished drawing', async () => {
   expect(onHomeReady).not.toHaveBeenCalled();
   await press('홈 준비 끝');
   expect(onHomeReady).toHaveBeenCalledTimes(1);
+});
+
+describe('settings opened from the community profile menu', () => {
+  test('“프로필 설정” opens settings on the profile item, and the normal button opens the plain list', async () => {
+    await render();
+    await pressTab('커뮤니티');
+    await press('커뮤니티 프로필 설정');
+    expect(texts()).toContain('설정 첫 화면 profile');
+    await press('설정 뒤로');
+    expect(texts()).not.toContain('설정 화면');
+    await press('커뮤니티 설정');
+    expect(texts()).toContain('설정 화면');
+    expect(texts()).not.toContain('설정 첫 화면 profile');
+  });
 });

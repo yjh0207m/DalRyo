@@ -1,6 +1,9 @@
 import React from 'react';
 jest.mock('../src/hooks/usePostAuthor', () => ({ usePostAuthor: jest.fn() }));
 import {
+  Alert,
+  BackHandler,
+  Modal,
   PanResponder,
   ScrollView,
   StyleSheet,
@@ -118,6 +121,15 @@ const texts = () =>
   tree.root
     .findAllByType(Text)
     .map(node => ([] as unknown[]).concat(node.props.children).join(''));
+// 서브 네비게이션으로 오가는 화면이 떠 있는지(뒤로 가기 버튼이 없으니 표지로 찾는다)
+const shown = (id: string) =>
+  tree.root.findAll(node => node.props?.testID === id).length > 0;
+// 시스템 뒤로 가기(안드로이드 버튼, iOS 가장자리 스와이프가 부르는 것). 가장 나중에 등록된 처리기부터 불린다
+const backHandlers: Array<() => boolean | null | undefined> = [];
+const systemBack = () =>
+  act(async () => {
+    for (const handler of [...backHandlers].reverse()) if (handler()) break;
+  });
 const hasLabel = (label: string) =>
   tree.root.findAll(node => node.props.accessibilityLabel === label).length > 0;
 const press = (label: string) =>
@@ -153,6 +165,17 @@ async function render(
 }
 
 beforeEach(() => {
+  backHandlers.length = 0;
+  jest
+    .spyOn(BackHandler, 'addEventListener')
+    .mockImplementation((_name, handler) => {
+      backHandlers.push(handler);
+      return {
+        remove: () => {
+          backHandlers.splice(backHandlers.indexOf(handler), 1);
+        },
+      } as never;
+    });
   jest.clearAllMocks();
   mockWatchPost.mockImplementation(
     (_id: string, next: (value: unknown) => void) => {
@@ -183,6 +206,7 @@ beforeEach(() => {
 });
 afterEach(async () => {
   await act(async () => tree.unmount());
+  jest.restoreAllMocks();
 });
 
 test('a post link opens that post on top of the feed, and back returns to the feed', async () => {
@@ -249,21 +273,26 @@ test('the parent is told once that the link was used, and a later change of the 
 });
 
 describe('pages stack on top of the feed', () => {
+  // 접힌 서브 네비게이션 항목도 숨겨져 있으므로, 피드를 감싼 영역만 본다
   const feedHidden = () =>
-    tree.root.findAll(node => node.props.accessibilityElementsHidden === true)
-      .length > 0;
+    tree.root.findAll(
+      node =>
+        node.props.accessibilityElementsHidden === true &&
+        node.findAll(inner => inner.props.accessibilityLabel === '러너 랭킹')
+          .length > 0,
+    ).length > 0;
 
   test('the feed stays underneath a page instead of being replaced, and is hidden from screen readers while covered', async () => {
     await render();
     expect(hasLabel('글쓰기')).toBe(true);
     expect(feedHidden()).toBe(false);
     await chooseSubNav('profile');
-    expect(hasLabel('러너 프로필에서 뒤로')).toBe(true);
+    expect(shown('section-profile')).toBe(true);
     // 피드는 지워지지 않고 아래에 그대로 있다
     expect(hasLabel('러너 랭킹')).toBe(true);
     expect(feedHidden()).toBe(true);
-    await press('러너 프로필에서 뒤로');
-    expect(hasLabel('러너 프로필에서 뒤로')).toBe(false);
+    await chooseSubNav('feed');
+    expect(shown('section-profile')).toBe(false);
     expect(feedHidden()).toBe(false);
   });
 
@@ -323,27 +352,51 @@ describe('the community header', () => {
   test('the sub navigation changes the page inside the community while both bars stay', async () => {
     await render();
     await chooseSubNav('explore');
-    expect(hasLabel('탐색에서 뒤로')).toBe(true);
+    expect(shown('section-explore')).toBe(true);
     // 메인 하단 바를 가리라고 부모에게 알리지 않고, 서브 네비게이션도 그대로 있다
     expect(subpage).toHaveBeenLastCalledWith(false);
     expect(hasLabel('커뮤니티 메뉴')).toBe(true);
     // 다른 메뉴로 바로 옮겨 가도 마찬가지다
     await chooseSubNav('messages');
-    expect(hasLabel('탐색에서 뒤로')).toBe(false);
-    expect(hasLabel('대화에서 뒤로')).toBe(true);
+    expect(shown('section-explore')).toBe(false);
+    expect(shown('chat-list')).toBe(true);
     expect(subpage).toHaveBeenLastCalledWith(false);
     expect(hasLabel('커뮤니티 메뉴')).toBe(true);
     await chooseSubNav('profile');
-    expect(hasLabel('러너 프로필에서 뒤로')).toBe(true);
+    expect(shown('section-profile')).toBe(true);
     expect(subpage).toHaveBeenLastCalledWith(false);
     expect(hasLabel('커뮤니티 메뉴')).toBe(true);
   });
 
-  test('going back from a menu page returns to the feed, still with both bars', async () => {
+  test('the menu pages have no back button of their own, since the sub navigation is how you move between them', async () => {
+    await render();
+    for (const key of ['explore', 'messages', 'profile']) {
+      await chooseSubNav(key);
+      expect(
+        tree.root.findAll(node =>
+          String(node.props?.accessibilityLabel ?? '').endsWith('에서 뒤로'),
+        ),
+      ).toHaveLength(0);
+    }
+  });
+
+  test('the title of a menu page lines up with the content, not with a back button', async () => {
     await render();
     await chooseSubNav('explore');
-    await press('탐색에서 뒤로');
-    expect(hasLabel('탐색에서 뒤로')).toBe(false);
+    const page = tree.root.findByProps({ testID: 'section-explore' });
+    const header = page.findAll(
+      node =>
+        typeof node.type === 'string' &&
+        StyleSheet.flatten(node.props.style)?.paddingLeft === 20,
+    );
+    expect(header.length).toBeGreaterThan(0);
+  });
+
+  test('the system back button still returns from a menu page to the feed, with both bars', async () => {
+    await render();
+    await chooseSubNav('explore');
+    await systemBack();
+    expect(shown('section-explore')).toBe(false);
     expect(hasLabel('글쓰기')).toBe(true);
     expect(hasLabel('커뮤니티 메뉴')).toBe(true);
     expect(subpage).toHaveBeenLastCalledWith(false);
@@ -389,11 +442,12 @@ describe('the menu pages', () => {
     await render();
     await chooseSubNav('explore');
     await press('러너 검색');
+    // 위에 쌓인 화면은 뒤로 가기 버튼이 있다
     expect(hasLabel('러너 검색에서 뒤로')).toBe(true);
-    expect(hasLabel('탐색에서 뒤로')).toBe(true);
+    expect(shown('section-explore')).toBe(true);
     expect(subpage).toHaveBeenLastCalledWith(true);
     await press('러너 검색에서 뒤로');
-    expect(hasLabel('탐색에서 뒤로')).toBe(true);
+    expect(shown('section-explore')).toBe(true);
     expect(hasLabel('커뮤니티 메뉴')).toBe(true);
     expect(subpage).toHaveBeenLastCalledWith(false);
   });
@@ -426,8 +480,9 @@ describe('the menu pages', () => {
     await chooseSubNav('profile');
     expect(headerTexts()).toContain('@minji_run');
     expect(headerTexts()).not.toContain('러너 프로필');
-    // 뒤로가기 버튼의 읽기 이름은 그대로다
-    expect(hasLabel('러너 프로필에서 뒤로')).toBe(true);
+    // 내 프로필 자리에는 뒤로 가기 버튼이 없다
+    expect(hasLabel('러너 프로필에서 뒤로')).toBe(false);
+    expect(shown('section-profile')).toBe(true);
   });
 
   test('a runner who has no id yet shows their nickname at the top', async () => {
@@ -482,14 +537,14 @@ describe('the feed page', () => {
     expect(hasLabel('오늘의 달리기에서 뒤로')).toBe(true);
   });
 
-  test('the write button is on the feed and the explore page, not on messages or my profile', async () => {
+  test('the write button is on the feed, explore and my profile, but not on messages', async () => {
     await render();
-    await chooseSubNav('explore');
-    expect(hasLabel('글쓰기')).toBe(true);
-    for (const key of ['messages', 'profile']) {
+    for (const key of ['explore', 'profile']) {
       await chooseSubNav(key);
-      expect(hasLabel('글쓰기')).toBe(false);
+      expect(hasLabel('글쓰기')).toBe(true);
     }
+    await chooseSubNav('messages');
+    expect(hasLabel('글쓰기')).toBe(false);
     await chooseSubNav('feed');
     expect(hasLabel('글쓰기')).toBe(true);
   });
@@ -655,5 +710,457 @@ describe('a runner I have blocked', () => {
       uid: 'peer',
       blocked: false,
     });
+  });
+});
+
+describe('the profile page', () => {
+  const fullProfile = {
+    profile: {
+      uid: 'peer',
+      display_name: '민지',
+      user_id: 'minji_run',
+      profile_image: null,
+      total_km: 3,
+      region: '서울',
+      follower_count: 2,
+      following_count: 7,
+      influencer_tier: 'none',
+    },
+    following: false,
+    run_count: 2,
+    post_count: 9,
+    recent_runs: [
+      {
+        day: '2026. 11. 2.',
+        distance_km: 3,
+        duration_sec: 900,
+        avg_pace_sec: 300,
+        startedAtMs: 2000,
+      },
+    ],
+  };
+  const plainTexts = () =>
+    tree.root.findAllByType(Text).map(node =>
+      ([] as unknown[])
+        .concat(node.props.children)
+        .filter(part => typeof part === 'string' || typeof part === 'number')
+        .join(''),
+    );
+  const useProfile = (data: object, runs?: () => Promise<unknown>) =>
+    mockAction.mockImplementation((action: string) =>
+      action === 'profile'
+        ? Promise.resolve(data)
+        : action === 'profileRuns'
+        ? runs?.() ?? Promise.resolve({ runs: [], hasMore: false })
+        : Promise.resolve({ posts: [] }),
+    );
+
+  test('has the name on top, then a title, then the place, and no old tagline', async () => {
+    useProfile(fullProfile);
+    await render({ page: 'profile', uid: 'peer' });
+    const all = plainTexts();
+    expect(all).not.toContain('DALRYO RUNNER');
+    expect(all).not.toContain('서울에서 함께 달려요');
+    const name = all.indexOf('민지');
+    const title = all.indexOf('칭호');
+    const place = all.indexOf('서울');
+    expect(name).toBeGreaterThanOrEqual(0);
+    expect(name).toBeLessThan(title);
+    expect(title).toBeLessThan(place);
+  });
+
+  test('has posts, followers and following on one line, each word followed by its number', async () => {
+    useProfile(fullProfile);
+    await render({ page: 'profile', uid: 'peer' });
+    const all = plainTexts();
+    const fontSize = (value: string) =>
+      StyleSheet.flatten(
+        tree.root
+          .findAllByType(Text)
+          .find(node => String(node.props.children) === value)!.props.style,
+      ).fontSize;
+    const sizes: number[][] = [];
+    for (const [word, count] of [
+      ['게시물', '9'],
+      ['팔로워', '2'],
+      ['팔로잉', '7'],
+    ]) {
+      expect(all[all.indexOf(word) + 1]).toBe(count);
+      sizes.push([fontSize(word), fontSize(count)]);
+    }
+    // 숫자가 글자보다 한 단계 크고, 세 칸의 비율은 모두 같다
+    for (const [label, number] of sizes) expect(number).toBeGreaterThan(label);
+    expect(new Set(sizes.map(pair => pair.join('/'))).size).toBe(1);
+    const row = tree.root.findAll(
+      node =>
+        typeof node.type === 'string' &&
+        node.findAll(inner => inner.props.children === '게시물').length > 0 &&
+        node.findAll(inner => inner.props.children === '팔로잉').length > 0,
+    );
+    const cells = row.at(-1)!.children as Renderer.ReactTestInstance[];
+    expect(StyleSheet.flatten(row.at(-1)!.props.style).flexDirection).toBe(
+      'row',
+    );
+    // 세 칸은 폭이 같고(flex 1), 배경 없이 선으로만 나뉜다
+    expect(cells).toHaveLength(3);
+    for (const cell of cells) {
+      expect(StyleSheet.flatten(cell.props.style).flex).toBe(1);
+      expect(StyleSheet.flatten(cell.props.style).flexDirection).toBe('row');
+    }
+    expect(
+      StyleSheet.flatten(row.at(-1)!.props.style).backgroundColor,
+    ).toBeUndefined();
+  });
+
+  test('the post count falls back to the loaded posts until the server sends it', async () => {
+    const older = { ...fullProfile, post_count: undefined };
+    mockAction.mockImplementation((action: string) =>
+      Promise.resolve(
+        action === 'profile'
+          ? older
+          : { posts: [post, { ...post, post_id: 'b' }] },
+      ),
+    );
+    await render({ page: 'profile', uid: 'peer' });
+    const all = plainTexts();
+    expect(all[all.indexOf('게시물') + 1]).toBe('2');
+  });
+
+  test('posts are as wide as the sections above them', async () => {
+    const mine = { ...post, uid: 'peer' };
+    mockAction.mockImplementation((action: string) =>
+      Promise.resolve(action === 'profile' ? fullProfile : { posts: [mine] }),
+    );
+    await render({ page: 'profile', uid: 'peer' });
+    const card = tree.root.findAll(
+      node =>
+        typeof node.type === 'string' &&
+        StyleSheet.flatten(node.props.style)?.marginBottom === 20 &&
+        StyleSheet.flatten(node.props.style)?.borderRadius === 24,
+    );
+    expect(card.length).toBeGreaterThan(0);
+    expect(StyleSheet.flatten(card[0].props.style).marginHorizontal).toBe(0);
+  });
+
+  test('the two-column view keeps the 4:5 workout card whole, top to bottom', async () => {
+    const withPhoto = {
+      ...post,
+      uid: 'peer',
+      image_url: 'https://example.test/card.jpg',
+    };
+    const noPhoto = { ...post, post_id: 'plain', uid: 'peer', image_url: null };
+    mockAction.mockImplementation((action: string) =>
+      Promise.resolve(
+        action === 'profile' ? fullProfile : { posts: [withPhoto, noPhoto] },
+      ),
+    );
+    await render({ page: 'profile', uid: 'peer' });
+    await press('게시물 그리드 보기');
+    const grid = tree.root.findByProps({ testID: 'profile-posts-grid' });
+    const ratios = grid
+      .findAll(
+        node => StyleSheet.flatten(node.props.style)?.aspectRatio !== undefined,
+      )
+      .map(node => StyleSheet.flatten(node.props.style).aspectRatio);
+    expect(ratios.length).toBeGreaterThan(0);
+    for (const ratio of ratios) expect(ratio).toBeCloseTo(0.8);
+  });
+
+  test('the running footprint section is gone, and the runs open from the stats', async () => {
+    useProfile(fullProfile);
+    await render({ page: 'profile', uid: 'peer' });
+    expect(plainTexts()).not.toContain('러닝 발자국');
+    expect(plainTexts()).not.toContain('누적 거리');
+    expect(plainTexts()).toContain('완료한 러닝');
+    expect(plainTexts()).not.toContain('3.00km');
+    await press('최근 러닝 보기');
+    expect(plainTexts()).toContain('3.00km');
+  });
+
+  test('scrolling the page closes the runs bubble', async () => {
+    useProfile(fullProfile);
+    await render({ page: 'profile', uid: 'peer' });
+    await press('최근 러닝 보기');
+    await act(async () => {
+      tree.root
+        .findAll(node => typeof node.props.onScrollBeginDrag === 'function')[0]
+        .props.onScrollBeginDrag();
+    });
+    expect(plainTexts()).not.toContain('3.00km');
+  });
+
+  test('“자세히 보기” opens the full record, which can load older runs', async () => {
+    const page = (start: number, hasMore: boolean) => ({
+      runs: [
+        {
+          day: `2026. 10. ${start}.`,
+          distance_km: start,
+          duration_sec: 600,
+          avg_pace_sec: 300,
+          startedAtMs: start * 1000,
+        },
+      ],
+      hasMore,
+    });
+    const runs = jest
+      .fn()
+      .mockResolvedValueOnce(page(20, true))
+      .mockResolvedValueOnce(page(10, false));
+    useProfile(fullProfile, runs);
+    await render({ page: 'profile', uid: 'peer' });
+    await press('최근 러닝 보기');
+    await press('러닝 기록 자세히 보기');
+    expect(hasLabel('러닝 기록에서 뒤로')).toBe(true);
+    expect(mockAction).toHaveBeenCalledWith('profileRuns', { uid: 'peer' });
+    expect(plainTexts()).toContain('20.00km');
+    await act(async () => {
+      tree.root
+        .find(node => node.props.label === '이전 기록 더 보기')
+        .props.onPress();
+    });
+    expect(mockAction).toHaveBeenLastCalledWith('profileRuns', {
+      uid: 'peer',
+      afterMs: 20000,
+    });
+    expect(plainTexts()).toContain('10.00km');
+    expect(
+      tree.root.findAll(node => node.props.label === '이전 기록 더 보기'),
+    ).toHaveLength(0);
+    await press('러닝 기록에서 뒤로');
+    expect(hasLabel('러닝 기록에서 뒤로')).toBe(false);
+  });
+
+  test('if the full record cannot be loaded it offers another try', async () => {
+    useProfile(fullProfile, () => Promise.reject(new Error('offline')));
+    await render({ page: 'profile', uid: 'peer' });
+    await press('최근 러닝 보기');
+    await press('러닝 기록 자세히 보기');
+    expect(plainTexts()).toContain('불러오지 못했어요.');
+  });
+});
+
+describe('the profile menu', () => {
+  const plainTexts = () =>
+    tree.root.findAllByType(Text).map(node =>
+      ([] as unknown[])
+        .concat(node.props.children)
+        .filter(part => typeof part === 'string' || typeof part === 'number')
+        .join(''),
+    );
+  const profileData = {
+    profile: {
+      uid: 'me',
+      display_name: '나',
+      profile_image: null,
+      total_km: 3,
+      region: '서울',
+      follower_count: 0,
+      following_count: 0,
+      influencer_tier: 'none',
+    },
+    following: false,
+    run_count: 1,
+    recent_runs: [],
+  };
+  const useData = (data: object) =>
+    mockAction.mockImplementation((action: string) =>
+      Promise.resolve(
+        action === 'profile'
+          ? data
+          : action === 'profilePosts'
+          ? { posts: [] }
+          : {},
+      ),
+    );
+  const open = async () => {
+    await press('프로필 메뉴');
+  };
+
+  test('is a three-dot button in the top right corner of the profile card', async () => {
+    useData(profileData);
+    await render({ page: 'profile', uid: 'me' });
+    expect(hasLabel('프로필 메뉴')).toBe(true);
+    expect(tree.root.findAllByType(Modal)).toHaveLength(0);
+  });
+
+  describe('on my own profile', () => {
+    const mine = {
+      ...profileData,
+      privacy: { runs_public: true, connections_public: false },
+    };
+    const onSettings = jest.fn();
+    const renderMine = async () => {
+      await act(async () => {
+        tree = Renderer.create(
+          <CommunityScreen
+            {...base}
+            onProfileSettingsPress={onSettings}
+            initialRoute={{ page: 'profile', uid: 'me' }}
+            onSubpageChange={subpage}
+            onInitialRouteHandled={handled}
+          />,
+        );
+      });
+    };
+    beforeEach(() => {
+      onSettings.mockClear();
+      useData(mine);
+    });
+
+    test('offers profile settings and the two privacy switches with their current state', async () => {
+      await renderMine();
+      await open();
+      const all = plainTexts();
+      expect(all).toEqual(
+        expect.arrayContaining([
+          '프로필 설정',
+          '러닝 기록 공개 · 켜짐',
+          '팔로워·팔로잉 공개 · 꺼짐',
+        ]),
+      );
+      expect(all).not.toContain('차단');
+    });
+
+    test('profile settings opens the settings on the profile item', async () => {
+      await renderMine();
+      await open();
+      await press('프로필 설정');
+      await act(async () => tree.root.findByType(Modal).props.onDismiss());
+      expect(onSettings).toHaveBeenCalledTimes(1);
+    });
+
+    test('a privacy switch tells the server, and the menu shows the new state next time', async () => {
+      await renderMine();
+      await open();
+      await press('러닝 기록 공개 · 켜짐');
+      await act(async () => tree.root.findByType(Modal).props.onDismiss());
+      expect(mockAction).toHaveBeenCalledWith('setPrivacy', {
+        runsPublic: false,
+      });
+      await open();
+      expect(plainTexts()).toContain('러닝 기록 공개 · 꺼짐');
+      await press('팔로워·팔로잉 공개 · 꺼짐');
+      await act(async () => tree.root.findByType(Modal).props.onDismiss());
+      expect(mockAction).toHaveBeenCalledWith('setPrivacy', {
+        connectionsPublic: true,
+      });
+    });
+
+    test('if the server refuses, the switch goes back', async () => {
+      await renderMine();
+      mockAction.mockImplementation((action: string) =>
+        action === 'setPrivacy'
+          ? Promise.reject(new Error('offline'))
+          : Promise.resolve(action === 'profile' ? mine : { posts: [] }),
+      );
+      await open();
+      await press('러닝 기록 공개 · 켜짐');
+      await act(async () => tree.root.findByType(Modal).props.onDismiss());
+      await open();
+      expect(plainTexts()).toContain('러닝 기록 공개 · 켜짐');
+    });
+  });
+
+  describe('on someone else’s profile', () => {
+    const other = {
+      ...profileData,
+      profile: { ...profileData.profile, uid: 'peer', display_name: '민지' },
+    };
+    let alert: jest.SpyInstance;
+    beforeEach(() => {
+      alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+    });
+    afterEach(() => alert.mockRestore());
+
+    test('offers only blocking, not settings or privacy', async () => {
+      useData(other);
+      await render({ page: 'profile', uid: 'peer' });
+      await open();
+      const all = plainTexts();
+      expect(all).toContain('민지 차단');
+      expect(all).not.toContain('프로필 설정');
+      expect(all.some(text => text.includes('공개 ·'))).toBe(false);
+    });
+
+    test('blocking asks first, and only a confirmed block reaches the server', async () => {
+      useData(other);
+      await render({ page: 'profile', uid: 'peer' });
+      await open();
+      await press('민지 차단');
+      await act(async () => tree.root.findByType(Modal).props.onDismiss());
+      expect(alert.mock.calls[0][0]).toBe('민지님을 차단할까요?');
+      expect(mockAction).not.toHaveBeenCalledWith(
+        'blockUser',
+        expect.anything(),
+      );
+      const buttons = alert.mock.calls[0][2] as Array<{
+        text: string;
+        onPress?: () => void;
+      }>;
+      await act(async () => buttons.find(b => b.text === '차단')!.onPress!());
+      expect(mockAction).toHaveBeenCalledWith('blockUser', {
+        uid: 'peer',
+        blocked: true,
+      });
+    });
+
+    test('a runner I blocked offers unblocking instead', async () => {
+      useData({ ...other, blocked: true });
+      await render({ page: 'profile', uid: 'peer' });
+      await open();
+      expect(plainTexts()).not.toContain('민지 차단');
+      await press('차단 해제');
+      await act(async () => tree.root.findByType(Modal).props.onDismiss());
+      expect(mockAction).toHaveBeenCalledWith('blockUser', {
+        uid: 'peer',
+        blocked: false,
+      });
+    });
+  });
+});
+
+describe('private runs on someone’s profile', () => {
+  test('show a lock instead of the count and no way to open the runs', async () => {
+    mockAction.mockImplementation((action: string) =>
+      Promise.resolve(
+        action === 'profile'
+          ? {
+              profile: {
+                uid: 'peer',
+                display_name: '민지',
+                profile_image: null,
+                total_km: 3,
+                region: '서울',
+                follower_count: 1,
+                following_count: 1,
+                influencer_tier: 'none',
+              },
+              following: false,
+              run_count: null,
+              runs_hidden: true,
+              recent_runs: [],
+            }
+          : { posts: [] },
+      ),
+    );
+    await render({ page: 'profile', uid: 'peer' });
+    const all = tree.root
+      .findAllByType(Text)
+      .map(node => ([] as unknown[]).concat(node.props.children).join(''));
+    expect(all).toContain('러닝 기록은 비공개예요');
+    expect(hasLabel('최근 러닝 보기')).toBe(false);
+  });
+});
+
+describe('back buttons on pages that are stacked on top', () => {
+  test('someone else’s profile, reached from a post or a link, keeps its back button', async () => {
+    await render({ page: 'profile', uid: 'peer' });
+    expect(hasLabel('러너 프로필에서 뒤로')).toBe(true);
+    expect(shown('section-profile')).toBe(false);
+  });
+
+  test('my own profile opened from a link on top of the feed also keeps it, since it is not the menu page', async () => {
+    await render({ page: 'profile', uid: 'me' });
+    expect(hasLabel('러너 프로필에서 뒤로')).toBe(true);
   });
 });

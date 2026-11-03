@@ -5,7 +5,11 @@ import {
   type FirebaseFirestoreTypes,
 } from '@react-native-firebase/firestore';
 import { auth, firestore } from '../lib/firebase';
-import type { CharacterType, CharacterStage } from '../types/character.types';
+import type {
+  CharacterType,
+  CharacterStage,
+  EquippedOutfit,
+} from '../types/character.types';
 
 export type RunnerProfile = {
   profile: PublicProfile;
@@ -19,14 +23,29 @@ export type RunnerProfile = {
     pet_name: string;
     exp: number;
     is_frozen: boolean;
+    // 이 값이 서버에 생기기 전에는 없을 수 있다
+    stat_stamina?: number;
+    stat_speed?: number;
+    stat_endurance?: number;
+    // 입고 있는 꾸미기 아이템
+    equipped?: EquippedOutfit;
   } | null;
-  run_count?: number;
-  recent_runs?: {
-    day: string;
-    distance_km: number;
-    duration_sec: number;
-    avg_pace_sec: number;
-  }[];
+  // 러닝 기록을 비공개로 해 둔 러너는 null
+  run_count?: number | null;
+  runs_hidden?: boolean;
+  connections_hidden?: boolean;
+  // 내 프로필일 때만 온다
+  privacy?: { runs_public: boolean; connections_public: boolean };
+  // 내가 볼 수 있는 게시물 수
+  post_count?: number;
+  recent_runs?: RunSummary[];
+};
+export type RunSummary = {
+  day: string;
+  distance_km: number;
+  duration_sec: number;
+  avg_pace_sec: number;
+  startedAtMs?: number;
 };
 export type BlockedUser = {
   uid: string;
@@ -34,7 +53,12 @@ export type BlockedUser = {
   user_id?: string | null;
   profile_image: string | null;
 };
-export type ConnectionPage = { users: PublicProfile[]; cursor: string | null };
+// hidden: 상대가 팔로워·팔로잉 목록을 비공개로 해 둔 경우
+export type ConnectionPage = {
+  users: PublicProfile[];
+  cursor: string | null;
+  hidden?: boolean;
+};
 
 export type PublicProfile = {
   uid: string;

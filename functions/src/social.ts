@@ -5,6 +5,7 @@ import {
   getFirestore,
   Timestamp,
   type DocumentData,
+  type DocumentSnapshot,
   type Transaction,
 } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
@@ -16,6 +17,7 @@ import {
   text,
   USER_ID_PATTERN,
 } from './validation';
+import { cleanEquipped } from './itemCatalog';
 import { mixHome, rankByRelation, recommendations } from './explore';
 import { chatAction, conversationId } from './chat';
 
@@ -93,6 +95,27 @@ async function blockedBetween(a: string, b: string, tx: Transaction) {
     tx.get(blockRef(b, a)),
   ]);
   return one.exists || other.exists;
+}
+// 프로필 공개 설정. 값이 없으면 모두 공개다
+function privacyOf(data?: DocumentData) {
+  return {
+    runs_public: data?.privacy?.runs_public !== false,
+    connections_public: data?.privacy?.connections_public !== false,
+  };
+}
+// 프로필의 러닝 기록 한 줄
+function runSummary(run: DocumentSnapshot) {
+  const started = run.get('started_at');
+  return {
+    day:
+      started
+        ?.toDate?.()
+        .toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' }) ?? '',
+    distance_km: Math.max(0, Number(run.get('distance_km')) || 0),
+    duration_sec: count(run.get('duration_sec')),
+    avg_pace_sec: count(run.get('avg_pace_sec')),
+    startedAtMs: started?.toMillis?.() ?? 0,
+  };
 }
 async function readable(uid: string, post: DocumentData, tx?: Transaction) {
   if (post.deleted) return false;
@@ -254,6 +277,8 @@ export const socialAction = onCall(
           recentRuns,
           iBlocked,
           blockedMe,
+          publicPosts,
+          followerPosts,
         ] = await Promise.all([
           db().collection('users').doc(target).get(),
           db().collection('follows').doc(`${uid}_${target}`).get(),
@@ -269,13 +294,29 @@ export const socialAction = onCall(
             .collection('runs')
             .where('uid', '==', target)
             .orderBy('started_at', 'desc')
-            .limit(5)
+            .limit(10)
             .get(),
           blockRef(uid, target).get(),
           blockRef(target, uid).get(),
+          db()
+            .collection('posts')
+            .where('uid', '==', target)
+            .where('visibility', '==', 'public')
+            .count()
+            .get(),
+          db()
+            .collection('posts')
+            .where('uid', '==', target)
+            .where('visibility', '==', 'followers')
+            .count()
+            .get(),
         ]);
         if (!profile.exists || (blockedMe.exists && target !== uid))
           throw new HttpsError('not-found', '사용자를 찾을 수 없어요.');
+        // 비공개로 해 둔 러닝 기록·팔로워 목록은 본인에게만 보인다
+        const priv = privacyOf(profile.data());
+        const owner = target === uid;
+        const runsHidden = !owner && !priv.runs_public;
         return {
           profile: publicUser(target, profile.data()!),
           // 내가 차단한 러너. 앱은 기록 대신 차단 해제 버튼을 보여 준다
@@ -290,25 +331,61 @@ export const socialAction = onCall(
                 pet_name: String(pet.get('pet_name') ?? '달료').slice(0, 20),
                 exp: count(pet.get('exp')),
                 is_frozen: profile.get('is_frozen') === true,
+                stat_stamina: count(pet.get('stat_stamina')),
+                stat_speed: count(pet.get('stat_speed')),
+                stat_endurance: count(pet.get('stat_endurance')),
+                // 입고 있는 꾸미기 아이템. 홈 화면과 같은 모습으로 보여 주려고 함께 내려 준다
+                equipped: cleanEquipped(pet.get('equipped')),
               }
             : null,
-          run_count: runCount.data().count,
-          recent_runs: recentRuns.docs.map(run => ({
-            day:
-              run
-                .get('started_at')
-                ?.toDate?.()
-                .toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' }) ?? '',
-            distance_km: Math.max(0, Number(run.get('distance_km')) || 0),
-            duration_sec: count(run.get('duration_sec')),
-            avg_pace_sec: count(run.get('avg_pace_sec')),
-          })),
+          run_count: runsHidden ? null : runCount.data().count,
+          runs_hidden: runsHidden,
+          connections_hidden: !owner && !priv.connections_public,
+          // 설정 화면에서 쓰도록 본인에게만 내려 준다
+          privacy: owner ? priv : undefined,
+          // 프로필 목록에 보이는 글만 센다. 팔로워 공개 글은 본인과 팔로워에게만 보인다
+          post_count:
+            publicPosts.data().count +
+            (target === uid || follow.exists ? followerPosts.data().count : 0),
+          recent_runs: runsHidden ? [] : recentRuns.docs.map(runSummary),
+        };
+      }
+      if (input.action === 'profileRuns') {
+        const target = documentId(input.uid);
+        if ((await blockedWith(uid)).has(target))
+          return { runs: [], hasMore: false };
+        if (target !== uid) {
+          const owner = await db().collection('users').doc(target).get();
+          if (!privacyOf(owner.data()).runs_public)
+            return { runs: [], hasMore: false, hidden: true };
+        }
+        let query = db()
+          .collection('runs')
+          .where('uid', '==', target)
+          .orderBy('started_at', 'desc');
+        if (input.afterMs !== undefined) {
+          if (
+            typeof input.afterMs !== 'number' ||
+            !Number.isFinite(input.afterMs)
+          )
+            throw new Error('다음 페이지를 확인해 주세요.');
+          query = query.startAfter(Timestamp.fromMillis(input.afterMs));
+        }
+        const page = await query.limit(31).get();
+        return {
+          runs: page.docs.slice(0, 30).map(runSummary),
+          hasMore: page.size > 30,
         };
       }
       if (input.action === 'connections') {
         const target = documentId(input.uid ?? uid);
         if (!['followers', 'following'].includes(input.kind))
           throw new Error('목록 종류를 확인해 주세요.');
+        if (target !== uid) {
+          const owner = await db().collection('users').doc(target).get();
+          if (!privacyOf(owner.data()).connections_public)
+            return { users: [], cursor: null, hidden: true };
+        }
         const field =
           input.kind === 'followers' ? 'following_id' : 'follower_id';
         const otherField =
@@ -536,6 +613,23 @@ export const socialAction = onCall(
         if (changed && input.following)
           await push(target, actor, 'follow', uid);
         return { following: input.following };
+      }
+      if (input.action === 'setPrivacy') {
+        // 보낸 항목만 바꾼다. 하나는 그대로 두고 다른 하나만 바꿀 수 있다
+        const changes: Record<string, boolean> = {};
+        for (const [key, field] of [
+          ['runsPublic', 'privacy.runs_public'],
+          ['connectionsPublic', 'privacy.connections_public'],
+        ] as const) {
+          if (input[key] === undefined) continue;
+          if (typeof input[key] !== 'boolean')
+            throw new Error('공개 설정을 확인해 주세요.');
+          changes[field] = input[key];
+        }
+        if (!Object.keys(changes).length)
+          throw new Error('바꿀 설정을 보내 주세요.');
+        await userRef.update(changes);
+        return privacyOf((await userRef.get()).data());
       }
       if (input.action === 'blockUser') {
         const target = documentId(input.uid);

@@ -432,7 +432,11 @@ describe('saved posts', () => {
     const onOpenSaved = jest.fn();
     await act(async () => {
       tree = Renderer.create(
-        <SettingsScreen user={user} onBack={onBack} onOpenSaved={onOpenSaved} />,
+        <SettingsScreen
+          user={user}
+          onBack={onBack}
+          onOpenSaved={onOpenSaved}
+        />,
       );
     });
     await press('저장한 게시물');
@@ -465,5 +469,49 @@ describe('blocked users', () => {
   test('are not offered when nothing handles them', async () => {
     await render();
     expect(byLabel('차단한 사용자')).toBeUndefined();
+  });
+});
+
+describe('opening straight on the profile item', () => {
+  async function renderDirect() {
+    await act(async () => {
+      tree = Renderer.create(
+        <SettingsScreen user={user} onBack={onBack} initialSection="profile" />,
+      );
+    });
+  }
+
+  test('shows the profile fields first, without the list behind them', async () => {
+    await renderDirect();
+    expect(inDetail('내 프로필')).toBe(true);
+    expect(input('닉네임').props.value).toBe('조현');
+    expect(byLabel('푸시 알림, 꺼짐')).toBeUndefined();
+    expect(byLabel('설정에서 뒤로')).toBeUndefined();
+  });
+
+  test('going back leaves settings entirely, so the profile it came from is shown again', async () => {
+    await renderDirect();
+    await press('내 프로필에서 뒤로');
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  test('an unsaved change still asks first, and leaving then closes settings', async () => {
+    await renderDirect();
+    await type('닉네임', '바꾼닉네임');
+    await press('내 프로필에서 뒤로');
+    expect(onBack).not.toHaveBeenCalled();
+    await choose('나가기');
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  test('saving closes settings too, and sends the edit', async () => {
+    await renderDirect();
+    await type('닉네임', '새닉네임');
+    await pressText('저장');
+    expect(mockSave).toHaveBeenCalledTimes(1);
+    expect(mockSave.mock.calls[0][0]).toMatchObject({
+      displayName: '새닉네임',
+    });
+    expect(onBack).toHaveBeenCalledTimes(1);
   });
 });

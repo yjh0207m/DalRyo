@@ -23,7 +23,7 @@ import { colors, fonts, radius, spacing } from '../../theme';
 import type { CharacterDocument } from '../../types/character.types';
 import type { RunDocument } from '../../types/run.types';
 import type { UserDocument } from '../../types/user.types';
-import { STAGE_LABELS } from '../../utils/exp';
+import { STAGE_LABELS, STAT_MAX } from '../../utils/exp';
 
 type Props = {
   user: UserDocument | null;
@@ -33,7 +33,6 @@ type Props = {
   onSettingsPress: () => void;
 };
 
-const STAT_MAX = 100;
 const DAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
 const CHART_HEIGHT = 120;
 

@@ -20,6 +20,7 @@ import { animateTo, DURATION } from './motion';
 import {
   isHorizontalDrag,
   isTabSwipe,
+  startsInSwipeZone,
   SWIPE_TAB_ORDER,
   tabIndex,
 } from './tabSwipe';
@@ -105,7 +106,11 @@ export function useTabPager({
         onMoveShouldSetPanResponder: (
           _event: GestureResponderEvent,
           gesture: PanResponderGestureState,
-        ) => latest.current.enabled && isHorizontalDrag(gesture),
+        ) =>
+          latest.current.enabled &&
+          isHorizontalDrag(gesture) &&
+          // x0는 가져간 뒤에야 정해지므로 지금 위치에서 움직인 만큼을 빼서 시작 위치를 구한다
+          startsInSwipeZone(gesture.moveX - gesture.dx, latest.current.width),
         onPanResponderGrant: () => {
           busy.current = true;
           position.stopAnimation();

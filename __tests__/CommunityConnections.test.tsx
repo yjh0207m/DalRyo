@@ -261,5 +261,26 @@ test('profile shows a pet and brief runs, and relationship counts navigate to li
     tree.root.findByProps({ label: '메시지 보내기' }).props.onPress(),
   );
   expect(message).toHaveBeenCalledWith('peer');
+  // 러닝 목록은 발자국 버튼을 눌러야 말풍선으로 뜬다
+  expect(
+    tree.root.findAllByProps({ testID: 'profile-runs-list' }),
+  ).toHaveLength(0);
+  await act(() => press('최근 러닝 보기'));
   expect(tree.root.findByProps({ testID: 'profile-runs-list' })).toBeTruthy();
+});
+test('a hidden list says so instead of looking empty', async () => {
+  mockAction.mockResolvedValue({ users: [], cursor: null, hidden: true });
+  await act(async () => {
+    tree = Renderer.create(
+      <ConnectionsScreen
+        uid="peer"
+        onBack={jest.fn()}
+        onProfile={jest.fn()}
+        onMessage={jest.fn()}
+      />,
+    );
+  });
+  const all = JSON.stringify(tree.toJSON());
+  expect(all).toContain('비공개 목록이에요');
+  expect(all).not.toContain('아직 팔로워가 없어요');
 });

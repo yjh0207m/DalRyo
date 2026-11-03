@@ -12,7 +12,7 @@ import type { MainTab } from '../src/navigation/BottomTabBar';
 type Config = {
   onMoveShouldSetPanResponder: (
     event: unknown,
-    gesture: { dx: number; dy: number },
+    gesture: { dx: number; dy: number; moveX: number },
   ) => boolean;
   onPanResponderGrant: () => void;
   onPanResponderMove: (
@@ -101,15 +101,15 @@ describe('at rest', () => {
 describe('dragging with a finger', () => {
   test('a press is never taken over; only a clear sideways drag is', async () => {
     await render('home');
-    expect(config.onMoveShouldSetPanResponder({}, { dx: 40, dy: 0 })).toBe(
-      true,
-    );
-    expect(config.onMoveShouldSetPanResponder({}, { dx: 3, dy: 0 })).toBe(
-      false,
-    );
-    expect(config.onMoveShouldSetPanResponder({}, { dx: 5, dy: 60 })).toBe(
-      false,
-    );
+    expect(
+      config.onMoveShouldSetPanResponder({}, { dx: 40, dy: 0, moveX: 40 }),
+    ).toBe(true);
+    expect(
+      config.onMoveShouldSetPanResponder({}, { dx: 3, dy: 0, moveX: 3 }),
+    ).toBe(false);
+    expect(
+      config.onMoveShouldSetPanResponder({}, { dx: 5, dy: 60, moveX: 5 }),
+    ).toBe(false);
   });
 
   test('dragging left brings the next tab in beside the current one and the position follows the finger', async () => {
@@ -217,9 +217,9 @@ describe('letting go', () => {
 
   test('while disabled (a sub screen is open) nothing is taken over and nothing changes', async () => {
     await render('community', false);
-    expect(config.onMoveShouldSetPanResponder({}, { dx: 80, dy: 0 })).toBe(
-      false,
-    );
+    expect(
+      config.onMoveShouldSetPanResponder({}, { dx: 80, dy: 0, moveX: 80 }),
+    ).toBe(false);
     await release(-pager.width * 0.5);
     expect(onChange).not.toHaveBeenCalled();
     await rerender('community', true);
@@ -269,5 +269,40 @@ describe('with animation on', () => {
     await rerender('growth');
     expect(shown()).toEqual(['growth 화면']);
     expect(position()).toBe(1);
+  });
+});
+
+describe('where a swipe may start', () => {
+  test('a sideways drag that started in the middle third of the screen is left alone', async () => {
+    await render('home');
+    // 화면 너비 750 기준: 가운데 칸은 250~500
+    expect(
+      config.onMoveShouldSetPanResponder({}, { dx: 40, dy: 0, moveX: 415 }),
+    ).toBe(false);
+    expect(
+      config.onMoveShouldSetPanResponder({}, { dx: -40, dy: 0, moveX: 335 }),
+    ).toBe(false);
+  });
+
+  test('the same drag from either side still swipes', async () => {
+    await render('home');
+    expect(
+      config.onMoveShouldSetPanResponder({}, { dx: 40, dy: 0, moveX: 140 }),
+    ).toBe(true);
+    expect(
+      config.onMoveShouldSetPanResponder({}, { dx: -40, dy: 0, moveX: 660 }),
+    ).toBe(true);
+  });
+
+  test('the start is where the finger came down, even if it has since crossed into the middle', async () => {
+    await render('home');
+    // 왼쪽 칸(100)에서 시작해 가운데(300)까지 온 손가락
+    expect(
+      config.onMoveShouldSetPanResponder({}, { dx: 200, dy: 0, moveX: 300 }),
+    ).toBe(true);
+    // 가운데(300)에서 시작해 오른쪽 칸(600)까지 간 손가락
+    expect(
+      config.onMoveShouldSetPanResponder({}, { dx: 300, dy: 0, moveX: 600 }),
+    ).toBe(false);
   });
 });

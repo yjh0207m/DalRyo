@@ -38,6 +38,14 @@ export function isHorizontalDrag(gesture: Gesture) {
   );
 }
 
+// 화면을 세로로 셋으로 나눠 가운데 칸에서 시작한 움직임은 탭을 넘기지 않는다.
+// 커뮤니티의 서브 네비게이션(가운데 버튼을 누른 채 좌우로 끌어 고르는 메뉴)과 헷갈리지 않게 한다
+const CENTER_FRACTION = 1 / 3;
+export function startsInSwipeZone(startX: number, width: number) {
+  const side = (width * (1 - CENTER_FRACTION)) / 2;
+  return startX < side || startX > width - side;
+}
+
 // 손가락을 뗐을 때 탭을 넘길지 정한다
 export function isTabSwipe(gesture: Gesture, width: number) {
   const distance = Math.abs(gesture.dx);

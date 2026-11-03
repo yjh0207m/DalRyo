@@ -159,6 +159,18 @@ setLogLevel('silent');
       await assertFails(setDoc(doc(alice,'users/alice/hidden_posts/other'),{post_id:'other'}));
       await assertFails(deleteDoc(doc(alice,'users/alice/blocks/bob')));
     });
+    await test('a privacy setting may sit on the user document, but only the server changes it', async () => {
+      await env.withSecurityRulesDisabled(async ctx => {
+        await updateDoc(doc(ctx.firestore(),'users/alice'),{privacy:{runs_public:false,connections_public:true}});
+      });
+      // 설정이 들어 있어도 앱의 다른 프로필 수정은 계속 된다
+      await assertSucceeds(updateDoc(doc(alice,'users/alice'),{display_name:'설정 있는 이름'}));
+      await assertFails(updateDoc(doc(alice,'users/alice'),{privacy:{runs_public:true,connections_public:true}}));
+      const zed = env.authenticatedContext('zed').firestore();
+      await assertFails(setDoc(doc(zed,'users/zed'),{...user('zed'),privacy:{runs_public:'no'}}));
+      await assertFails(setDoc(doc(zed,'users/zed'),{...user('zed'),privacy:{runs_public:true,extra:true}}));
+      await assertSucceeds(setDoc(doc(zed,'users/zed'),{...user('zed'),privacy:{runs_public:false,connections_public:false}}));
+    });
     console.log(`${passed} security rule scenarios passed`);
   } finally {await env.cleanup();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

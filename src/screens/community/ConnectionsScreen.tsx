@@ -41,6 +41,8 @@ export function ConnectionsScreen({
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // 상대가 목록을 비공개로 해 둔 경우
+  const [hidden, setHidden] = useState(false);
   const [moreBusy, setMoreBusy] = useState(false);
   const [revision, setRevision] = useState(0);
   const serial = useRef(0);
@@ -60,12 +62,14 @@ export function ConnectionsScreen({
     setCursor(null);
     setLoading(true);
     setError('');
+    setHidden(false);
     setMoreBusy(false);
     socialRequest<ConnectionPage>('connections', { uid, kind })
       .then(page => {
         if (live) {
           setUsers(page.users);
           setCursor(page.cursor);
+          setHidden(page.hidden === true);
         }
       })
       .catch(e => {
@@ -194,12 +198,16 @@ export function ConnectionsScreen({
               <View style={s.empty}>
                 <UserRound size={34} color={colors.primary} />
                 <AppText variant="subheading">
-                  {kind === 'following'
+                  {hidden
+                    ? '비공개 목록이에요'
+                    : kind === 'following'
                     ? '아직 팔로잉하는 러너가 없어요'
                     : '아직 팔로워가 없어요'}
                 </AppText>
                 <AppText color={colors.textMuted}>
-                  함께 달릴 러너의 프로필에서 인사를 나눠 보세요.
+                  {hidden
+                    ? '이 러너는 팔로워·팔로잉 목록을 공개하지 않았어요.'
+                    : '함께 달릴 러너의 프로필에서 인사를 나눠 보세요.'}
                 </AppText>
               </View>
             ) : null

@@ -92,20 +92,25 @@ function Header({
   onBack,
   right,
   onTitlePress,
+  hideBack = false,
 }: {
   title: string;
   onBack: () => void;
   right?: React.ReactNode;
   onTitlePress?: () => void;
+  // 서브 네비게이션으로 오가는 메시지 목록처럼 뒤로 가기 버튼이 필요 없을 때
+  hideBack?: boolean;
 }) {
   return (
-    <View style={s.header}>
-      <IconButton
-        icon={ChevronLeft}
-        variant="plain"
-        accessibilityLabel="대화에서 뒤로"
-        onPress={onBack}
-      />
+    <View style={[s.header, hideBack && s.headerNoBack]}>
+      {!hideBack && (
+        <IconButton
+          icon={ChevronLeft}
+          variant="plain"
+          accessibilityLabel="대화에서 뒤로"
+          onPress={onBack}
+        />
+      )}
       <Pressable
         style={s.headerTitle}
         disabled={!onTitlePress}
@@ -148,6 +153,7 @@ export function ChatScreen({
   onTogether,
   onDetailChange,
   bottomInset = 0,
+  hideBack = false,
 }: {
   onBack: () => void;
   initialPeer?: string;
@@ -158,6 +164,8 @@ export function ChatScreen({
   onDetailChange?: (detail: boolean) => void;
   // 화면 아래에 떠 있는 바에 목록 끝이 가려지지 않도록 비워 둘 높이
   bottomInset?: number;
+  // 목록 맨 위의 뒤로 가기 버튼을 숨긴다(시스템 뒤로 가기는 그대로 동작)
+  hideBack?: boolean;
 }) {
   const [roomId, setRoomId] = useState<string | null>(null);
   const [opening, setOpening] = useState(!!initialPeer);
@@ -273,11 +281,13 @@ export function ChatScreen({
     return <NewChat onBack={back} onSelect={open} openError={error} />;
   return (
     <SafeAreaView
+      testID="chat-list"
       style={s.screen}
       edges={bottomInset ? ['top'] : ['top', 'bottom']}
     >
       <Header
         title="메시지"
+        hideBack={hideBack}
         onBack={back}
         right={
           <IconButton
@@ -1034,6 +1044,8 @@ const s = StyleSheet.create({
     borderColor: colors.border,
     gap: 8,
   },
+  // 탐색·내 프로필의 머리글과 같은 높이로 맞춘다
+  headerNoBack: { paddingLeft: 20, minHeight: 52 },
   headerTitle: { flex: 1 },
   spacer: { width: 44 },
   list: { padding: 20, gap: 8, flexGrow: 1 },

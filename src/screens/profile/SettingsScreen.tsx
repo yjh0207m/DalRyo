@@ -62,6 +62,8 @@ type Props = {
   onOpenSaved?: () => void;
   // 있으면 목록에 "차단한 사용자"를 보여 준다
   onOpenBlocked?: () => void;
+  // 이 항목의 화면으로 바로 들어온다. 목록을 거치지 않으므로 뒤로 가면 설정을 닫고 왔던 화면으로 돌아간다
+  initialSection?: 'profile';
 };
 
 // 설정 목록의 항목. 항목을 누르면 그 항목만 바꾸는 화면이 밀려 들어온다
@@ -100,6 +102,7 @@ export function SettingsScreen({
   onPreviewCharacter,
   onOpenSaved,
   onOpenBlocked,
+  initialSection,
 }: Props) {
   const insets = useSafeAreaInsets();
   const [initial, setInitial] = useState<ProfileForm>(() => ({
@@ -127,7 +130,9 @@ export function SettingsScreen({
   const [busy, setBusy] = useState<'save' | 'logout' | 'select' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
-  const [section, setSection] = useState<Section | null>(null);
+  const [section, setSection] = useState<Section | null>(
+    initialSection ?? null,
+  );
 
   const photoUri = photo === undefined ? initialImage : photo?.uri;
   // 항목별로 바뀐 것이 있는지. 상세 화면은 자기 항목만 보고, 나갈 때 자기 항목만 되돌린다
@@ -463,6 +468,29 @@ export function SettingsScreen({
       '',
   };
 
+  const sectionPage = (target: Section, back: () => void) => (
+    <SectionPage
+      title={SECTION_TITLE[target]}
+      insetsBottom={insets.bottom}
+      dirty={changed[target]}
+      busy={busy}
+      progress={progress}
+      uploading={target === 'profile' && !!photo}
+      error={error}
+      onDiscard={() => reset(target)}
+      onBack={back}
+      onSave={async () => {
+        if (await save()) back();
+      }}
+    >
+      {content(target)}
+    </SectionPage>
+  );
+  // 다른 화면에서 항목으로 바로 들어온 경우: 목록을 거치지 않았으니 뒤로 가면 설정 전체를 닫고 왔던 화면으로 돌아간다
+  if (initialSection)
+    return (
+      <View style={styles.screen}>{sectionPage(initialSection, onBack)}</View>
+    );
   return (
     <View style={styles.screen}>
       <List
@@ -480,24 +508,7 @@ export function SettingsScreen({
       />
       {section && (
         <SlideScreen key={section} onBack={() => setSection(null)}>
-          {back => (
-            <SectionPage
-              title={SECTION_TITLE[section]}
-              insetsBottom={insets.bottom}
-              dirty={changed[section]}
-              busy={busy}
-              progress={progress}
-              uploading={section === 'profile' && !!photo}
-              error={error}
-              onDiscard={() => reset(section)}
-              onBack={back}
-              onSave={async () => {
-                if (await save()) back();
-              }}
-            >
-              {content(section)}
-            </SectionPage>
-          )}
+          {back => sectionPage(section, back)}
         </SlideScreen>
       )}
     </View>
