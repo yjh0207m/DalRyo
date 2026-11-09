@@ -55,7 +55,6 @@ import {
   ScreenHeader,
 } from '../../components/ui';
 import { SCREEN_HEADER_HEIGHT } from '../../components/ui/ScreenHeader';
-import { DEFAULT_PHOTO_RATIO } from '../../components/ui/FullPhoto';
 import { RunningShoeIcon } from '../../components/ui/RunningShoeIcon';
 import { SlideScreen } from '../../navigation/slide';
 import { ChatScreen } from './ChatScreen';
@@ -1019,7 +1018,7 @@ export function PostCard({
             </AppText>
           </View>
         ) : (
-          <View style={[styles.textPost, !detail && styles.textPostPreview]}>
+          <View style={styles.textPost}>
             <AppText
               style={styles.textPostBody}
               numberOfLines={detail ? undefined : 5}
@@ -2409,7 +2408,7 @@ const styles = StyleSheet.create({
   postHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: spacing.lg,
     paddingVertical: 14,
     gap: 8,
   },
@@ -2426,7 +2425,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  postCaption: { paddingHorizontal: 18, gap: 7 },
+  postCaption: { paddingHorizontal: spacing.lg, gap: 7 },
   captionText: { fontSize: 14, lineHeight: 21 },
   postDate: { fontSize: 10, lineHeight: 15, marginTop: 2 },
   runTile: {
@@ -2454,14 +2453,8 @@ const styles = StyleSheet.create({
   },
   textPost: {
     paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-  },
-  textPostPreview: {
-    width: '100%',
-    aspectRatio: DEFAULT_PHOTO_RATIO,
-    justifyContent: 'center',
-    backgroundColor: colors.surfaceMuted,
-    overflow: 'hidden',
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.sm,
   },
   textPostBody: {
     fontFamily: fonts.semibold,
