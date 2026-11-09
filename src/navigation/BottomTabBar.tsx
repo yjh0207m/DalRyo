@@ -26,6 +26,7 @@ export const TAB_BAR_HEIGHT = 60;
 // 메뉴를 올릴 때는 본체 높이와 시스템 탐색 영역을 함께 더한다.
 export const TAB_BAR_BODY_HEIGHT = TAB_BAR_HEIGHT;
 export const tabBarBottom = (insetBottom: number) => insetBottom;
+const RUN_BUTTON_DIAMETER = 56;
 export function BottomTabBar({
   activeTab,
   onChange,
@@ -55,10 +56,14 @@ export function BottomTabBar({
           >
             <Footprints
               color={colors.textOnPrimary}
-              size={28}
+              size={26}
               strokeWidth={2.2}
             />
-            <AppText variant="label" color={colors.textOnPrimary}>
+            <AppText
+              variant="label"
+              color={colors.textOnPrimary}
+              style={styles.runLabel}
+            >
               달리기
             </AppText>
           </Pressable>
@@ -143,15 +148,15 @@ const styles = StyleSheet.create({
   },
   runSlot: { flex: 1.2, alignItems: 'center' },
   run: {
-    width: '100%',
-    maxWidth: 80,
-    minHeight: 54,
+    width: RUN_BUTTON_DIAMETER,
+    height: RUN_BUTTON_DIAMETER,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 2,
+    gap: 1,
     backgroundColor: colors.primaryAction,
-    borderRadius: 17,
+    borderRadius: RUN_BUTTON_DIAMETER / 2,
   },
+  runLabel: { fontSize: 11, lineHeight: 14 },
   runPressed: { backgroundColor: colors.primaryInk },
   pressed: { opacity: 0.65 },
 });
