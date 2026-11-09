@@ -12,7 +12,7 @@ import { colors } from '../../theme';
 const MIN_RATIO = 0.5;
 const MAX_RATIO = 2;
 // 오운완 카드(4:5)가 가장 흔해 크기를 알기 전에는 이 비율로 자리를 잡는다
-const DEFAULT_RATIO = 4 / 5;
+export const DEFAULT_PHOTO_RATIO = 4 / 5;
 // 목록을 스크롤하며 다시 그려도 높이가 흔들리지 않도록 알아낸 비율을 기억한다
 const ratios = new Map<string, number>();
 
@@ -23,7 +23,9 @@ export function FullPhoto({
   uri: string;
   style?: StyleProp<ImageStyle>;
 }) {
-  const [ratio, setRatio] = useState(() => ratios.get(uri) ?? DEFAULT_RATIO);
+  const [ratio, setRatio] = useState(
+    () => ratios.get(uri) ?? DEFAULT_PHOTO_RATIO,
+  );
   useEffect(() => {
     const known = ratios.get(uri);
     if (known) {

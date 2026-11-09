@@ -55,6 +55,7 @@ import {
   ScreenHeader,
 } from '../../components/ui';
 import { SCREEN_HEADER_HEIGHT } from '../../components/ui/ScreenHeader';
+import { DEFAULT_PHOTO_RATIO } from '../../components/ui/FullPhoto';
 import { RunningShoeIcon } from '../../components/ui/RunningShoeIcon';
 import { SlideScreen } from '../../navigation/slide';
 import { ChatScreen } from './ChatScreen';
@@ -1018,10 +1019,11 @@ export function PostCard({
             </AppText>
           </View>
         ) : (
-          <View style={styles.textPost}>
+          <View style={[styles.textPost, !detail && styles.textPostPreview]}>
             <AppText
               style={styles.textPostBody}
               numberOfLines={detail ? undefined : 5}
+              selectable={detail}
             >
               {post.text}
             </AppText>
@@ -2453,6 +2455,13 @@ const styles = StyleSheet.create({
   textPost: {
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
+  },
+  textPostPreview: {
+    width: '100%',
+    aspectRatio: DEFAULT_PHOTO_RATIO,
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceMuted,
+    overflow: 'hidden',
   },
   textPostBody: {
     fontFamily: fonts.semibold,
