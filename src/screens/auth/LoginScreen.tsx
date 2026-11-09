@@ -84,10 +84,14 @@ export function PhoneLoginScreen({onBack, onVerified}: Props) {
             </TouchableOpacity>
           </View>
 
-          <Text style={styles.timerText}>
-            {state === 'codeSent' ? '인증번호를 입력해 주세요.' : '인증번호가 오지 않았나요?'}  <Text style={styles.timerStrong}>00:59</Text>
-          </Text>
-          {!!errorMessage && <Text style={styles.errorText}>{errorMessage}</Text>}
+          {Platform.OS === 'ios' && state === 'requesting' ? (
+            <Text style={styles.timerText}>웹 인증 화면이 열리면 인증을 마친 뒤 앱으로 돌아와 주세요.</Text>
+          ) : (
+            <Text style={styles.timerText}>
+              {state === 'codeSent' ? '인증번호를 입력해 주세요.' : '인증번호가 오지 않았나요?'}  <Text style={styles.timerStrong}>00:59</Text>
+            </Text>
+          )}
+          {!!errorMessage && <Text accessibilityRole="alert" style={styles.errorText}>{errorMessage}</Text>}
 
           <TouchableOpacity
             activeOpacity={0.86}

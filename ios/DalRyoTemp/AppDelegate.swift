@@ -1,4 +1,5 @@
 import UIKit
+import FirebaseAuth
 import FirebaseCore
 import React
 import React_RCTAppDelegate
@@ -34,6 +35,15 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     )
 
     return true
+  }
+
+  func application(
+    _ application: UIApplication,
+    open url: URL,
+    options: [UIApplication.OpenURLOptionsKey: Any] = [:]
+  ) -> Bool {
+    // Forward the reCAPTCHA return URL if Firebase's delegate proxy didn't consume it.
+    return Auth.auth().canHandle(url)
   }
 }
 
