@@ -46,21 +46,23 @@ export function BottomTabBar({
             onPress={() => onChange(tab.key)}
           />
         ))}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="달리기 시작"
-          onPress={() => onChange('run')}
-          style={({ pressed }) => [styles.run, pressed && styles.pressed]}
-        >
-          <Footprints color={colors.primaryInk} size={25} strokeWidth={2} />
-          <AppText
-            variant="label"
-            color={colors.primaryInk}
-            style={styles.label}
+        <View style={styles.runSlot}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="달리기 시작"
+            onPress={() => onChange('run')}
+            style={({ pressed }) => [styles.run, pressed && styles.runPressed]}
           >
-            달리기
-          </AppText>
-        </Pressable>
+            <Footprints
+              color={colors.textOnPrimary}
+              size={28}
+              strokeWidth={2.2}
+            />
+            <AppText variant="label" color={colors.textOnPrimary}>
+              달리기
+            </AppText>
+          </Pressable>
+        </View>
         {TABS.slice(2).map(tab => (
           <TabItem
             key={tab.key}
@@ -139,12 +141,17 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     backgroundColor: colors.primary,
   },
+  runSlot: { flex: 1.2, alignItems: 'center' },
   run: {
-    flex: 1,
-    minHeight: 56,
+    width: '100%',
+    maxWidth: 80,
+    minHeight: 54,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 2,
+    backgroundColor: colors.primaryAction,
+    borderRadius: 17,
   },
+  runPressed: { backgroundColor: colors.primaryInk },
   pressed: { opacity: 0.65 },
 });

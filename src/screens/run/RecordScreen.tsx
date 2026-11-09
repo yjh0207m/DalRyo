@@ -206,18 +206,19 @@ export function RecordScreen({
                 setView(mode);
                 setSelectedDay(null);
               }}
-              style={[styles.viewTab, view === mode && styles.viewTabActive]}
+              style={styles.viewTab}
             >
               <Icon
                 size={16}
                 color={view === mode ? colors.primaryInk : colors.textMuted}
               />
               <AppText
-                variant="caption"
+                variant={view === mode ? 'label' : 'caption'}
                 color={view === mode ? colors.primaryInk : colors.textMuted}
               >
                 {label}
               </AppText>
+              {view === mode && <View style={styles.viewTabIndicator} />}
             </Pressable>
           ))}
         </View>
@@ -530,9 +531,6 @@ const styles = StyleSheet.create({
   viewSwitcher: {
     flexDirection: 'row',
     gap: 8,
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: 14,
-    padding: 4,
     marginTop: 22,
   },
   viewTab: {
@@ -541,10 +539,16 @@ const styles = StyleSheet.create({
     gap: 7,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 40,
-    borderRadius: 11,
+    minHeight: 44,
   },
-  viewTabActive: { backgroundColor: colors.surface },
+  viewTabIndicator: {
+    position: 'absolute',
+    bottom: 0,
+    width: 28,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: colors.primaryAction,
+  },
   calendarCard: { marginTop: 16 },
   journalCard: { paddingVertical: spacing.md },
   journalMain: {

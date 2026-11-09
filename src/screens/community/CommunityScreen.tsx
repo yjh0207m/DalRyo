@@ -24,7 +24,6 @@ import {
   Footprints,
   MoreHorizontal,
   Bookmark,
-  Award,
   Ban,
   ChevronLeft,
   Settings as SettingsIcon,
@@ -946,6 +945,12 @@ export function PostCard({
         day: 'numeric',
       })
     : '';
+  const postMeta = [
+    postedDate,
+    own || post.visibility !== 'public' ? VISIBILITY[post.visibility] : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
   const hasMedia = !!post.image_url || !!post.run_id;
   return (
     <View
@@ -961,14 +966,23 @@ export function PostCard({
         >
           <Avatar uri={authorImage} size={36} />
           <View style={styles.grow}>
-            <AppText variant="subheading" numberOfLines={1}>
+            <AppText
+              variant="subheading"
+              style={styles.postAuthorName}
+              numberOfLines={1}
+            >
               {authorName}
             </AppText>
-            <AppText variant="label" color={colors.textMuted}>
-              {post.run_id
-                ? '함께 나눈 러닝 기록'
-                : VISIBILITY[post.visibility]}
-            </AppText>
+            {!!postMeta && (
+              <AppText
+                variant="caption"
+                style={styles.postMeta}
+                color={colors.textMuted}
+                numberOfLines={1}
+              >
+                {postMeta}
+              </AppText>
+            )}
           </View>
         </Pressable>
         <IconButton
@@ -1117,12 +1131,6 @@ export function PostCard({
               : '댓글로 응원을 남겨 보세요'}
           </AppText>
         </Pressable>
-        <AppText style={styles.postDate} color={colors.textMuted}>
-          {postedDate}
-          {post.visibility !== 'public'
-            ? ` · ${VISIBILITY[post.visibility]}`
-            : ''}
-        </AppText>
       </View>
     </View>
   );
@@ -1849,13 +1857,6 @@ export function ProfilePage({
                     <AppText variant="heading" numberOfLines={1}>
                       {profile.display_name}
                     </AppText>
-                    {/* 칭호 기능이 생기면 실제 칭호로 바꾼다 */}
-                    <View style={styles.runnerLine}>
-                      <Award size={14} color={colors.primaryInk} />
-                      <AppText variant="label" color={colors.primaryInk}>
-                        칭호
-                      </AppText>
-                    </View>
                     <View style={styles.runnerLine}>
                       <MapPin size={14} color={colors.textMuted} />
                       <AppText variant="caption" color={colors.textMuted}>
@@ -2296,10 +2297,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: colors.primaryAction,
     shadowColor: '#101814',
-    shadowOpacity: 0.18,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 6,
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
   },
   toolbar: {
     flexDirection: 'row',
@@ -2427,7 +2428,8 @@ const styles = StyleSheet.create({
   },
   postCaption: { paddingHorizontal: spacing.lg, gap: 7 },
   captionText: { fontSize: 14, lineHeight: 21 },
-  postDate: { fontSize: 10, lineHeight: 15, marginTop: 2 },
+  postAuthorName: { fontSize: 15, lineHeight: 21 },
+  postMeta: { fontSize: 12, lineHeight: 16 },
   runTile: {
     padding: 28,
     gap: 16,
@@ -2457,7 +2459,7 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.sm,
   },
   textPostBody: {
-    fontFamily: fonts.semibold,
+    fontFamily: fonts.medium,
     fontSize: 16,
     lineHeight: 24,
     letterSpacing: -0.2,

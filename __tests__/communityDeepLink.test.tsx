@@ -783,18 +783,17 @@ describe('the profile page', () => {
         : Promise.resolve({ posts: [] }),
     );
 
-  test('has the name on top, then a title, then the place, and no old tagline', async () => {
+  test('shows the name and place without a placeholder title or tagline', async () => {
     useProfile(fullProfile);
     await render({ page: 'profile', uid: 'peer' });
     const all = plainTexts();
     expect(all).not.toContain('DALRYO RUNNER');
     expect(all).not.toContain('서울에서 함께 달려요');
     const name = all.indexOf('민지');
-    const title = all.indexOf('칭호');
+    expect(all).not.toContain('칭호');
     const place = all.indexOf('서울');
     expect(name).toBeGreaterThanOrEqual(0);
-    expect(name).toBeLessThan(title);
-    expect(title).toBeLessThan(place);
+    expect(name).toBeLessThan(place);
   });
 
   test('has posts, followers and following on one line, each word followed by its number', async () => {
