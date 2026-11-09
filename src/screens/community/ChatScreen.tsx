@@ -118,7 +118,11 @@ function Header({
         accessibilityLabel={`${title} 프로필 보기`}
         onPress={onTitlePress}
       >
-        <AppText variant="heading" numberOfLines={1}>
+        <AppText
+          variant={hideBack ? 'label' : 'subheading'}
+          color={hideBack ? colors.textMuted : colors.text}
+          numberOfLines={1}
+        >
           {title}
         </AppText>
       </Pressable>
@@ -1045,7 +1049,7 @@ const s = StyleSheet.create({
     gap: 8,
   },
   // 탐색·내 프로필의 머리글과 같은 높이로 맞춘다
-  headerNoBack: { paddingLeft: 20, minHeight: 52 },
+  headerNoBack: { paddingLeft: 20, minHeight: 48 },
   headerTitle: { flex: 1 },
   spacer: { width: 44 },
   list: { padding: 20, gap: 8, flexGrow: 1 },

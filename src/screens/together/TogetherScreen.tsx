@@ -259,7 +259,7 @@ export function TogetherScreen({
           <StatusBar barStyle="dark-content" backgroundColor={colors.sky} />
           <View style={styles.spectatorHeader}>
             <IconButton icon={ChevronLeft} variant="plain" accessibilityLabel="뒤로" disabled={busy} onPress={back} />
-            <AppText variant="heading">같이 달리기</AppText>
+            <AppText variant="subheading">같이 달리기</AppText>
           </View>
           <Card style={styles.gap}>
             <AppText variant="subheading" color={colors.primaryInk}>
@@ -357,7 +357,7 @@ export function TogetherScreen({
           disabled={busy}
           onPress={back}
         />
-        <AppText variant="heading">같이 달리기</AppText>
+        <AppText variant="subheading">같이 달리기</AppText>
       </View>
       <ScrollView
         keyboardShouldPersistTaps="handled"
@@ -379,43 +379,42 @@ export function TogetherScreen({
               status === 'success' && <AppText>방을 찾을 수 없어요.</AppText>
             ) : (
               <>
-                <Card style={styles.gap}>
-                  <AppText variant="heading">{room.title}</AppText>
-                  <AppText>
-                    {room.goal_km} km · {room.member_count}/{room.capacity}명 ·{' '}
-                    {
-                      {
-                        waiting: '시작 대기',
-                        running: '달리는 중',
-                        finished: '종료',
-                        cancelled: '취소',
-                      }[room.status]
-                    }
+                <Card tone="soft" style={styles.roomSummary}>
+                  <AppText variant="label" color={colors.primaryInk}>
+                    {{ waiting: '시작 대기', running: '달리는 중', finished: '종료', cancelled: '취소' }[room.status]}
                   </AppText>
+                  <AppText variant="heading">{room.title}</AppText>
+                  <View style={styles.roomMetrics}>
+                    <AppText variant="number" color={colors.primaryInk}>{room.goal_km} km</AppText>
+                    <AppText variant="caption" color={colors.textMuted}>{room.member_count}/{room.capacity}명 참가</AppText>
+                  </View>
                 </Card>
-                <AppText variant="subheading">실시간 거리 순위</AppText>
+                <AppText variant="subheading">
+                  {room.status === 'waiting' ? '참가자' : '실시간 거리 순위'}
+                </AppText>
                 {visibleMembers.map((m, i) => (
-                  <Card key={m.uid} style={styles.gap}>
+                  <Card key={m.uid} tone="flat" padded={false} style={styles.member}>
                     <AppText variant="subheading">
-                      {i + 1}. {m.uid === user.uid ? '나' : m.display_name}
+                      {room.status !== 'waiting' && `${i + 1}. `}{m.uid === user.uid ? '나' : m.display_name}
                       {m.uid === room.host_uid ? ' · 방장' : ''}
                     </AppText>
-                    <AppText>
+                    <AppText variant="caption" color={colors.textMuted}>
+                      {room.status !== 'waiting' && <>
                       {m.current_km.toFixed(2)} km ·{' '}
-                      {m.pace_sec ? formatPace(m.pace_sec) : '—'} /km ·{' '}
+                      {m.pace_sec ? formatPace(m.pace_sec) : '—'} /km ·{' '}</>}
                       {m.state === 'finished'
                         ? '완료'
                         : m.state === 'paused'
                         ? '일시정지'
                         : room.status === 'waiting'
-                        ? '대기'
+                        ? '참가 완료'
                         : '달리는 중'}
                     </AppText>
                   </Card>
                 ))}
                 {room.status === 'waiting' && !!room.invited?.length && (
-                  <Card style={styles.gap}>
-                    <AppText variant="label">응답 기다리는 중</AppText>
+                  <Card tone="flat" padded={false} style={styles.pendingInvites}>
+                    <AppText variant="label" color={colors.accentInk}>응답 기다리는 중</AppText>
                     <AppText color={colors.textMuted}>
                       {room.invited
                         .map(f => room.invited_names?.[f] ?? '친구')
@@ -450,7 +449,7 @@ export function TogetherScreen({
                     <Button
                       label="친구 더 부르기"
                       size="md"
-                      variant="secondary"
+                      variant="ghost"
                       disabled={busy}
                       onPress={() => {
                         setSelected([]);
@@ -495,7 +494,7 @@ export function TogetherScreen({
               <>
                 <AppText variant="subheading">받은 요청</AppText>
                 {invites.map(inv => (
-                  <Card key={inv.room_id} style={styles.gap}>
+                  <Card key={inv.room_id} tone="flat" padded={false} style={styles.member}>
                     <AppText variant="subheading">
                       {inv.host_name}님의 같이 달리기
                     </AppText>
@@ -605,7 +604,7 @@ function FriendPicker({
       <AppText color={colors.textMuted}>더 부를 수 있는 친구가 없어요.</AppText>
     );
   return (
-    <Card style={styles.friends}>
+    <Card tone="flat" padded={false} style={styles.friends}>
       {friends.map(f => {
         const on = selected.includes(f.uid);
         return (
@@ -638,7 +637,7 @@ function FriendPicker({
   );
 }
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background },
+  screen: { flex: 1, backgroundColor: colors.surface },
   header: {
     padding: spacing.sm,
     flexDirection: 'row',
@@ -684,6 +683,11 @@ const styles = StyleSheet.create({
   },
   checkOn: { backgroundColor: colors.primary, borderColor: colors.primary },
   gap: { gap: 10 },
+  roomSummary: { gap: spacing.xs },
+  roomMetrics: { flexDirection: 'row', alignItems: 'baseline', gap: spacing.md },
+  member: { gap: spacing.xs, paddingVertical: spacing.xs },
+  pendingInvites: { backgroundColor: colors.surfaceMuted, gap: spacing.xs, padding: spacing.md },
+
   spectator: { flex: 1, backgroundColor: colors.sky, paddingHorizontal: 16, paddingBottom: 12, gap: 10 },
   spectatorHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   spectatorStats: { flexDirection: 'row', gap: 4 },

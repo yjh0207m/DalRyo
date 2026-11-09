@@ -19,7 +19,7 @@ import {
 } from 'lucide-react-native';
 import { AppText } from '../../components/ui';
 import { animateTo } from '../../navigation/motion';
-import { colors, radius, shadow } from '../../theme';
+import { colors, radius } from '../../theme';
 
 // 커뮤니티 화면 아래, 기존 하단 탭 바 위에 얹는 작은 서브 네비게이션.
 // 평소에는 가운데에 동그란 메뉴 버튼 하나만 있고, 누르는 즉시 양옆으로 피드·탐색·메시지·프로필이 펼쳐진다.
@@ -379,7 +379,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
-    ...shadow.floating,
   },
   center: {
     width: CENTER_SIZE,
@@ -390,12 +389,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
-    ...shadow.floating,
   },
   centerActive: {
     ...StyleSheet.absoluteFill,
     borderRadius: CENTER_SIZE / 2,
-    backgroundColor: colors.primary,
+    backgroundColor: colors.primaryAction,
   },
   centerIconActive: { position: 'absolute' },
   item: {
@@ -407,7 +405,7 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   itemCurrent: { backgroundColor: colors.primarySoft },
-  itemHovered: { backgroundColor: colors.primary },
+  itemHovered: { backgroundColor: colors.primaryAction },
   itemLabel: { fontSize: 10, lineHeight: 12 },
   dot: {
     position: 'absolute',

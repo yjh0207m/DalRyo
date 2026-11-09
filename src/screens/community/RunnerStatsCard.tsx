@@ -6,7 +6,7 @@ import { LobbyCharacter } from '../../components/character/LobbyCharacter';
 import { ExpBar } from '../../components/game/Hud';
 import { CompanionScene } from '../../components/scene/CompanionScene';
 import type { RunnerProfile } from '../../services/social.service';
-import { colors, radius, shadow, spacing } from '../../theme';
+import { colors, radius, spacing } from '../../theme';
 import {
   CHARACTER_STAGE_ORDER,
   CHARACTER_TYPES,
@@ -68,10 +68,10 @@ export function RunnerStatsCard({
       onPress={() => onToggleRuns(!runsOpen)}
       style={styles.runsRow}
     >
-      <View style={[styles.runsIcon, runsOpen && styles.runsIconOpen]}>
+      <View style={styles.runsIcon}>
         <Footprints
           size={18}
-          color={runsOpen ? colors.textOnPrimary : colors.primaryInk}
+          color={runsOpen ? colors.primaryInk : colors.text}
         />
       </View>
       <View style={styles.runsCount}>
@@ -90,7 +90,7 @@ export function RunnerStatsCard({
   // 캐릭터가 없는 러너: 완료한 러닝 줄만 있는 작은 카드
   if (!pet)
     return (
-      <Card style={styles.plain}>
+      <Card tone="flat" padded={false} style={styles.plain}>
         {runsRow}
         {runsOpen && !runsHidden && renderBubble()}
       </Card>
@@ -248,7 +248,6 @@ const styles = StyleSheet.create({
     borderRadius: radius.xl,
     borderWidth: 0,
     zIndex: 2,
-    ...shadow.card,
   },
   scene: {
     overflow: 'hidden',
@@ -295,18 +294,13 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     minHeight: ROW,
     paddingTop: spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
   },
   runsIcon: {
     width: 32,
     height: 32,
-    borderRadius: radius.sm,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.primarySoft,
   },
-  runsIconOpen: { backgroundColor: colors.primary },
   runsCount: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
   chevronClosed: { transform: [{ rotate: '180deg' }] },
   // 완료한 러닝 줄 바로 위에 뜨는 말풍선

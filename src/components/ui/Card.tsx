@@ -1,14 +1,15 @@
 import React from 'react';
 import { StyleSheet, View, type ViewProps } from 'react-native';
-import { colors, radius, shadow, spacing } from '../../theme';
+import { colors, radius, spacing } from '../../theme';
 
 type Props = ViewProps & {
   // soft: 브랜드 연한 배경 (캐릭터 히어로 등 강조 영역)
-  tone?: 'surface' | 'soft' | 'warm' | 'stone';
+  tone?: 'surface' | 'soft' | 'warm' | 'stone' | 'flat';
   padded?: boolean;
 };
 
 const TONE_STYLE = {
+  flat: { backgroundColor: 'transparent', borderRadius: 0 },
   surface: { backgroundColor: colors.surface, borderColor: colors.border },
   soft: {
     backgroundColor: colors.primarySoft,
@@ -27,18 +28,12 @@ export function Card({
   return (
     <View
       {...rest}
-      style={[
-        styles.base,
-        TONE_STYLE[tone],
-        tone === 'surface' && shadow.card,
-        padded && styles.padded,
-        style,
-      ]}
+      style={[styles.base, TONE_STYLE[tone], padded && styles.padded, style]}
     />
   );
 }
 
 const styles = StyleSheet.create({
-  base: { borderRadius: radius.lg, borderWidth: StyleSheet.hairlineWidth },
+  base: { borderRadius: radius.md },
   padded: { padding: spacing.xl },
 });

@@ -78,7 +78,7 @@ export function GrowthScreen({
           onSettingsPress={onSettingsPress}
         />
 
-        <View style={styles.summaryRow}>
+        <View testID="growth-summary" style={styles.summaryRow}>
           <Summary
             label="누적 거리"
             value={(user?.total_km ?? 0).toFixed(1)}
@@ -97,7 +97,7 @@ export function GrowthScreen({
           />
         </View>
 
-        <Card style={styles.section}>
+        <Card tone="flat" padded={false} style={styles.section}>
           <View style={styles.sectionHeader}>
             <AppText variant="subheading">최근 7일 거리</AppText>
             <AppText variant="caption" color={colors.textMuted}>
@@ -147,7 +147,7 @@ export function GrowthScreen({
         </Card>
 
         {character && (
-          <Card style={styles.section}>
+          <Card tone="flat" padded={false} style={styles.section}>
             <View style={styles.sectionHeader}>
               <AppText variant="subheading">
                 {character.pet_name}의 스탯
@@ -160,7 +160,7 @@ export function GrowthScreen({
           </Card>
         )}
 
-        <Card tone="soft" style={[styles.section, styles.coach]}>
+        <Card tone="flat" padded={false} style={[styles.section, styles.coach]}>
           <View style={styles.coachIcon}>
             <Sparkles color={colors.primaryInk} size={22} />
           </View>
@@ -255,16 +255,14 @@ function StatRow({ label, value }: { label: string; value: number }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background },
+  screen: { flex: 1, backgroundColor: colors.surface },
   content: { paddingHorizontal: spacing.xl },
   summaryRow: {
     flexDirection: 'row',
     gap: spacing.md,
     // 헤더 아래 첫 요소. 부제목이 있던 때의 여백(xl)을 줄여 다른 탭과 간격을 맞춘다
     marginTop: spacing.sm,
-    padding: spacing.xl,
-    backgroundColor: colors.primarySoft,
-    borderRadius: radius.xl,
+    paddingVertical: spacing.md,
     alignItems: 'center',
   },
   summary: { flex: 1, gap: spacing.sm },
@@ -321,8 +319,6 @@ const styles = StyleSheet.create({
   coachIcon: {
     width: 44,
     height: 44,
-    borderRadius: radius.md,
-    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
   },
