@@ -10,7 +10,7 @@ import {
   type LucideIcon,
 } from 'lucide-react-native';
 import { AppText } from '../components/ui';
-import { colors, radius, spacing } from '../theme';
+import { colors } from '../theme';
 export type MainTab = 'home' | 'growth' | 'run' | 'community' | 'records';
 const TABS: Array<{
   key: Exclude<MainTab, 'run'>;
@@ -22,10 +22,11 @@ const TABS: Array<{
   { key: 'community', label: '커뮤니티', icon: MessageCircle },
   { key: 'records', label: '기록', icon: CalendarDays },
 ];
-export const TAB_BAR_HEIGHT = 88;
-// 하단 바 본체의 높이와, 화면 아래에서 띄우는 거리. 바 위에 다른 요소를 얹을 때 같은 값을 쓴다
-export const TAB_BAR_BODY_HEIGHT = 70;
-export const tabBarBottom = (insetBottom: number) => Math.max(insetBottom, 12);
+export const TAB_BAR_HEIGHT = 60;
+// 메뉴를 올릴 때는 본체 높이와 시스템 탐색 영역을 함께 더한다.
+export const TAB_BAR_BODY_HEIGHT = TAB_BAR_HEIGHT;
+export const tabBarBottom = (insetBottom: number) => insetBottom;
+const RUN_BUTTON_DIAMETER = 56;
 export function BottomTabBar({
   activeTab,
   onChange,
@@ -35,36 +36,48 @@ export function BottomTabBar({
 }) {
   const insets = useSafeAreaInsets();
   return (
-    <View style={[styles.bar, { bottom: tabBarBottom(insets.bottom) }]}>
-      {TABS.slice(0, 2).map(tab => (
-        <TabItem
-          key={tab.key}
-          label={tab.label}
-          icon={tab.icon}
-          active={activeTab === tab.key}
-          onPress={() => onChange(tab.key)}
-        />
-      ))}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="달리기 시작"
-        onPress={() => onChange('run')}
-        style={({ pressed }) => [styles.run, pressed && styles.pressed]}
-      >
-        <Footprints color={colors.text} size={25} strokeWidth={2} />
-        <AppText variant="label" color={colors.text} style={styles.label}>
-          달리기
-        </AppText>
-      </Pressable>
-      {TABS.slice(2).map(tab => (
-        <TabItem
-          key={tab.key}
-          label={tab.label}
-          icon={tab.icon}
-          active={activeTab === tab.key}
-          onPress={() => onChange(tab.key)}
-        />
-      ))}
+    <View style={[styles.bar, { paddingBottom: insets.bottom }]}>
+      <View style={styles.row}>
+        {TABS.slice(0, 2).map(tab => (
+          <TabItem
+            key={tab.key}
+            label={tab.label}
+            icon={tab.icon}
+            active={activeTab === tab.key}
+            onPress={() => onChange(tab.key)}
+          />
+        ))}
+        <View style={styles.runSlot}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="달리기 시작"
+            onPress={() => onChange('run')}
+            style={({ pressed }) => [styles.run, pressed && styles.runPressed]}
+          >
+            <Footprints
+              color={colors.textOnPrimary}
+              size={26}
+              strokeWidth={2.2}
+            />
+            <AppText
+              variant="label"
+              color={colors.textOnPrimary}
+              style={styles.runLabel}
+            >
+              달리기
+            </AppText>
+          </Pressable>
+        </View>
+        {TABS.slice(2).map(tab => (
+          <TabItem
+            key={tab.key}
+            label={tab.label}
+            icon={tab.icon}
+            active={activeTab === tab.key}
+            onPress={() => onChange(tab.key)}
+          />
+        ))}
+      </View>
     </View>
   );
 }
@@ -87,13 +100,13 @@ function TabItem({
       style={({ pressed }) => [styles.tab, pressed && styles.pressed]}
     >
       <Icon
-        color={active ? colors.primary : colors.textSubtle}
+        color={active ? colors.primaryInk : colors.textMuted}
         size={21}
         strokeWidth={active ? 2.4 : 1.7}
       />
       <AppText
         variant="label"
-        color={active ? colors.primary : colors.textMuted}
+        color={active ? colors.primaryInk : colors.textMuted}
         style={styles.label}
       >
         {label}
@@ -105,22 +118,17 @@ function TabItem({
 const styles = StyleSheet.create({
   bar: {
     position: 'absolute',
-    left: spacing.xl,
-    right: spacing.xl,
-    height: TAB_BAR_BODY_HEIGHT,
-    paddingHorizontal: 6,
-    paddingVertical: 6,
-    borderRadius: 25,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: colors.surface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  row: {
+    height: TAB_BAR_BODY_HEIGHT,
     flexDirection: 'row',
     alignItems: 'center',
-    shadowColor: colors.text,
-    shadowOpacity: 0.06,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 4,
   },
   tab: {
     flex: 1,
@@ -138,15 +146,17 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     backgroundColor: colors.primary,
   },
+  runSlot: { flex: 1.2, alignItems: 'center' },
   run: {
-    flex: 1,
-    minHeight: 56,
+    width: RUN_BUTTON_DIAMETER,
+    height: RUN_BUTTON_DIAMETER,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 2,
-    backgroundColor: colors.primarySoft,
-    borderRadius: radius.md,
-    marginHorizontal: 3,
+    gap: 1,
+    backgroundColor: colors.primaryAction,
+    borderRadius: RUN_BUTTON_DIAMETER / 2,
   },
+  runLabel: { fontSize: 11, lineHeight: 14 },
+  runPressed: { backgroundColor: colors.primaryInk },
   pressed: { opacity: 0.65 },
 });

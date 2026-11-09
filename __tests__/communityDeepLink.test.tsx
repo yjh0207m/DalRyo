@@ -324,12 +324,13 @@ describe('the community header', () => {
         />,
       );
     });
-    expect(texts()).toContain('커뮤니티');
+    expect(texts()).toContain('RUNNER’S CLUB');
+    expect(texts()).not.toContain('커뮤니티');
     expect(hasLabel('알림, 안 읽은 알림 있음')).toBe(true);
     expect(hasLabel('설정')).toBe(true);
-    // 홈·성장·기록 화면과 같은 규격(40)이다
+    // 아이콘의 눌리는 영역은 44를 유지한다.
     const sizes = tree.root
-      .findAll(node => node.props?.size === 40)
+      .findAll(node => node.props?.size === 44)
       .map(node => node.props.accessibilityLabel);
     expect(sizes).toEqual(
       expect.arrayContaining(['알림, 안 읽은 알림 있음', '설정']),
@@ -383,13 +384,10 @@ describe('the community header', () => {
   test('the title of a menu page lines up with the content, not with a back button', async () => {
     await render();
     await chooseSubNav('explore');
-    const page = tree.root.findByProps({ testID: 'section-explore' });
-    const header = page.findAll(
-      node =>
-        typeof node.type === 'string' &&
-        StyleSheet.flatten(node.props.style)?.paddingLeft === 20,
-    );
-    expect(header.length).toBeGreaterThan(0);
+    const header = tree.root.findAllByProps({
+      testID: 'community-explore-header',
+    })[0];
+    expect(StyleSheet.flatten(header.props.style).paddingHorizontal).toBe(20);
   });
 
   test('the system back button still returns from a menu page to the feed, with both bars', async () => {
@@ -438,6 +436,40 @@ describe('the menu pages', () => {
     }
   });
 
+  test.each(['community-feed', 'community-explore'])(
+    '%s hides its header on descent and brings it back on ascent',
+    async id => {
+      await render();
+      if (id === 'community-explore') await chooseSubNav('explore');
+      const scroll = tree.root
+        .findAllByType(ScrollView)
+        .find(node => node.props.testID === id)!;
+      const header = () =>
+        tree.root.findAllByProps({ testID: `${id}-header` })[0];
+      const move = (y: number) =>
+        act(() =>
+          scroll.props.onScroll({
+            nativeEvent: {
+              contentOffset: { y },
+              contentSize: { height: 1200 },
+              layoutMeasurement: { height: 600 },
+            },
+          }),
+        );
+      expect(header().props.accessibilityElementsHidden).toBe(false);
+      await move(100);
+      expect(header().props.accessibilityElementsHidden).toBe(true);
+      await move(130);
+      await move(125);
+      expect(header().props.pointerEvents).toBe('none');
+      await move(105);
+      expect(header().props.accessibilityElementsHidden).toBe(false);
+      await move(170);
+      await move(-15);
+      expect(header().props.accessibilityElementsHidden).toBe(false);
+    },
+  );
+
   test('the runner search is opened from the explore page and goes back to it', async () => {
     await render();
     await chooseSubNav('explore');
@@ -455,16 +487,16 @@ describe('the menu pages', () => {
   test('the page is not cut off above the bars: the layer fills the whole screen, with no padding that would end it early', async () => {
     await render();
     await chooseSubNav('profile');
-    const layers = tree.root.findAll(node => {
-      const style = StyleSheet.flatten(node.props?.style);
-      return (
-        typeof node.type === 'string' &&
-        style?.position === 'absolute' &&
-        style.backgroundColor === colors.background
-      );
-    });
-    expect(layers.length).toBe(1);
-    const style = StyleSheet.flatten(layers[0].props.style);
+    let layer = tree.root.findAllByProps({ testID: 'section-profile' })[0]
+      .parent;
+    while (
+      layer &&
+      StyleSheet.flatten(layer.props.style)?.position !== 'absolute'
+    ) {
+      layer = layer.parent;
+    }
+    const style = StyleSheet.flatten(layer?.props.style);
+    expect(style.backgroundColor).toBe(colors.surface);
     expect(style.bottom).toBe(0);
     expect(style.paddingBottom).toBeUndefined();
   });
@@ -568,13 +600,9 @@ describe('the feed page', () => {
       await render();
       const lift = () => {
         // Animated.View와 그 안쪽 View가 같은 스타일을 받으므로 첫 번째를 쓴다
-        const fab = tree.root.findAll(
-          node =>
-            !!node.props?.style &&
-            StyleSheet.flatten(node.props.style)?.position === 'absolute' &&
-            StyleSheet.flatten(node.props.style)?.right !== undefined &&
-            !!StyleSheet.flatten(node.props.style)?.transform,
-        )[0];
+        const fab = tree.root.findAllByProps({
+          testID: 'community-write-dock',
+        })[0];
         const y = StyleSheet.flatten(fab.props.style).transform[0]
           .translateY as unknown as { __getValue: () => number } | number;
         return typeof y === 'number' ? y : y.__getValue();
@@ -755,18 +783,17 @@ describe('the profile page', () => {
         : Promise.resolve({ posts: [] }),
     );
 
-  test('has the name on top, then a title, then the place, and no old tagline', async () => {
+  test('shows the name and place without a placeholder title or tagline', async () => {
     useProfile(fullProfile);
     await render({ page: 'profile', uid: 'peer' });
     const all = plainTexts();
     expect(all).not.toContain('DALRYO RUNNER');
     expect(all).not.toContain('서울에서 함께 달려요');
     const name = all.indexOf('민지');
-    const title = all.indexOf('칭호');
+    expect(all).not.toContain('칭호');
     const place = all.indexOf('서울');
     expect(name).toBeGreaterThanOrEqual(0);
-    expect(name).toBeLessThan(title);
-    expect(title).toBeLessThan(place);
+    expect(name).toBeLessThan(place);
   });
 
   test('has posts, followers and following on one line, each word followed by its number', async () => {
@@ -832,14 +859,10 @@ describe('the profile page', () => {
       Promise.resolve(action === 'profile' ? fullProfile : { posts: [mine] }),
     );
     await render({ page: 'profile', uid: 'peer' });
-    const card = tree.root.findAll(
-      node =>
-        typeof node.type === 'string' &&
-        StyleSheet.flatten(node.props.style)?.marginBottom === 20 &&
-        StyleSheet.flatten(node.props.style)?.borderRadius === 24,
-    );
-    expect(card.length).toBeGreaterThan(0);
-    expect(StyleSheet.flatten(card[0].props.style).marginHorizontal).toBe(0);
+    const card = tree.root.findByProps({ testID: 'community-post-post-9' });
+    expect(
+      StyleSheet.flatten(card.props.style).marginHorizontal,
+    ).toBeUndefined();
   });
 
   test('the two-column view keeps the 4:5 workout card whole, top to bottom', async () => {

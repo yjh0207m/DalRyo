@@ -1,14 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, ScrollView, StyleSheet, View } from 'react-native';
-import { UserRound } from 'lucide-react-native';
+import { Flag } from 'lucide-react-native';
 import { CharacterView } from '../../components/character/CharacterView';
 import { AppText } from '../../components/ui';
+import { RunnerAvatar } from './RunnerAvatar';
 import type { RoomMember } from '../../services/room.service';
 import {
   socialRequest,
   type RunnerProfile,
 } from '../../services/social.service';
-import { colors } from '../../theme';
+import { colors, fonts } from '../../theme';
 import {
   CHARACTER_STAGE_ORDER,
   CHARACTER_TYPES,
@@ -19,6 +20,7 @@ import { formatPace } from '../../utils/pace';
 type Props = {
   members: RoomMember[];
   uid: string;
+  ownProfile: Pick<RoomMember, 'display_name' | 'profile_image'>;
   character: CharacterDocument;
   goalKm: number;
   own: Pick<RoomMember, 'current_km' | 'pace_sec' | 'state'>;
@@ -28,6 +30,7 @@ type Props = {
 export function TogetherTrack({
   members,
   uid,
+  ownProfile,
   character,
   goalKm,
   own,
@@ -37,18 +40,37 @@ export function TogetherTrack({
   return (
     <View style={styles.track}>
       <View style={styles.heading}>
-        <AppText variant="subheading">같이 달리기 트랙</AppText>
-        <AppText variant="caption" color={colors.primaryInk}>
-          목표 {goalKm.toFixed(2)} km
-        </AppText>
+        <View style={styles.name}>
+          <AppText
+            variant="label"
+            color={colors.primaryInk}
+            style={styles.eyebrow}
+          >
+            LIVE TRACK
+          </AppText>
+          <AppText variant="subheading">같이 달리기 트랙</AppText>
+        </View>
+        <View style={styles.goal}>
+          <Flag size={14} color={colors.primaryInk} />
+          <AppText variant="label" color={colors.primaryInk}>
+            목표 {goalKm} km
+          </AppText>
+        </View>
       </View>
       {syncError && (
-        <AppText variant="caption" color={colors.danger}>
+        <AppText variant="caption" color={colors.danger} style={styles.notice}>
           진행 상황을 갱신하지 못했어요.
         </AppText>
       )}
       <ScrollView style={styles.lanes} nestedScrollEnabled>
-        <TrackLane name="나" progress={own} goalKm={goalKm} pet={character} />
+        <TrackLane
+          name={ownProfile.display_name || '나'}
+          photo={ownProfile.profile_image}
+          mine
+          progress={own}
+          goalKm={goalKm}
+          pet={character}
+        />
         {peers.map(member => (
           <PeerLane key={member.uid} member={member} goalKm={goalKm} />
         ))}
@@ -58,12 +80,12 @@ export function TogetherTrack({
 }
 
 function PeerLane({ member, goalKm }: { member: RoomMember; goalKm: number }) {
-  const [pet, setPet] = useState<RunnerProfile['pet']>();
+  const [runner, setRunner] = useState<RunnerProfile>();
   useEffect(() => {
     let live = true;
     socialRequest<RunnerProfile>('profile', { uid: member.uid })
       .then(profile => {
-        if (live) setPet(profile.pet);
+        if (live) setRunner(profile);
       })
       .catch(() => {});
     return () => {
@@ -72,21 +94,28 @@ function PeerLane({ member, goalKm }: { member: RoomMember; goalKm: number }) {
   }, [member.uid]);
   return (
     <TrackLane
-      name={member.display_name}
+      name={runner?.profile?.display_name ?? member.display_name}
+      photo={
+        runner?.profile ? runner.profile.profile_image : member.profile_image
+      }
       progress={member}
       goalKm={goalKm}
-      pet={pet}
+      pet={runner?.pet}
     />
   );
 }
 
 function TrackLane({
   name,
+  photo,
+  mine = false,
   progress,
   goalKm,
   pet,
 }: {
   name: string;
+  photo?: string | null;
+  mine?: boolean;
   progress: Props['own'];
   goalKm: number;
   pet?:
@@ -122,16 +151,49 @@ function TrackLane({
     CHARACTER_TYPES.includes(pet.character_type) &&
     CHARACTER_STAGE_ORDER.includes(pet.stage);
   return (
-    <View style={styles.lane}>
+    <View style={[styles.lane, mine && styles.ownLane]}>
+      <View style={styles.info}>
+        <RunnerAvatar uri={photo} size={30} />
+        <View style={styles.name}>
+          <AppText variant="subheading" numberOfLines={1}>
+            {name}
+            {mine && name !== '나' ? ' (나)' : ''}
+          </AppText>
+          <AppText
+            variant="label"
+            color={running || finished ? colors.primaryInk : colors.accentInk}
+          >
+            {status}
+          </AppText>
+        </View>
+        <View style={styles.numbers}>
+          <AppText variant="subheading" align="right" style={styles.distance}>
+            {progress.current_km.toFixed(2)} km
+          </AppText>
+          <AppText variant="label" align="right" color={colors.textMuted}>
+            {progress.pace_sec
+              ? `${formatPace(progress.pace_sec)} /km`
+              : '페이스 —'}
+          </AppText>
+        </View>
+      </View>
       <View
-        style={styles.rail}
+        style={[styles.rail, mine && styles.ownRail]}
         onLayout={e => setWidth(e.nativeEvent.layout.width)}
       >
+        <View style={styles.railMarks} pointerEvents="none">
+          {[0, 1, 2].map(mark => (
+            <View key={mark} style={styles.railMark} />
+          ))}
+        </View>
         <View style={styles.finishLine} pointerEvents="none">
           {Array.from({ length: 8 }, (_, i) => (
             <View
               key={i}
-              style={[styles.checker, i % 3 === 0 && styles.darkChecker]}
+              style={[
+                styles.checker,
+                [0, 3, 4, 7].includes(i) && styles.darkChecker,
+              ]}
             />
           ))}
         </View>
@@ -147,18 +209,9 @@ function TrackLane({
               motion={running ? 'run' : 'idle'}
             />
           ) : (
-            <UserRound size={24} color={colors.primaryInk} />
+            <RunnerAvatar uri={photo} size={32} />
           )}
         </Animated.View>
-      </View>
-      <View style={styles.info}>
-        <AppText variant="caption" numberOfLines={1} style={styles.name}>
-          {name} · {status}
-        </AppText>
-        <AppText variant="caption" color={colors.textMuted}>
-          {progress.current_km.toFixed(2)} km ·{' '}
-          {progress.pace_sec ? formatPace(progress.pace_sec) + ' /km' : '—'}
-        </AppText>
       </View>
     </View>
   );
@@ -168,7 +221,7 @@ const styles = StyleSheet.create({
   track: {
     flex: 1,
     minHeight: 0,
-    backgroundColor: colors.track,
+    backgroundColor: colors.surface,
     borderRadius: 16,
     overflow: 'hidden',
   },
@@ -176,28 +229,47 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     gap: 8,
   },
+  eyebrow: { letterSpacing: 1.5, fontSize: 10 },
+  goal: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  notice: { paddingHorizontal: 12, paddingBottom: 6 },
   lanes: { flex: 1 },
-  lane: { backgroundColor: colors.surface },
+  lane: {
+    paddingHorizontal: 12,
+    paddingBottom: 8,
+    backgroundColor: colors.surface,
+  },
+  ownLane: { backgroundColor: colors.background },
   rail: {
     height: 62,
-    backgroundColor: colors.primaryBorder,
-    borderBottomWidth: 2,
-    borderBottomColor: colors.trackLine,
-    paddingRight: 12,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 10,
+    overflow: 'hidden',
   },
-  finishLine: {
+  ownRail: { backgroundColor: colors.track },
+  railMarks: {
     position: 'absolute',
-    right: 29,
     top: 0,
     bottom: 0,
-    width: 12,
+    left: 29,
+    right: 31,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  railMark: { width: 1, backgroundColor: colors.trackLine },
+  finishLine: {
+    position: 'absolute',
+    right: 23,
+    top: 10,
+    bottom: 10,
+    width: 10,
     flexDirection: 'row',
     flexWrap: 'wrap',
   },
-  checker: { width: 6, height: '25%', backgroundColor: colors.surface },
+  checker: { width: 5, height: '25%', backgroundColor: colors.surface },
   darkChecker: { backgroundColor: colors.primaryInk },
   runner: {
     width: 60,
@@ -208,9 +280,10 @@ const styles = StyleSheet.create({
   info: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    gap: 6,
+    paddingVertical: 6,
+    gap: 8,
   },
   name: { flex: 1 },
+  numbers: { flexShrink: 0 },
+  distance: { fontFamily: fonts.bold, fontVariant: ['tabular-nums'] },
 });

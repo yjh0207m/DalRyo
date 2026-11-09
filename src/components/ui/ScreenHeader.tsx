@@ -23,18 +23,19 @@ export function ScreenHeader({
   return (
     <View style={styles.header}>
       {title ? (
-        <View style={styles.titleBlock}>
-          <AppText style={styles.eyebrow} color={colors.textMuted}>
-            {title === '성장'
-              ? 'MY PROGRESS'
-              : title === '기록'
-              ? 'RUNNING JOURNAL'
-              : title === '커뮤니티'
-              ? 'RUNNER’S CLUB'
-              : 'MY DALRYO'}
-          </AppText>
-          <AppText variant="title">{title}</AppText>
-        </View>
+        <AppText
+          accessibilityRole="header"
+          style={styles.eyebrow}
+          color={colors.textMuted}
+        >
+          {title === '성장'
+            ? 'MY PROGRESS'
+            : title === '기록'
+            ? 'RUNNING JOURNAL'
+            : title === '커뮤니티'
+            ? 'RUNNER’S CLUB'
+            : 'MY DALRYO'}
+        </AppText>
       ) : (
         <AppText style={styles.logo} color={colors.primary}>
           달료
@@ -45,13 +46,13 @@ export function ScreenHeader({
           icon={Bell}
           accessibilityLabel={hasUnread ? '알림, 안 읽은 알림 있음' : '알림'}
           dot={hasUnread}
-          size={40}
+          size={44}
           onPress={onNotificationPress}
         />
         <IconButton
           icon={Settings}
           accessibilityLabel="설정"
-          size={40}
+          size={44}
           onPress={onSettingsPress}
         />
       </View>
@@ -59,19 +60,19 @@ export function ScreenHeader({
   );
 }
 
+export const SCREEN_HEADER_HEIGHT = 48;
+
 const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    minHeight: 76,
-    marginBottom: 6,
+    height: SCREEN_HEADER_HEIGHT,
   },
-  titleBlock: { gap: 3 },
   eyebrow: {
     fontFamily: fonts.semibold,
-    fontSize: 9,
-    lineHeight: 14,
+    fontSize: 11,
+    lineHeight: 16,
     letterSpacing: 1.6,
   },
   logo: {

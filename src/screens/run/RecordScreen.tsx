@@ -206,23 +206,24 @@ export function RecordScreen({
                 setView(mode);
                 setSelectedDay(null);
               }}
-              style={[styles.viewTab, view === mode && styles.viewTabActive]}
+              style={styles.viewTab}
             >
               <Icon
                 size={16}
                 color={view === mode ? colors.primaryInk : colors.textMuted}
               />
               <AppText
-                variant="caption"
+                variant={view === mode ? 'label' : 'caption'}
                 color={view === mode ? colors.primaryInk : colors.textMuted}
               >
                 {label}
               </AppText>
+              {view === mode && <View style={styles.viewTabIndicator} />}
             </Pressable>
           ))}
         </View>
         {view === 'calendar' && (
-          <Card style={styles.calendarCard}>
+          <Card tone="flat" padded={false} style={styles.calendarCard}>
             <View style={styles.calendarGrid}>
               {WEEKDAYS.map(day => (
                 <AppText
@@ -309,7 +310,7 @@ export function RecordScreen({
           </Card>
         )}
         {status !== 'success' ? (
-          <Card style={styles.section}>
+          <Card tone="flat" padded={false} style={styles.section}>
             <RunRecordsStatus status={status} onRetry={retry} />
           </Card>
         ) : (
@@ -328,7 +329,7 @@ export function RecordScreen({
               />
             </View>
             {(selectedRuns ?? runs).length === 0 ? (
-              <Card style={styles.empty}>
+              <Card tone="flat" style={styles.empty}>
                 <View style={styles.emptyIcon}>
                   <Footprints size={28} color={colors.primaryInk} />
                 </View>
@@ -409,7 +410,7 @@ function RunCard({ run, onOpen }: { run: RunDocument; onOpen: () => void }) {
       onPress={onOpen}
       style={({ pressed }) => [styles.runCard, pressed && styles.pressed]}
     >
-      <Card style={styles.journalCard}>
+      <Card tone="flat" padded={false} style={styles.journalCard}>
         <View style={styles.runHeader}>
           <AppText variant="label" color={colors.textMuted}>
             {date.getMonth() + 1}.{String(date.getDate()).padStart(2, '0')}{' '}
@@ -501,11 +502,10 @@ function RunCard({ run, onOpen }: { run: RunDocument; onOpen: () => void }) {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background },
+  screen: { flex: 1, backgroundColor: colors.surface },
   content: { paddingHorizontal: spacing.xl },
   monthHero: {
-    backgroundColor: colors.primarySoft,
-    borderColor: colors.primarySoft,
+    backgroundColor: colors.surfaceMuted,
     padding: 22,
     marginTop: 4,
   },
@@ -525,17 +525,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingTop: 14,
     marginTop: 4,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.primaryBorder,
     gap: 12,
   },
   journalMetric: { flex: 1, gap: 5 },
   viewSwitcher: {
     flexDirection: 'row',
     gap: 8,
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: 14,
-    padding: 4,
     marginTop: 22,
   },
   viewTab: {
@@ -544,12 +539,18 @@ const styles = StyleSheet.create({
     gap: 7,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 40,
-    borderRadius: 11,
+    minHeight: 44,
   },
-  viewTabActive: { backgroundColor: colors.surface },
+  viewTabIndicator: {
+    position: 'absolute',
+    bottom: 0,
+    width: 28,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: colors.primaryAction,
+  },
   calendarCard: { marginTop: 16 },
-  journalCard: { padding: 18 },
+  journalCard: { paddingVertical: spacing.md },
   journalMain: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -568,7 +569,7 @@ const styles = StyleSheet.create({
     width: 102,
     height: 82,
     borderRadius: 16,
-    backgroundColor: colors.primarySoft,
+    backgroundColor: colors.surfaceMuted,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 8,
@@ -612,7 +613,10 @@ const styles = StyleSheet.create({
   },
   today: { borderColor: colors.primaryBorder },
   recordedDay: { backgroundColor: colors.primarySoft },
-  selectedDay: { backgroundColor: colors.primary, borderColor: colors.primary },
+  selectedDay: {
+    backgroundColor: colors.primaryAction,
+    borderColor: colors.primaryAction,
+  },
   pressed: { opacity: 0.7 },
   dot: { width: 4, height: 4, borderRadius: 2, backgroundColor: 'transparent' },
   recordedDot: { backgroundColor: colors.primary },
@@ -655,9 +659,7 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   emptyIcon: {
-    backgroundColor: colors.primarySoft,
-    borderRadius: radius.pill,
-    padding: spacing.lg,
+    padding: spacing.sm,
   },
   runCard: { marginBottom: spacing.md },
   runHeader: {

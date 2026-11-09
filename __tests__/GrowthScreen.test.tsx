@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
 import Renderer, { act } from 'react-test-renderer';
 import { GrowthScreen } from '../src/screens/growth/GrowthScreen';
 import type { CharacterDocument } from '../src/types/character.types';
@@ -78,11 +78,6 @@ test('the summary card sits close under the header now that the tagline is gone'
       />,
     );
   });
-  const [summary] = tree.root.findAll(
-    node =>
-      node.type === View &&
-      StyleSheet.flatten(node.props.style)?.flexDirection === 'row' &&
-      StyleSheet.flatten(node.props.style)?.backgroundColor === '#DDF4EC',
-  );
+  const summary = tree.root.findAllByProps({ testID: 'growth-summary' })[0];
   expect(StyleSheet.flatten(summary.props.style).marginTop).toBe(8);
 });

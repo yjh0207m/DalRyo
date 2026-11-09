@@ -15,6 +15,7 @@ import {
   subNavItemAt,
   type SubNavKey,
 } from '../src/screens/community/CommunitySubNav';
+import { colors } from '../src/theme';
 
 jest.mock(
   'lucide-react-native',
@@ -236,7 +237,8 @@ describe('unread messages', () => {
       .findAll(
         node =>
           typeof node.type === 'string' &&
-          StyleSheet.flatten(node.props.style)?.width === 8,
+          StyleSheet.flatten(node.props.style)?.backgroundColor ===
+            colors.danger,
       )
       .map(node => {
         // 메뉴 항목의 점은 항목 전체의 투명도를 따른다

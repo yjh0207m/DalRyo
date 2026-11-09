@@ -19,7 +19,7 @@ import {
 } from 'lucide-react-native';
 import { AppText } from '../../components/ui';
 import { animateTo } from '../../navigation/motion';
-import { colors, radius, shadow } from '../../theme';
+import { colors, radius } from '../../theme';
 
 // 커뮤니티 화면 아래, 기존 하단 탭 바 위에 얹는 작은 서브 네비게이션.
 // 평소에는 가운데에 동그란 메뉴 버튼 하나만 있고, 누르는 즉시 양옆으로 피드·탐색·메시지·프로필이 펼쳐진다.
@@ -254,20 +254,13 @@ export function CommunitySubNav({
             }
             style={styles.center}
           >
-            {/* 색도 함께 서서히 바뀌도록, 접힌 모습과 펼친 모습을 겹쳐 두고 번갈아 드러낸다 */}
-            <Animated.View
-              pointerEvents="none"
-              style={[styles.centerActive, { opacity: grow }]}
-            />
-            <Animated.View pointerEvents="none" style={{ opacity: idle }}>
-              <Menu color={colors.primaryInk} size={22} strokeWidth={2.2} />
-            </Animated.View>
-            <Animated.View
-              pointerEvents="none"
-              style={[styles.centerIconActive, { opacity: grow }]}
-            >
-              <Menu color={colors.textOnPrimary} size={22} strokeWidth={2.2} />
-            </Animated.View>
+            <View pointerEvents="none" style={styles.menuMark}>
+              <Menu
+                color={expanded ? colors.primaryInk : colors.textMuted}
+                size={18}
+                strokeWidth={2}
+              />
+            </View>
             {unreadMessages && (
               <Animated.View
                 pointerEvents="none"
@@ -379,25 +372,23 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
-    ...shadow.floating,
   },
   center: {
     width: CENTER_SIZE,
     height: CENTER_SIZE,
-    borderRadius: CENTER_SIZE / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuMark: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.surface,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
-    ...shadow.floating,
   },
-  centerActive: {
-    ...StyleSheet.absoluteFill,
-    borderRadius: CENTER_SIZE / 2,
-    backgroundColor: colors.primary,
-  },
-  centerIconActive: { position: 'absolute' },
   item: {
     width: ITEM_WIDTH,
     height: ROW_HEIGHT - 8,
@@ -407,15 +398,15 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   itemCurrent: { backgroundColor: colors.primarySoft },
-  itemHovered: { backgroundColor: colors.primary },
+  itemHovered: { backgroundColor: colors.primaryAction },
   itemLabel: { fontSize: 10, lineHeight: 12 },
   dot: {
     position: 'absolute',
-    top: 6,
-    right: 8,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    top: 8,
+    right: 9,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
     backgroundColor: colors.danger,
   },
 });

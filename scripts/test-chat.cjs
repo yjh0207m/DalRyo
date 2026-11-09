@@ -28,6 +28,71 @@ try{
  await test('recipient reply, latest preview and concurrent read race stay consistent',async()=>{await admin(db=>updateDoc(doc(db,base()),{last_sent_at:Timestamp.fromMillis(Date.now()-1000)}));await call(b,'chatSend',{conversationId:id,messageId:'two',text:'안녕!'});await call(b,'chatRead',{conversationId:id,messageId:'one'});const room=await read(base());assert.equal(room.last_sender_uid,b.uid);assert.equal(room.last_text,'안녕!');assert.equal(room.last_message_id,'two');assert.ok(room.last_sent_at.toMillis()>room.read_at[a.uid].toMillis());await call(a,'chatRead',{conversationId:id,messageId:'two'});assert.equal((await read(base())).read_at[a.uid].toMillis(),room.last_sent_at.toMillis());});
  await test('rate limit rejects rapid different messages, same-id retry remains safe',async()=>{await admin(db=>updateDoc(doc(db,base()),{last_sent_at:Timestamp.fromMillis(Date.now()+10000)}));await assert.rejects(call(b,'chatSend',{conversationId:id,messageId:'rapid',text:'rapid'}),{code:'RESOURCE_EXHAUSTED'});await call(b,'chatSend',{conversationId:id,messageId:'two',text:'안녕!'});});
  await test('ordered real message pagination and missing-parent access',async()=>{await admin(async db=>{for(let i=0;i<55;i++)await setDoc(doc(db,`${base()}/messages/history-${i}`),{sender_uid:a.uid,text:`history ${i}`,created_at:Timestamp.fromMillis(1000+i)});});const q=query(collection(bob,`${base()}/messages`),orderBy('created_at','desc'),limit(50));const first=await assertSucceeds(getDocs(q));const rest=await assertSucceeds(getDocs(query(collection(bob,`${base()}/messages`),orderBy('created_at','desc'),startAfter(first.docs.at(-1)),limit(50))));assert.equal(first.size+rest.size,57);await assertFails(getDocs(collection(alice,'conversations/missing/messages')));});
+ let groupId;
+ const groupInput = { uids: [b.uid, c.uid], name: ' 아침 러닝 ', requestId: 'create-group' };
+ const groupPath = () => `group_conversations/${groupId}`;
+ await test('group creation validates membership, respects blocks, and is safe to retry', async () => {
+  for (const uids of [[b.uid], [b.uid, b.uid], [a.uid, b.uid], Array(10).fill(b.uid)]) {
+   await assert.rejects(call(a, 'chatCreateGroup', { ...groupInput, uids }), { code: 'INVALID_ARGUMENT' });
+  }
+  await assert.rejects(call(a, 'chatCreateGroup', { ...groupInput, uids: [b.uid, 'missing'] }), { code: 'NOT_FOUND' });
+  await call(b, 'blockUser', { uid: c.uid, blocked: true });
+  await assert.rejects(call(a, 'chatCreateGroup', groupInput), { code: 'PERMISSION_DENIED' });
+  await call(b, 'blockUser', { uid: c.uid, blocked: false });
+  const results = await Promise.all([call(a, 'chatCreateGroup', groupInput), call(a, 'chatCreateGroup', groupInput)]);
+  groupId = results[0].conversationId;
+  assert.equal(results[1].conversationId, groupId);
+  const group = await read(groupPath());
+  assert.equal(group.kind, 'group');
+  assert.equal(group.name, '아침 러닝');
+  assert.deepEqual(group.members, [a.uid, b.uid, c.uid].sort());
+  assert.deepEqual(Object.keys(group.profiles[b.uid]).sort(), ['display_name', 'profile_image']);
+  const inbox = collectionName => query(collection(bob, collectionName), where('members', 'array-contains', b.uid), orderBy('updated_at', 'desc'), limit(50));
+  assert.equal((await assertSucceeds(getDocs(inbox('group_conversations')))).docs[0].id, groupId);
+  assert.deepEqual((await assertSucceeds(getDocs(inbox('conversations')))).docs.map(item => item.id), [id]);
+ });
+ await test('only group members can read, send and mark the latest message read', async () => {
+  const outsider = await signup();
+  await admin(db => setDoc(doc(db, `users/${outsider.uid}`), { display_name: 'Outsider' }));
+  const stranger = env.authenticatedContext(outsider.uid).firestore();
+  await assertSucceeds(getDoc(doc(eve, groupPath())));
+  await assertFails(getDoc(doc(stranger, groupPath())));
+  await assertFails(getDocs(collection(guest, 'group_conversations')));
+  await assertFails(getDocs(collection(bob, 'group_conversations')));
+  await assertFails(setDoc(doc(eve, 'group_conversations/forged'), { members: [c.uid, outsider.uid] }));
+  await assertFails(getDocs(collection(stranger, `${groupPath()}/messages`)));
+  await assertFails(updateDoc(doc(eve, groupPath()), { members: [c.uid, outsider.uid] }));
+  for (const action of ['chatSend', 'chatRead', 'chatLeave']) {
+   await assert.rejects(call(outsider, action, { conversationId: groupId, messageId: 'first', text: 'test' }), { code: 'PERMISSION_DENIED' });
+  }
+  await assert.rejects(call(a, 'chatBlock', { conversationId: groupId, blocked: true }), { code: 'INVALID_ARGUMENT' });
+  await call(b, 'chatSend', { conversationId: groupId, messageId: 'first', text: '안녕하세요' });
+  await call(c, 'chatSend', { conversationId: groupId, messageId: 'reply', text: '반가워요' });
+  await call(a, 'chatRead', { conversationId: groupId, messageId: 'reply' });
+  assert.equal((await read(`${groupPath()}/messages/reply`)).sender_uid, c.uid);
+  const group = await read(groupPath());
+  assert.equal(group.read_at[a.uid].toMillis(), group.last_sent_at.toMillis());
+ });
+ await test('blocking cannot be bypassed through an existing group, and leaving revokes access', async () => {
+  const direct = (await call(b, 'chatOpen', { uid: c.uid })).conversationId;
+  await call(b, 'blockUser', { uid: c.uid, blocked: true });
+  await assert.rejects(call(b, 'chatBlock', { conversationId: direct, blocked: false }), { code: 'FAILED_PRECONDITION' });
+  await call(b, 'blockUser', { uid: c.uid, blocked: false });
+  await call(b, 'chatBlock', { conversationId: direct, blocked: true });
+  await assert.rejects(call(b, 'chatSend', { conversationId: groupId, messageId: 'blocked-group', text: 'test' }), { code: 'PERMISSION_DENIED' });
+  await call(b, 'chatBlock', { conversationId: direct, blocked: false });
+  await assert.rejects(call(a, 'chatLeave', { conversationId: id }), { code: 'PERMISSION_DENIED' });
+  await call(c, 'chatLeave', { conversationId: groupId });
+  await call(c, 'chatLeave', { conversationId: groupId });
+  await assertFails(getDoc(doc(eve, groupPath())));
+  await assertFails(getDoc(doc(eve, `${groupPath()}/messages/reply`)));
+  await assert.rejects(call(c, 'chatSend', { conversationId: groupId, messageId: 'after-leave', text: 'test' }), { code: 'PERMISSION_DENIED' });
+  await assertSucceeds(getDoc(doc(alice, `${groupPath()}/messages/reply`)));
+  const group = await read(groupPath());
+  assert.deepEqual(group.members, [a.uid, b.uid].sort());
+  assert.equal(group.read_at[c.uid], undefined);
+  assert.equal(group.profiles[c.uid].display_name, 'Eve');
+ });
  console.log(`${passed} chat integration and security scenarios passed`);
 }finally{await env.cleanup();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

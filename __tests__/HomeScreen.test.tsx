@@ -188,14 +188,14 @@ describe('shortcuts under the character card', () => {
     });
   };
 
-  test('three equal squares sit in one row, in the order items, my room, quest', () => {
+  test('three flat shortcuts sit in one row, in the order items, my room, quest', () => {
     const labels = ['아이템', '마이룸', '퀘스트'];
     const tiles = labels.map(shortcut);
     tiles.forEach(tile => expect(tile).toBeDefined());
     tiles.forEach(tile =>
       expect(
         StyleSheet.flatten(tile.props.style({ pressed: false })),
-      ).toMatchObject({ flex: 1, aspectRatio: 1 }),
+      ).toMatchObject({ flex: 1, minHeight: 76 }),
     );
     // 같은 가로 줄에 있다
     const rowOf = (tile: Renderer.ReactTestInstance) => {

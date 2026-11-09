@@ -3,6 +3,8 @@ import {
   ActivityIndicator,
   Alert,
   BackHandler,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StatusBar,
@@ -11,8 +13,17 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Check, ChevronLeft, UserRound } from 'lucide-react-native';
-import { AppText, Button, Card, IconButton } from '../../components/ui';
+import {
+  Check,
+  ChevronLeft,
+  Flag,
+  Footprints,
+  Search,
+  UserPlus,
+  Users,
+} from 'lucide-react-native';
+import { AppText, Badge, Button, Card, IconButton } from '../../components/ui';
+import { usePostAuthor } from '../../hooks/usePostAuthor';
 import {
   activeRoomId,
   newRoomId,
@@ -24,19 +35,24 @@ import {
   type RoomMember,
   type TogetherRoom,
 } from '../../services/room.service';
-import { myUid, socialError } from '../../services/social.service';
-import {queueRun, uploadPendingRun} from '../../services/runOutbox.service';
-import type {RunContext, RunSessionSnapshot} from '../../types/runSession';
+import { socialError } from '../../services/social.service';
+import { queueRun, uploadPendingRun } from '../../services/runOutbox.service';
+import type { RunContext, RunSessionSnapshot } from '../../types/runSession';
 import { TogetherTrack } from './TogetherTrack';
+import { RunnerAvatar } from './RunnerAvatar';
 import { RunningScreen } from '../run/RunningScreen';
 import { CompletedRunScreen } from '../run/CompletedRunScreen';
-import type {RunStartSnapshot} from '../../utils/runCompletion';
-import type {RunDocument} from '../../types/run.types';
+import type { RunStartSnapshot } from '../../utils/runCompletion';
+import type { RunDocument } from '../../types/run.types';
 import type { RunResult } from '../../hooks/useRunSession';
 import type { CharacterDocument } from '../../types/character.types';
 import type { UserDocument } from '../../types/user.types';
-import { calculateAveragePace, formatDuration, formatPace } from '../../utils/pace';
-import { colors, spacing } from '../../theme';
+import {
+  calculateAveragePace,
+  formatDuration,
+  formatPace,
+} from '../../utils/pace';
+import { colors, fonts, spacing } from '../../theme';
 type Props = {
   user: UserDocument;
   character: CharacterDocument;
@@ -100,6 +116,11 @@ export function TogetherScreen({
       .then(([friendList, inviteList, current]) => {
         if (active) {
           setFriends(friendList.friends);
+          setSelected(chosen =>
+            chosen.filter(uid =>
+              friendList.friends.some(friend => friend.uid === uid),
+            ),
+          );
           setInvites(inviteList.invites);
           if (current && !restore) setRoomId(current);
           setStatus('success');
@@ -259,7 +280,7 @@ export function TogetherScreen({
           <StatusBar barStyle="dark-content" backgroundColor={colors.sky} />
           <View style={styles.spectatorHeader}>
             <IconButton icon={ChevronLeft} variant="plain" accessibilityLabel="뒤로" disabled={busy} onPress={back} />
-            <AppText variant="heading">같이 달리기</AppText>
+            <AppText variant="subheading">같이 달리기</AppText>
           </View>
           <Card style={styles.gap}>
             <AppText variant="subheading" color={colors.primaryInk}>
@@ -280,7 +301,7 @@ export function TogetherScreen({
               ))}
             </View>
           </Card>
-          <TogetherTrack members={visibleMembers} uid={user.uid} character={character}
+          <TogetherTrack members={visibleMembers} uid={user.uid} ownProfile={user} character={character}
             goalKm={activeGoal} syncError={status === 'error'}
             own={{ current_km: result.distanceKm, pace_sec: average, state: 'finished' }} />
           <AppText variant="caption" align="center" color={colors.textMuted}>
@@ -339,16 +360,84 @@ export function TogetherScreen({
         finishAtGoal
         contextLabel="같이 달리기"
         renderTrack={({ km, pace, running: moving }) => (
-          <TogetherTrack members={visibleMembers} uid={user.uid} character={character}
+          <TogetherTrack members={visibleMembers} uid={user.uid} ownProfile={user} character={character}
             goalKm={activeGoal} syncError={syncError || status === 'error'}
             own={{ current_km: km, pace_sec: pace, state: moving ? 'active' : 'paused' }} />
         )}
       />
     );
-  const me = members.find(m => m.uid === myUid());
+  const me = visibleMembers.find(member => member.uid === user.uid);
+  const friendById = new Map(friends.map(friend => [friend.uid, friend]));
+  const waiting = room?.status === 'waiting';
+  const host = room?.host_uid === user.uid;
+  const pending = room?.invited ?? [];
+  const inviteLimit = room ? Math.max(0, 20 - room.capacity) : 19;
+  const available = friends.filter(
+    friend =>
+      !members.some(member => member.uid === friend.uid) &&
+      !pending.includes(friend.uid),
+  );
+  const goalKm = Number(goal.trim().replace(',', '.'));
+  const validGoal = goalKm >= 0.1 && goalKm <= 100;
+  const requestLabel = selected.length
+    ? `${selected.length}명에게 요청 보내기`
+    : '같이 달릴 친구를 골라 주세요';
+  let footer: React.ReactNode;
+
+  if (room && waiting && host && !picking) {
+    footer = (
+      <Button
+        label="함께 달리기 시작"
+        icon={Footprints}
+        disabled={busy}
+        onPress={() => action('start')}
+      />
+    );
+  } else if (room?.status === 'running' && me && me.state !== 'finished') {
+    footer = (
+      <Button
+        label="달리기 참여"
+        icon={Footprints}
+        disabled={busy}
+        onPress={() => {
+          startSnapshot.current = {
+            stageBefore: character.stage,
+            totalKmBefore: user.total_km,
+            wasFrozen: user.is_frozen,
+          };
+          sessionContext.current = {
+            uid: user.uid,
+            sessionKey: `${user.uid}_${Date.now()}`,
+            goal: { goalType: 'distance', goalValue: room.goal_km },
+            before: startSnapshot.current,
+            weightKg: user.weight_kg,
+            roomId: room.room_id,
+          };
+          setRunning(true);
+        }}
+      />
+    );
+  } else if (!roomId && status === 'success' && friends.length > 0) {
+    footer = (
+      <Button
+        label={requestLabel}
+        icon={UserPlus}
+        disabled={busy || !selected.length || !title.trim() || !validGoal}
+        onPress={() =>
+          action('create', {
+            roomId: createId.current,
+            title,
+            goalKm,
+            inviteUids: selected,
+          })
+        }
+      />
+    );
+  }
+
   return (
     <SafeAreaView style={styles.screen}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
+      <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
       <View style={styles.header}>
         <IconButton
           icon={ChevronLeft}
@@ -357,334 +446,705 @@ export function TogetherScreen({
           disabled={busy}
           onPress={back}
         />
-        <AppText variant="heading">같이 달리기</AppText>
-      </View>
-      <ScrollView
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={styles.content}
-      >
-        {error && <AppText color={colors.danger}>{error}</AppText>}
-        {status === 'loading' && <ActivityIndicator color={colors.primary} />}
-        {status === 'error' && (
+        <AppText
+          variant="label"
+          color={colors.textMuted}
+          style={styles.eyebrow}
+        >
+          TOGETHER RUN
+        </AppText>
+        {room && (
           <Button
-            label="다시 불러오기"
-            variant="secondary"
+            label="나가기"
             size="md"
-            onPress={() => setRevision(v => v + 1)}
+            variant="ghost"
+            disabled={busy}
+            onPress={leave}
           />
         )}
-        {roomId ? (
-          <>
-            {!room ? (
-              status === 'success' && <AppText>방을 찾을 수 없어요.</AppText>
-            ) : (
-              <>
-                <Card style={styles.gap}>
-                  <AppText variant="heading">{room.title}</AppText>
-                  <AppText>
-                    {room.goal_km} km · {room.member_count}/{room.capacity}명 ·{' '}
-                    {
-                      {
-                        waiting: '시작 대기',
-                        running: '달리는 중',
-                        finished: '종료',
-                        cancelled: '취소',
-                      }[room.status]
-                    }
+      </View>
+      <KeyboardAvoidingView
+        style={styles.grow}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={styles.content}
+        >
+          {room ? (
+            <View style={styles.hero}>
+              <TrackMark />
+              <View style={styles.heroTop}>
+                <Badge
+                  label={ROOM_STATUS[room.status]}
+                  tone={waiting ? 'warm' : 'onSoft'}
+                />
+              </View>
+              <AppText variant="title" style={styles.heroTitle}>
+                {room.title}
+              </AppText>
+              <View style={styles.heroBottom}>
+                <View style={styles.metric}>
+                  <Flag size={16} color={colors.primaryInk} />
+                  <AppText variant="caption" color={colors.primaryInk}>
+                    목표
                   </AppText>
-                </Card>
-                <AppText variant="subheading">실시간 거리 순위</AppText>
-                {visibleMembers.map((m, i) => (
-                  <Card key={m.uid} style={styles.gap}>
-                    <AppText variant="subheading">
-                      {i + 1}. {m.uid === user.uid ? '나' : m.display_name}
-                      {m.uid === room.host_uid ? ' · 방장' : ''}
+                  <AppText variant="heading" color={colors.primaryInk}>
+                    {room.goal_km} km
+                  </AppText>
+                </View>
+                <View style={styles.metric}>
+                  <Users size={16} color={colors.textMuted} />
+                  <AppText variant="caption" color={colors.textMuted}>
+                    {room.member_count}/{room.capacity}명 참가
+                  </AppText>
+                </View>
+              </View>
+            </View>
+          ) : (
+            !roomId && (
+              <View style={styles.hero}>
+                <TrackMark />
+                <AppText variant="label" color={colors.primaryInk}>
+                  친구와 함께하는 러닝
+                </AppText>
+                <AppText variant="title" style={styles.heroTitle}>
+                  같이 달리기
+                </AppText>
+                <AppText color={colors.textMuted}>
+                  목표 거리를 정하고, 친구와 서로의 달리기를 함께 보세요.
+                </AppText>
+              </View>
+            )
+          )}
+
+          {!!error && (
+            <AppText
+              color={colors.danger}
+              accessibilityRole="alert"
+              style={styles.feedback}
+            >
+              {error}
+            </AppText>
+          )}
+          {status === 'loading' && (
+            <ActivityIndicator color={colors.primaryAction} />
+          )}
+          {status === 'error' && (
+            <Button
+              label="다시 불러오기"
+              variant="secondary"
+              size="md"
+              style={styles.feedback}
+              onPress={() => setRevision(v => v + 1)}
+            />
+          )}
+
+          {roomId ? (
+            room ? (
+              <>
+                <View style={styles.section}>
+                  <View style={styles.sectionHeading}>
+                    <AppText variant="heading">
+                      {waiting ? '참가자' : room.status === 'running' ? '실시간 거리 순위' : '참가 결과'}
                     </AppText>
-                    <AppText>
-                      {m.current_km.toFixed(2)} km ·{' '}
-                      {m.pace_sec ? formatPace(m.pace_sec) : '—'} /km ·{' '}
-                      {m.state === 'finished'
-                        ? '완료'
-                        : m.state === 'paused'
-                        ? '일시정지'
-                        : room.status === 'waiting'
-                        ? '대기'
-                        : '달리는 중'}
+                    <AppText variant="label" color={colors.textMuted}>
+                      {visibleMembers.length}명
                     </AppText>
-                  </Card>
-                ))}
-                {room.status === 'waiting' && !!room.invited?.length && (
-                  <Card style={styles.gap}>
-                    <AppText variant="label">응답 기다리는 중</AppText>
-                    <AppText color={colors.textMuted}>
-                      {room.invited
-                        .map(f => room.invited_names?.[f] ?? '친구')
-                        .join(', ')}
-                    </AppText>
-                  </Card>
-                )}
-                {room.status === 'waiting' &&
-                  room.host_uid === user.uid &&
-                  (picking ? (
-                    <>
-                      <FriendPicker
-                        friends={friends.filter(
-                          f =>
-                            !members.some(m => m.uid === f.uid) &&
-                            !room.invited?.includes(f.uid),
-                        )}
-                        selected={selected}
-                        onChange={setSelected}
-                        disabled={busy}
-                      />
-                      <Button
-                        label={`${selected.length}명에게 요청 보내기`}
-                        size="md"
-                        disabled={busy || !selected.length}
-                        onPress={() =>
-                          action('invite', { inviteUids: selected })
+                  </View>
+                  {visibleMembers.map((member, index) => {
+                    const own = member.uid === user.uid;
+                    const profile = own
+                      ? user
+                      : friendById.get(member.uid) ?? member;
+                    const [label, tint] = memberStatus(member, waiting, room.goal_km);
+                    return (
+                      <RunnerRow
+                        key={member.uid}
+                        uri={profile.profile_image}
+                        name={profile.display_name ?? member.display_name}
+                        detail={
+                          waiting
+                            ? member.uid === room.host_uid
+                              ? '방장'
+                              : undefined
+                            : `${member.current_km.toFixed(2)} km · ${
+                                member.pace_sec
+                                  ? `${formatPace(member.pace_sec)} /km`
+                                  : '페이스 —'
+                              }`
+                        }
+                        prefix={waiting ? undefined : String(index + 1)}
+                        mine={own}
+                        trailing={
+                          <AppText variant="label" color={tint}>
+                            {label}
+                          </AppText>
                         }
                       />
-                    </>
-                  ) : (
-                    <Button
-                      label="친구 더 부르기"
-                      size="md"
-                      variant="secondary"
+                    );
+                  })}
+                  {waiting && !host && (
+                    <AppText variant="caption" color={colors.textMuted}>
+                      방장이 시작하면 달리기에 참여할 수 있어요.
+                    </AppText>
+                  )}
+                </View>
+
+                {waiting && pending.length > 0 && (
+                  <View style={[styles.section, styles.pending]}>
+                    <View style={styles.sectionHeading}>
+                      <AppText variant="subheading" color={colors.accentInk}>
+                        응답을 기다리는 친구
+                      </AppText>
+                      <AppText variant="label" color={colors.accentInk}>
+                        {pending.length}명
+                      </AppText>
+                    </View>
+                    {pending.map(uid => {
+                      const friend = friendById.get(uid);
+                      return (
+                        <RunnerRow
+                          key={uid}
+                          uri={friend?.profile_image}
+                          name={
+                            friend?.display_name ??
+                            room.invited_names?.[uid] ??
+                            '친구'
+                          }
+                          trailing={
+                            <AppText variant="label" color={colors.accentInk}>
+                              대기 중
+                            </AppText>
+                          }
+                        />
+                      );
+                    })}
+                  </View>
+                )}
+
+                {waiting && host && (
+                  <View style={styles.section}>
+                    {picking ? (
+                      <>
+                        <View style={styles.sectionHeading}>
+                          <AppText variant="heading">친구 더 부르기</AppText>
+                          <Button
+                            label="취소"
+                            size="md"
+                            variant="ghost"
+                            disabled={busy}
+                            onPress={() => {
+                              setSelected([]);
+                              setPicking(false);
+                            }}
+                          />
+                        </View>
+                        <FriendPicker
+                          friends={available}
+                          limit={inviteLimit}
+                          selected={selected}
+                          onChange={setSelected}
+                          disabled={busy}
+                        />
+                        <Button
+                          label={requestLabel}
+                          size="md"
+                          icon={UserPlus}
+                          disabled={busy || !selected.length}
+                          onPress={() =>
+                            action('invite', { inviteUids: selected })
+                          }
+                        />
+                      </>
+                    ) : (
+                      available.length > 0 &&
+                      inviteLimit > 0 && (
+                        <Button
+                          label="친구 더 부르기"
+                          size="md"
+                          icon={UserPlus}
+                          variant="secondary"
+                          disabled={busy}
+                          onPress={() => {
+                            setSelected([]);
+                            setPicking(true);
+                          }}
+                        />
+                      )
+                    )}
+                  </View>
+                )}
+              </>
+            ) : (
+              status === 'success' && (
+                <AppText style={styles.feedback}>방을 찾을 수 없어요.</AppText>
+              )
+            )
+          ) : (
+            <>
+              {invites.length > 0 && (
+                <View style={styles.section}>
+                  <View style={styles.sectionHeading}>
+                    <AppText variant="heading">받은 요청</AppText>
+                    <Badge label={`${invites.length}개`} tone="warm" />
+                  </View>
+                  {invites.map(invite => (
+                    <InviteRow
+                      key={invite.room_id}
+                      invite={invite}
+                      friend={friendById.get(invite.host_uid)}
                       disabled={busy}
-                      onPress={() => {
-                        setSelected([]);
-                        setPicking(true);
-                      }}
+                      onJoin={() => action('join', { roomId: invite.room_id })}
+                      onDecline={() =>
+                        action('decline', { roomId: invite.room_id })
+                      }
                     />
                   ))}
-                {room.status === 'waiting' && room.host_uid === user.uid && (
-                  <Button
-                    label="함께 달리기 시작"
-                    disabled={busy}
-                    onPress={() => action('start')}
-                  />
-                )}
-                {room.status === 'waiting' && room.host_uid !== user.uid && (
-                  <AppText>방장이 시작하면 달리기에 참여할 수 있어요.</AppText>
-                )}
-                {room.status === 'running' && me && me.state !== 'finished' && (
-                  <Button
-                    label="달리기 참여"
-                    disabled={busy}
-                    onPress={() => {
-                      startSnapshot.current={stageBefore:character.stage,totalKmBefore:user.total_km,wasFrozen:user.is_frozen};
-                      sessionContext.current={uid:user.uid,sessionKey:`${user.uid}_${Date.now()}`,goal:{goalType:'distance',goalValue:room.goal_km},before:startSnapshot.current,weightKg:user.weight_kg,roomId:room.room_id};
-                      setRunning(true);
-                    }}
-                  />
-                )}
-                <Button
-                  label="방 나가기"
-                  size="md"
-                  variant="secondary"
-                  disabled={busy}
-                  onPress={leave}
-                />
-              </>
-            )}
-          </>
-        ) : (
-          <>
-            {invites.length > 0 && (
-              <>
-                <AppText variant="subheading">받은 요청</AppText>
-                {invites.map(inv => (
-                  <Card key={inv.room_id} style={styles.gap}>
-                    <AppText variant="subheading">
-                      {inv.host_name}님의 같이 달리기
-                    </AppText>
-                    <AppText color={colors.textMuted}>
-                      {inv.title} · {inv.goal_km} km · {inv.member_count}명 참가
-                    </AppText>
-                    <View style={styles.row}>
-                      <Button
-                        label="거절"
-                        size="md"
-                        variant="secondary"
-                        disabled={busy}
-                        style={styles.grow}
-                        onPress={() =>
-                          action('decline', { roomId: inv.room_id })
-                        }
-                      />
-                      <Button
-                        label="같이 달리기"
-                        size="md"
-                        disabled={busy}
-                        style={styles.grow}
-                        onPress={() => action('join', { roomId: inv.room_id })}
+                </View>
+              )}
+
+              {friends.length > 0 && (
+                <View style={styles.section}>
+                  <AppText variant="heading">러닝 설정</AppText>
+                  <View style={styles.row}>
+                    <View style={styles.grow}>
+                      <AppText variant="label" color={colors.textMuted}>
+                        방 이름
+                      </AppText>
+                      <TextInput
+                        accessibilityLabel="방 이름"
+                        value={title}
+                        onChangeText={setTitle}
+                        maxLength={40}
+                        style={styles.input}
+                        editable={!busy}
                       />
                     </View>
-                  </Card>
-                ))}
-              </>
-            )}
-            <AppText variant="subheading">친구에게 같이 달리기 요청</AppText>
-            {status === 'success' && !friends.length ? (
-              <AppText color={colors.textMuted}>
-                서로 팔로우한 친구에게 요청할 수 있어요. 커뮤니티에서 러너를
-                찾아 팔로우해 보세요.
-              </AppText>
-            ) : (
-              <FriendPicker
-                friends={friends}
-                selected={selected}
-                onChange={setSelected}
-                disabled={busy}
-              />
-            )}
-            {friends.length > 0 && (
-              <>
-                <View style={styles.row}>
-                  <View style={styles.grow}>
-                    <AppText variant="caption">방 이름</AppText>
-                    <TextInput
-                      accessibilityLabel="방 이름"
-                      value={title}
-                      onChangeText={setTitle}
-                      maxLength={40}
-                      style={styles.input}
-                      editable={!busy}
-                    />
+                    <View style={styles.goal}>
+                      <AppText variant="label" color={colors.textMuted}>
+                        목표 거리
+                      </AppText>
+                      <View style={styles.distanceInput}>
+                        <TextInput
+                          accessibilityLabel="목표 거리"
+                          value={goal}
+                          onChangeText={setGoal}
+                          keyboardType="decimal-pad"
+                          style={styles.distanceValue}
+                          editable={!busy}
+                        />
+                        <AppText variant="caption" color={colors.textMuted}>
+                          km
+                        </AppText>
+                      </View>
+                    </View>
                   </View>
-                  <View style={styles.goal}>
-                    <AppText variant="caption">목표 (km)</AppText>
-                    <TextInput
-                      accessibilityLabel="목표 거리"
-                      value={goal}
-                      onChangeText={setGoal}
-                      keyboardType="decimal-pad"
-                      style={styles.input}
-                      editable={!busy}
-                    />
-                  </View>
+                  {!validGoal && (
+                    <AppText variant="caption" color={colors.textMuted}>
+                      목표는 0.1~100 km로 입력해 주세요.
+                    </AppText>
+                  )}
                 </View>
-                <Button
-                  label={
-                    selected.length
-                      ? `${selected.length}명에게 요청 보내기`
-                      : '같이 달릴 친구를 골라 주세요'
-                  }
-                  disabled={busy || !selected.length}
-                  onPress={() =>
-                    action('create', {
-                      roomId: createId.current,
-                      title,
-                      goalKm: Number(goal),
-                      inviteUids: selected,
-                    })
-                  }
-                />
-              </>
-            )}
-          </>
-        )}
-      </ScrollView>
+              )}
+              {status === 'success' && (
+                <View style={styles.section}>
+                  <View style={styles.sectionHeading}>
+                    <AppText variant="heading">같이 달릴 친구</AppText>
+                    {selected.length > 0 && (
+                      <AppText variant="label" color={colors.primaryInk}>
+                        {selected.length}명 선택
+                      </AppText>
+                    )}
+                  </View>
+                  {friends.length === 0 ? (
+                    <View style={styles.emptyFriends}>
+                      <Users size={24} color={colors.primaryInk} />
+                      <AppText color={colors.textMuted} style={styles.grow}>
+                        서로 팔로우한 친구에게 같이 달리기 요청을 보낼 수
+                        있어요.
+                      </AppText>
+                    </View>
+                  ) : (
+                    <FriendPicker
+                      friends={friends}
+                      selected={selected}
+                      onChange={setSelected}
+                      disabled={busy}
+                    />
+                  )}
+                </View>
+              )}
+            </>
+          )}
+        </ScrollView>
+        {!!footer && <View style={styles.footer}>{footer}</View>}
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
+
+const ROOM_STATUS = {
+  waiting: '출발 대기',
+  running: '달리는 중',
+  finished: '러닝 종료',
+  cancelled: '취소된 방',
+} as const;
+
+function memberStatus(member: RoomMember, waiting: boolean, goalKm: number) {
+  if (waiting) return ['참가 완료', colors.primaryInk] as const;
+  if (member.state === 'finished')
+    return [member.current_km >= goalKm ? '완주' : '기록 종료', colors.primaryInk] as const;
+  if (member.state === 'paused') return ['일시정지', colors.accentInk] as const;
+  return ['달리는 중', colors.primaryInk] as const;
+}
+
+function TrackMark() {
+  return (
+    <View style={styles.trackMark} pointerEvents="none">
+      {[0, 1, 2].map(lane => (
+        <View
+          key={lane}
+          style={[
+            styles.trackRing,
+            {
+              top: lane * 15,
+              left: lane * 15,
+              right: lane * 15,
+              bottom: lane * 15,
+            },
+          ]}
+        />
+      ))}
+    </View>
+  );
+}
+
+function RunnerRow({
+  uri,
+  name,
+  detail,
+  prefix,
+  mine,
+  trailing,
+}: {
+  uri?: string | null;
+  name: string;
+  detail?: string;
+  prefix?: string;
+  mine?: boolean;
+  trailing?: React.ReactNode;
+}) {
+  return (
+    <View style={styles.runnerRow}>
+      {!!prefix && (
+        <AppText variant="label" color={colors.textMuted} style={styles.rank}>
+          {prefix}
+        </AppText>
+      )}
+      <RunnerAvatar uri={uri} />
+      <View style={styles.grow}>
+        <AppText variant="subheading" numberOfLines={1}>
+          {name}
+          {mine ? ' (나)' : ''}
+        </AppText>
+        {!!detail && (
+          <AppText variant="caption" color={colors.textMuted}>
+            {detail}
+          </AppText>
+        )}
+      </View>
+      {trailing}
+    </View>
+  );
+}
+
+function InviteRow({
+  invite,
+  friend,
+  disabled,
+  onJoin,
+  onDecline,
+}: {
+  invite: RoomInvite;
+  friend?: RoomFriend;
+  disabled: boolean;
+  onJoin: () => void;
+  onDecline: () => void;
+}) {
+  const profile = usePostAuthor(friend ? undefined : invite.host_uid) ?? friend;
+  return (
+    <View style={styles.invite}>
+      <RunnerRow
+        uri={profile?.profile_image}
+        name={profile?.display_name ?? invite.host_name}
+        detail={`${invite.title} · ${invite.goal_km} km · ${invite.member_count}명 참가`}
+      />
+      <View style={styles.inviteActions}>
+        <Button
+          label="거절"
+          size="md"
+          variant="ghost"
+          disabled={disabled}
+          onPress={onDecline}
+        />
+        <Button
+          label="참가하기"
+          size="md"
+          variant="secondary"
+          disabled={disabled}
+          onPress={onJoin}
+        />
+      </View>
+    </View>
+  );
+}
+
 function FriendPicker({
   friends,
   selected,
   onChange,
   disabled,
+  limit = 19,
 }: {
   friends: RoomFriend[];
   selected: string[];
   onChange: (next: string[]) => void;
   disabled: boolean;
+  limit?: number;
 }) {
+  const [query, setQuery] = useState('');
+  const normalized = query.trim().toLocaleLowerCase('ko-KR');
+  const matches = friends.filter(friend =>
+    friend.display_name.toLocaleLowerCase('ko-KR').includes(normalized),
+  );
   if (!friends.length)
     return (
       <AppText color={colors.textMuted}>더 부를 수 있는 친구가 없어요.</AppText>
     );
   return (
-    <Card style={styles.friends}>
-      {friends.map(f => {
-        const on = selected.includes(f.uid);
+    <View>
+      <View style={styles.search}>
+        <Search size={18} color={colors.textMuted} />
+        <TextInput
+          value={query}
+          onChangeText={setQuery}
+          placeholder="친구 닉네임 검색"
+          accessibilityLabel="친구 닉네임 검색"
+          placeholderTextColor={colors.textSubtle}
+          maxLength={20}
+          style={styles.searchInput}
+          editable={!disabled}
+        />
+      </View>
+      {!matches.length && (
+        <AppText style={styles.noMatches} color={colors.textMuted}>
+          검색한 친구가 없어요.
+        </AppText>
+      )}
+      {matches.map(friend => {
+        const checked = selected.includes(friend.uid);
+        const unavailable = disabled || (!checked && selected.length >= limit);
         return (
           <Pressable
-            key={f.uid}
+            key={friend.uid}
             accessibilityRole="checkbox"
-            accessibilityState={{ checked: on, disabled }}
-            accessibilityLabel={f.display_name}
-            disabled={disabled}
+            accessibilityLabel={friend.display_name}
+            accessibilityState={{ checked, disabled: unavailable }}
+            disabled={unavailable}
             onPress={() =>
               onChange(
-                on ? selected.filter(id => id !== f.uid) : [...selected, f.uid],
+                checked
+                  ? selected.filter(id => id !== friend.uid)
+                  : [...selected, friend.uid],
               )
             }
-            style={styles.friend}
+            style={({ pressed }) => [
+              styles.friend,
+              (pressed || checked) && styles.friendSelected,
+            ]}
           >
-            <View style={styles.avatar}>
-              <UserRound color={colors.primaryInk} size={20} />
-            </View>
-            <AppText variant="subheading" style={styles.grow}>
-              {f.display_name}
-            </AppText>
-            <View style={[styles.check, on && styles.checkOn]}>
-              {on && <Check color={colors.surface} size={16} strokeWidth={3} />}
-            </View>
+            <RunnerRow
+              uri={friend.profile_image}
+              name={friend.display_name}
+              trailing={
+                <View style={[styles.check, checked && styles.checkOn]}>
+                  {checked && (
+                    <Check
+                      color={colors.textOnPrimary}
+                      size={14}
+                      strokeWidth={3}
+                    />
+                  )}
+                </View>
+              }
+            />
           </Pressable>
         );
       })}
-    </Card>
+    </View>
   );
 }
+
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background },
+  screen: { flex: 1, backgroundColor: colors.surface },
   header: {
-    padding: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    paddingBottom: spacing.xs,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    minHeight: 52,
+    gap: spacing.xs,
   },
-  content: { padding: spacing.lg, gap: spacing.md, paddingBottom: 60 },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    padding: 14,
-    color: colors.text,
-    fontFamily: 'Pretendard-Regular',
-  },
-  row: { flexDirection: 'row', gap: 12 },
-  grow: { flex: 1 },
-  goal: { width: 110 },
-  friends: { paddingVertical: 4, gap: 0 },
-  friend: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 10,
-  },
-  avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  eyebrow: { flex: 1, letterSpacing: 1.8 },
+  content: { gap: spacing.xxl, paddingBottom: spacing.xxl },
+  feedback: { marginHorizontal: spacing.xl },
+  hero: {
     backgroundColor: colors.primarySoft,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.xxl,
+    gap: spacing.sm,
+    overflow: 'hidden',
+  },
+  heroTop: { alignItems: 'flex-start' },
+  heroTitle: { fontSize: 32, lineHeight: 40 },
+  heroBottom: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    flexWrap: 'wrap',
+    gap: spacing.lg,
+  },
+  metric: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  trackMark: {
+    position: 'absolute',
+    width: 215,
+    height: 132,
+    top: -22,
+    right: -75,
+    transform: [{ rotate: '-25deg' }],
+  },
+  trackRing: {
+    position: 'absolute',
+    borderRadius: 70,
+    borderWidth: 2,
+    borderColor: colors.primaryBorder,
+  },
+  section: { paddingHorizontal: spacing.xl, gap: spacing.sm },
+  sectionHeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
+  footer: {
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.surface,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  input: {
+    minHeight: 48,
+    marginTop: spacing.xs,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 12,
+    paddingHorizontal: spacing.md,
+    color: colors.text,
+    fontFamily: fonts.medium,
+    fontSize: 16,
+  },
+  row: { flexDirection: 'row', gap: spacing.md },
+  grow: { flex: 1 },
+  goal: { width: 104 },
+  distanceInput: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 48,
+    marginTop: spacing.xs,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 12,
+    paddingHorizontal: spacing.md,
+  },
+  distanceValue: {
+    flex: 1,
+    color: colors.text,
+    fontFamily: fonts.semibold,
+    fontSize: 16,
+    paddingVertical: 8,
+  },
+  search: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: 12,
+    backgroundColor: colors.surfaceMuted,
+    marginBottom: spacing.sm,
+  },
+  searchInput: {
+    flex: 1,
+    minHeight: 44,
+    color: colors.text,
+    fontSize: 15,
+    fontFamily: fonts.regular,
+  },
+  noMatches: { paddingVertical: spacing.md },
+  emptyFriends: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  friend: {
+    paddingHorizontal: spacing.sm,
+    marginHorizontal: -spacing.sm,
+    borderRadius: 12,
+  },
+  friendSelected: { backgroundColor: colors.background },
+  runnerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.sm,
+    minHeight: 60,
+  },
+  rank: { minWidth: 18, textAlign: 'center' },
+  invite: {
+    backgroundColor: colors.background,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: 16,
+  },
+  inviteActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingBottom: spacing.sm,
   },
   check: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     borderWidth: 2,
     borderColor: colors.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  checkOn: { backgroundColor: colors.primary, borderColor: colors.primary },
+  checkOn: {
+    backgroundColor: colors.primaryAction,
+    borderColor: colors.primaryAction,
+  },
   gap: { gap: 10 },
-  spectator: { flex: 1, backgroundColor: colors.sky, paddingHorizontal: 16, paddingBottom: 12, gap: 10 },
+  pending: { backgroundColor: colors.accentSoft, paddingVertical: spacing.lg },
+
+  spectator: {
+    flex: 1,
+    backgroundColor: colors.sky,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    gap: 10,
+  },
   spectatorHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   spectatorStats: { flexDirection: 'row', gap: 4 },
   spectatorStat: { flex: 1, gap: 4 },

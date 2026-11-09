@@ -73,11 +73,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: spacing.sm,
     paddingHorizontal: spacing.xl,
-    borderRadius: radius.lg,
+    borderRadius: radius.md,
   },
   large: { minHeight: 56, paddingVertical: 15 },
   medium: { minHeight: 44, paddingVertical: 11, borderRadius: radius.md },
-  primary: { backgroundColor: colors.primary },
+  primary: { backgroundColor: colors.primaryAction },
   secondary: {
     backgroundColor: colors.surface,
     borderWidth: 1,

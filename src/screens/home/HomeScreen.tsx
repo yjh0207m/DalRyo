@@ -248,7 +248,7 @@ export function HomeScreen({
             </AppText>
           </View>
           {status !== 'success' ? (
-            <Card>
+            <Card tone="flat" padded={false}>
               <RunRecordsStatus status={status} onRetry={retry} />
             </Card>
           ) : (
@@ -266,7 +266,6 @@ export function HomeScreen({
                   </AppText>
                 </View>
               </View>
-              <View style={styles.metricDivider} />
               <View style={styles.smallMetric}>
                 <AppText variant="label" color={colors.textMuted}>
                   시간
@@ -293,7 +292,7 @@ export function HomeScreen({
           )}
         </View>
         {status === 'success' && (
-          <Card style={styles.section}>
+          <Card tone="flat" padded={false} style={styles.section}>
             <View style={styles.sectionHeader}>
               <AppText variant="subheading">이번 주의 발자국</AppText>
               <Badge
@@ -402,10 +401,14 @@ function Shortcut({
         pressed && styles.shortcutPressed,
       ]}
     >
-      <View style={styles.shortcutIcon}>
-        <Icon color={colors.primaryInk} size={24} strokeWidth={2} />
-      </View>
-      <AppText variant="subheading">{label}</AppText>
+      <Icon
+        color={ready ? colors.primaryInk : colors.textMuted}
+        size={23}
+        strokeWidth={1.9}
+      />
+      <AppText variant="caption" color={ready ? colors.text : colors.textMuted}>
+        {label}
+      </AppText>
       {!ready && (
         <AppText variant="label" color={colors.textMuted}>
           준비 중
@@ -416,7 +419,7 @@ function Shortcut({
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background },
+  screen: { flex: 1, backgroundColor: colors.surface },
   content: { paddingHorizontal: spacing.xl, paddingTop: spacing.sm },
   header: {
     height: 48,
@@ -477,24 +480,12 @@ const styles = StyleSheet.create({
   shortcuts: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.md },
   shortcut: {
     flex: 1,
-    aspectRatio: 1,
+    minHeight: 76,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
   },
   shortcutPressed: { backgroundColor: colors.surfaceMuted },
-  shortcutIcon: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: colors.primarySoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   section: { marginTop: 24 },
   sectionHeader: {
     flexDirection: 'row',
@@ -504,9 +495,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   todayCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: 20,
+    paddingVertical: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
@@ -523,17 +512,12 @@ const styles = StyleSheet.create({
   distance: {
     flexShrink: 1,
     fontFamily: fonts.bold,
-    fontSize: 34,
-    lineHeight: 42,
+    fontSize: 38,
+    lineHeight: 46,
     letterSpacing: -1.2,
     fontVariant: ['tabular-nums'],
   },
   smallMetric: { flex: 0.8, gap: 3 },
-  metricDivider: {
-    height: 50,
-    width: 1,
-    backgroundColor: 'rgba(16,119,94,0.12)',
-  },
   weekRow: { flexDirection: 'row', justifyContent: 'space-between' },
   weekDay: { alignItems: 'center', gap: 10 },
   weekDot: {

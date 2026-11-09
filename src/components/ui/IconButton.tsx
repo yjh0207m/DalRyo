@@ -18,7 +18,7 @@ export function IconButton({
   icon: Icon,
   onPress,
   accessibilityLabel,
-  variant = 'surface',
+  variant = 'plain',
   size = 44,
   dot,
   disabled = false,

@@ -11,6 +11,8 @@ export type ChatProfile = {
 };
 export type Conversation = {
   id: string;
+  kind?: 'group';
+  name?: string;
   members: string[];
   profiles: Record<string, ChatProfile>;
   blocked_by: string[];
@@ -28,10 +30,17 @@ export type ChatMessage = {
   createdAt: number;
 };
 export type ChatCursor = FirebaseFirestoreTypes.QueryDocumentSnapshot;
-export type ChatPage<T> = {
+export type ChatPage<T, Cursor = ChatCursor> = {
   items: T[];
-  cursor: ChatCursor | null;
+  cursor: Cursor | null;
   more: boolean;
+};
+export type InboxCursor = {
+  direct: ChatCursor | null;
+  group: ChatCursor | null;
+};
+type InboxPage = ChatPage<Conversation, InboxCursor> & {
+  removedGroups?: string[];
 };
 const millis = (value: unknown) =>
   (value as { toMillis?: () => number } | null)?.toMillis?.() ?? 0;
@@ -69,41 +78,108 @@ function page<T>(
     more: snap.size === 50,
   };
 }
-function roomsQuery() {
+function roomsQuery(group: boolean) {
   return firestore()
-    .collection('conversations')
+    .collection(group ? 'group_conversations' : 'conversations')
     .where('members', 'array-contains', myUid())
     .orderBy('updated_at', 'desc')
     .orderBy(documentId(), 'desc');
 }
-function messagesQuery(id: string) {
+function roomRef(id: string) {
   return firestore()
-    .collection('conversations')
-    .doc(id)
+    .collection(
+      id.startsWith('group_') ? 'group_conversations' : 'conversations',
+    )
+    .doc(id);
+}
+function messagesQuery(id: string) {
+  return roomRef(id)
     .collection('messages')
     .orderBy('created_at', 'desc')
     .orderBy(documentId(), 'desc');
 }
+function inboxPage(
+  direct?: ChatPage<Conversation>,
+  group?: ChatPage<Conversation>,
+): InboxPage {
+  const cursor = {
+    direct: direct?.more ? direct.cursor : null,
+    group: group?.more ? group.cursor : null,
+  };
+  return {
+    items: [...(direct?.items ?? []), ...(group?.items ?? [])],
+    cursor,
+    more: !!(cursor.direct || cursor.group),
+  };
+}
 export function watchConversations(
-  next: (page: ChatPage<Conversation>) => void,
+  next: (page: InboxPage) => void,
   error: (e: Error) => void,
 ) {
-  return roomsQuery()
+  let direct: ChatPage<Conversation> | undefined;
+  let group: ChatPage<Conversation> | undefined;
+  let groupReady = false;
+  const stopDirect = roomsQuery(false)
     .limit(50)
-    .onSnapshot(s => next(page(s, room)), error);
+    .onSnapshot(s => {
+      direct = page(s, room);
+      if (groupReady) next(inboxPage(direct, group));
+    }, error);
+  const stopGroup = roomsQuery(true)
+    .limit(50)
+    .onSnapshot(
+      s => {
+        groupReady = true;
+        group = page(s, room);
+        const tail = group.items.at(-1);
+        const removedGroups = s.docChanges().flatMap(change => {
+          if (change.type !== 'removed') return [];
+          const updatedAt = millis(change.doc.get('updated_at'));
+          // A room pushed out of the first page still belongs in loaded history.
+          return !group?.more ||
+            !tail ||
+            updatedAt > tail.updatedAt ||
+            (updatedAt === tail.updatedAt && change.doc.id > tail.id)
+            ? [change.doc.id]
+            : [];
+        });
+        if (direct)
+          next({
+            ...inboxPage(direct, group),
+            removedGroups,
+          });
+      },
+      e => {
+        // 1:1 chat can still load while the new rules and index are rolling out.
+        const code = (e as Error & { code?: string }).code ?? '';
+        if (/permission-denied|failed-precondition/.test(code)) {
+          groupReady = true;
+          if (direct) next(inboxPage(direct));
+        } else error(e);
+      },
+    );
+  return () => {
+    stopDirect();
+    stopGroup();
+  };
 }
-export async function earlierConversations(cursor: ChatCursor) {
-  return page(await roomsQuery().startAfter(cursor).limit(50).get(), room);
+export async function earlierConversations(cursor: InboxCursor) {
+  const [direct, group] = await Promise.all([
+    cursor.direct &&
+      roomsQuery(false).startAfter(cursor.direct).limit(50).get(),
+    cursor.group && roomsQuery(true).startAfter(cursor.group).limit(50).get(),
+  ]);
+  return inboxPage(
+    direct ? page(direct, room) : undefined,
+    group ? page(group, room) : undefined,
+  );
 }
 export function watchConversation(
   id: string,
   next: (room: Conversation | null) => void,
   error: (e: Error) => void,
 ) {
-  return firestore()
-    .collection('conversations')
-    .doc(id)
-    .onSnapshot(s => next(s.exists() ? room(s) : null), error);
+  return roomRef(id).onSnapshot(s => next(s.exists() ? room(s) : null), error);
 }
 export function watchMessages(
   id: string,
@@ -123,6 +199,22 @@ export async function earlierMessages(id: string, cursor: ChatCursor) {
 export async function openConversation(uid: string) {
   return (await socialRequest<{ conversationId: string }>('chatOpen', { uid }))
     .conversationId;
+}
+export async function createGroupConversation(
+  uids: string[],
+  name: string,
+  requestId: string,
+) {
+  return (
+    await socialRequest<{ conversationId: string }>('chatCreateGroup', {
+      uids,
+      name,
+      requestId,
+    })
+  ).conversationId;
+}
+export function leaveGroupConversation(conversationId: string) {
+  return socialRequest('chatLeave', { conversationId });
 }
 export function newMessageId() {
   return firestore().collection('conversations').doc().id;
