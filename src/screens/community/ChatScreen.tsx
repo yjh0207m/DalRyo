@@ -15,8 +15,10 @@ import {
   Image,
   KeyboardAvoidingView,
   Keyboard,
+  Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   TextInput,
   View,
@@ -26,15 +28,26 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { usePostAuthor } from '../../hooks/usePostAuthor';
 import {
   ArrowUp,
+  Ban,
+  Check,
   ChevronLeft,
+  ChevronRight,
+  LogOut,
   MessageSquare,
   MoreHorizontal,
   Plus,
   Search,
   UserRound,
   Users,
+  X,
 } from 'lucide-react-native';
-import { AppText, Button, IconButton } from '../../components/ui';
+import {
+  ActionSheet,
+  AppText,
+  Button,
+  IconButton,
+  type ActionSheetItem,
+} from '../../components/ui';
 import { colors, fonts } from '../../theme';
 import {
   myUid,
@@ -44,9 +57,11 @@ import {
 } from '../../services/social.service';
 import {
   blockConversation,
+  createGroupConversation,
   earlierConversations,
   earlierMessages,
   hasUnread,
+  leaveGroupConversation,
   markConversationRead,
   mergeChatItems,
   newMessageId,
@@ -59,6 +74,7 @@ import {
   type ChatMessage,
   type ChatProfile,
   type Conversation,
+  type InboxCursor,
 } from '../../services/chat.service';
 
 function chatError(error: unknown) {
@@ -76,28 +92,57 @@ function chatError(error: unknown) {
   return socialError(error);
 }
 
-function Avatar({ profile }: { profile?: ChatProfile }) {
+function Avatar({
+  profile,
+  group = false,
+  compact = false,
+}: {
+  profile?: ChatProfile;
+  group?: boolean;
+  compact?: boolean;
+}) {
   return (
-    <View style={s.avatar}>
-      {profile?.profile_image ? (
+    <View style={[s.avatar, compact && s.avatarCompact]}>
+      {group ? (
+        <Users size={compact ? 17 : 23} color={colors.primaryInk} />
+      ) : profile?.profile_image ? (
         <Image source={{ uri: profile.profile_image }} style={s.avatarImage} />
       ) : (
-        <UserRound size={23} color={colors.primaryInk} />
+        <UserRound size={compact ? 17 : 23} color={colors.primaryInk} />
       )}
     </View>
   );
 }
+function conversationTitle(room: Conversation, uid: string) {
+  if (room.kind !== 'group') {
+    const peer = room.members.find(member => member !== uid);
+    return (peer && room.profiles[peer]?.display_name) || '러너';
+  }
+  return (
+    room.name ||
+    room.members
+      .filter(member => member !== uid)
+      .map(member => room.profiles[member]?.display_name ?? '러너')
+      .join(', ') ||
+    '그룹 채팅'
+  );
+}
+
 function Header({
   title,
   onBack,
   right,
   onTitlePress,
+  subtitle,
+  avatar,
   hideBack = false,
 }: {
   title: string;
   onBack: () => void;
   right?: React.ReactNode;
   onTitlePress?: () => void;
+  subtitle?: string;
+  avatar?: React.ReactNode;
   // 서브 네비게이션으로 오가는 메시지 목록처럼 뒤로 가기 버튼이 필요 없을 때
   hideBack?: boolean;
 }) {
@@ -112,19 +157,27 @@ function Header({
         />
       )}
       <Pressable
-        style={s.headerTitle}
+        style={[s.headerTitle, !!avatar && s.headerIdentity]}
         disabled={!onTitlePress}
-        accessibilityRole="button"
-        accessibilityLabel={`${title} 프로필 보기`}
+        accessibilityRole={onTitlePress ? 'button' : undefined}
+        accessibilityLabel={onTitlePress ? `${title} 프로필 보기` : undefined}
         onPress={onTitlePress}
       >
-        <AppText
-          variant={hideBack ? 'label' : 'subheading'}
-          color={hideBack ? colors.textMuted : colors.text}
-          numberOfLines={1}
-        >
-          {title}
-        </AppText>
+        {avatar}
+        <View style={s.grow}>
+          <AppText
+            variant={hideBack ? 'label' : 'subheading'}
+            color={hideBack ? colors.textMuted : colors.text}
+            numberOfLines={1}
+          >
+            {title}
+          </AppText>
+          {!!subtitle && (
+            <AppText variant="label" color={colors.textMuted}>
+              {subtitle}
+            </AppText>
+          )}
+        </View>
       </Pressable>
       {right ?? <View style={s.spacer} />}
     </View>
@@ -149,6 +202,8 @@ function Failure({ error, retry }: { error: string; retry: () => void }) {
     </View>
   );
 }
+
+type GroupDraft = { uids: string[]; name: string; requestId: string };
 
 export function ChatScreen({
   onBack,
@@ -176,17 +231,20 @@ export function ChatScreen({
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
   const [choosing, setChoosing] = useState(false);
+  const [creatingGroup, setCreatingGroup] = useState(false);
   const [rooms, setRooms] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [more, setMore] = useState(false);
+  const leftRooms = useRef(new Set<string>());
+  const openRequest = useRef(false);
   const detail = !!roomId || opening || choosing;
   useEffect(() => {
     onDetailChange?.(detail);
     return () => onDetailChange?.(false);
   }, [detail, onDetailChange]);
   const historyLoaded = useRef(false);
-  const cursor = useRef<ChatCursor | null>(null);
+  const cursor = useRef<InboxCursor | null>(null);
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
@@ -194,11 +252,15 @@ export function ChatScreen({
       alive.current = false;
     };
   }, []);
-  const open = useCallback(async (uid: string) => {
+  const open = useCallback(async (target: string | GroupDraft) => {
+    if (openRequest.current) return;
+    openRequest.current = true;
     setOpening(true);
     setError('');
     try {
-      const id = await openConversation(uid);
+      const id = await (typeof target === 'string'
+        ? openConversation(target)
+        : createGroupConversation(target.uids, target.name, target.requestId));
       if (alive.current) {
         setRoomId(id);
         setChoosing(false);
@@ -206,6 +268,7 @@ export function ChatScreen({
     } catch (e) {
       if (alive.current) setError(chatError(e));
     } finally {
+      openRequest.current = false;
       if (alive.current) setOpening(false);
     }
   }, []);
@@ -218,9 +281,10 @@ export function ChatScreen({
     return watchConversations(
       page => {
         setRooms(old =>
-          mergeChatItems(old, page.items).sort(
-            (a, b) => b.updatedAt - a.updatedAt,
-          ),
+          mergeChatItems(
+            old.filter(item => !page.removedGroups?.includes(item.id)),
+            page.items.filter(item => !leftRooms.current.has(item.id)),
+          ).sort((a, b) => b.updatedAt - a.updatedAt),
         );
         if (!historyLoaded.current) {
           cursor.current = page.cursor;
@@ -239,10 +303,22 @@ export function ChatScreen({
       if (initialPeer) onBack();
       else setRoomId(null);
     } else if (choosing) {
+      if (openRequest.current) return;
+      if (creatingGroup) {
+        setCreatingGroup(false);
+        setError('');
+        return;
+      }
       setChoosing(false);
       setRevision(value => value + 1);
     } else onBack();
-  }, [roomId, choosing, initialPeer, onBack]);
+  }, [roomId, choosing, creatingGroup, initialPeer, onBack]);
+  const onLeave = () => {
+    if (!roomId || !alive.current) return;
+    leftRooms.current.add(roomId);
+    setRooms(old => old.filter(item => item.id !== roomId));
+    setRoomId(current => (current === roomId ? null : current));
+  };
   useBack(back);
   const loadMore = async () => {
     if (!cursor.current || loadingMore) return;
@@ -252,9 +328,10 @@ export function ChatScreen({
       const page = await earlierConversations(cursor.current);
       if (alive.current) {
         setRooms(old =>
-          mergeChatItems(old, page.items).sort(
-            (a, b) => b.updatedAt - a.updatedAt,
-          ),
+          mergeChatItems(
+            old,
+            page.items.filter(item => !leftRooms.current.has(item.id)),
+          ).sort((a, b) => b.updatedAt - a.updatedAt),
         );
         cursor.current = page.cursor;
         setMore(page.more);
@@ -272,6 +349,22 @@ export function ChatScreen({
         id={roomId}
         onBack={back}
         onProfile={onProfile}
+        onLeave={onLeave}
+      />
+    );
+  if (choosing)
+    return (
+      <NewChat
+        key={creatingGroup ? 'group' : 'direct'}
+        group={creatingGroup}
+        onGroup={() => {
+          setError('');
+          setCreatingGroup(true);
+        }}
+        onBack={back}
+        onSelect={open}
+        openError={error}
+        opening={opening}
       />
     );
   if (opening)
@@ -281,8 +374,6 @@ export function ChatScreen({
         <ActivityIndicator style={s.loader} color={colors.primary} />
       </SafeAreaView>
     );
-  if (choosing)
-    return <NewChat onBack={back} onSelect={open} openError={error} />;
   return (
     <SafeAreaView
       testID="chat-list"
@@ -300,6 +391,7 @@ export function ChatScreen({
             accessibilityLabel="새 대화"
             onPress={() => {
               setError('');
+              setCreatingGroup(false);
               setChoosing(true);
             }}
           />
@@ -322,7 +414,7 @@ export function ChatScreen({
         <ActivityIndicator style={s.loader} color={colors.primary} />
       ) : (
         <FlatList
-          data={rooms.filter(r => r.last_message_id)}
+          data={rooms.filter(r => r.kind === 'group' || r.last_message_id)}
           keyExtractor={r => r.id}
           contentContainerStyle={[
             s.list,
@@ -335,46 +427,64 @@ export function ChatScreen({
                 러너에게 첫 인사를 보내세요
               </AppText>
               <AppText align="center" color={colors.textMuted}>
-                닉네임으로 찾아 1:1 대화를 시작할 수 있어요.
+                러너를 찾아 1:1 또는 그룹 대화를 시작해 보세요.
               </AppText>
               <Button
                 size="md"
                 label="새 대화 시작"
                 onPress={() => {
                   setError('');
+                  setCreatingGroup(false);
                   setChoosing(true);
                 }}
               />
             </View>
           }
           renderItem={({ item }) => {
-            const peer = item.members.find(uid => uid !== myUid())!;
-            const unread = hasUnread(item, myUid());
+            const uid = myUid();
+            const group = item.kind === 'group';
+            const peer = item.members.find(member => member !== uid);
+            const unread = hasUnread(item, uid);
+            const title = conversationTitle(item, uid);
             return (
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={`${
-                  item.profiles[peer]?.display_name ?? '러너'
-                } 대화${unread ? ', 새 메시지' : ''}`}
+                accessibilityLabel={`${title} 대화${
+                  unread ? ', 새 메시지' : ''
+                }`}
                 onPress={() => setRoomId(item.id)}
                 style={s.roomRow}
               >
-                <ConversationAvatar room={item} uid={peer} />
+                {group || !peer ? (
+                  <Avatar group={group} />
+                ) : (
+                  <ConversationAvatar room={item} uid={peer} />
+                )}
                 <View style={s.grow}>
                   <AppText variant="subheading" numberOfLines={1}>
-                    {item.profiles[peer]?.display_name ?? '러너'}
+                    {title}
+                    {group && (
+                      <AppText
+                        variant="label"
+                        color={colors.textMuted}
+                      >{`  ${item.members.length}명`}</AppText>
+                    )}
                   </AppText>
                   <AppText
                     numberOfLines={1}
                     color={unread ? colors.text : colors.textMuted}
                     style={unread ? s.unreadText : undefined}
                   >
-                    {item.blocked_by.length ? '차단된 대화' : item.last_text}
+                    {item.blocked_by.length
+                      ? '차단된 대화'
+                      : item.last_text || '아직 메시지가 없어요.'}
                   </AppText>
                 </View>
                 <View style={s.roomMeta}>
                   <AppText variant="label" color={colors.textSubtle}>
-                    {new Date(item.lastSentAt).toLocaleDateString('ko-KR', {
+                    {new Date(
+                      item.lastSentAt || item.updatedAt,
+                    ).toLocaleDateString('ko-KR', {
                       month: 'numeric',
                       day: 'numeric',
                     })}
@@ -430,19 +540,97 @@ function ConversationAvatar({
   return <Avatar profile={current ?? room.profiles[uid]} />;
 }
 
+function GroupMemberRow({
+  room,
+  member,
+  currentUser,
+  onProfile,
+}: {
+  room: Conversation;
+  member: string;
+  currentUser: string;
+  onProfile?: (uid: string) => void;
+}) {
+  const current = usePostAuthor(member, room);
+  const profile = current ?? room.profiles[member];
+  const name = profile?.display_name ?? '러너';
+  const canOpen = !!onProfile && member !== currentUser;
+  return (
+    <Pressable
+      disabled={!canOpen}
+      accessibilityRole={canOpen ? 'button' : undefined}
+      accessibilityLabel={canOpen ? `${name} 프로필 보기` : undefined}
+      onPress={() => onProfile?.(member)}
+      style={s.roomRow}
+    >
+      <Avatar profile={profile} />
+      <AppText variant="subheading" style={s.grow}>
+        {member === currentUser ? `${name} (나)` : name}
+      </AppText>
+      {canOpen && <ChevronRight size={19} color={colors.textMuted} />}
+    </Pressable>
+  );
+}
+
+function GroupSender({ room, uid }: { room: Conversation; uid: string }) {
+  const profile = usePostAuthor(uid, room) ?? room.profiles[uid];
+  return (
+    <View style={s.groupSender}>
+      <Avatar profile={profile} compact />
+      <AppText
+        variant="label"
+        color={colors.textMuted}
+        numberOfLines={1}
+        style={s.grow}
+      >
+        {profile?.display_name ?? '러너'}
+      </AppText>
+    </View>
+  );
+}
+
 function NewChat({
+  group,
+  onGroup,
   onBack,
   onSelect,
   openError,
+  opening,
 }: {
+  group: boolean;
+  onGroup: () => void;
   onBack: () => void;
-  onSelect: (uid: string) => void;
+  onSelect: (target: string | GroupDraft) => void;
   openError: string;
+  opening: boolean;
 }) {
   const [query, setQuery] = useState(''),
     [people, setPeople] = useState<PublicProfile[]>([]),
     [loading, setLoading] = useState(false),
     [error, setError] = useState('');
+  const [selected, setSelected] = useState<PublicProfile[]>([]);
+  const [name, setName] = useState('');
+  const attempt = useRef<string | null>(null);
+  const toggle = (person: PublicProfile) => {
+    attempt.current = null;
+    setSelected(old =>
+      old.some(item => item.uid === person.uid)
+        ? old.filter(item => item.uid !== person.uid)
+        : old.length < 9
+        ? [...old, person]
+        : old,
+    );
+  };
+  const create = () => {
+    if (selected.length < 2 || opening) return;
+    Keyboard.dismiss();
+    attempt.current ??= newMessageId();
+    onSelect({
+      uids: selected.map(person => person.uid),
+      name: name.trim(),
+      requestId: attempt.current,
+    });
+  };
   const request = useRef(0);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -525,84 +713,204 @@ function NewChat({
   };
   return (
     <SafeAreaView style={s.screen}>
-      <Header title="새 대화" onBack={onBack} />
-      {!!openError && (
-        <AppText color={colors.danger} style={s.notice}>
-          {openError}
-        </AppText>
-      )}
-      <View style={s.search}>
-        <Search size={20} color={colors.textMuted} />
-        <TextInput
-          value={query}
-          onChangeText={setQuery}
-          maxLength={21}
-          placeholder="닉네임 또는 @아이디 검색"
-          placeholderTextColor={colors.textSubtle}
-          style={s.searchInput}
-          accessibilityLabel="대화 상대 검색"
-        />
-      </View>
-      <AppText variant="label" color={colors.textMuted} style={s.notice}>
-        {query.trim() ? '검색 결과' : '내가 팔로우하는 러너'}
-      </AppText>
-      {loading ? (
-        <ActivityIndicator color={colors.primary} />
-      ) : (
-        <FlatList
-          data={people}
-          keyExtractor={p => p.uid}
-          contentContainerStyle={s.list}
-          keyboardShouldPersistTaps="handled"
-          ListEmptyComponent={
-            <AppText align="center" color={colors.textMuted}>
-              {error ||
-                (query.trim()
-                  ? '검색 결과가 없어요.'
-                  : '아직 팔로우한 러너가 없어요. 닉네임으로 검색해 보세요.')}
-            </AppText>
-          }
-          ListFooterComponent={
-            <View>
-              {!!error && people.length > 0 && (
-                <AppText color={colors.danger}>{error}</AppText>
-              )}
-              {nextCursor ? (
-                <Button
-                  label={loadingMore ? '불러오는 중…' : '더 보기'}
-                  disabled={loadingMore}
-                  onPress={loadMore}
-                  variant="secondary"
-                />
-              ) : error ? (
-                <Button
-                  label="다시 시도"
-                  onPress={() => setRevision(v => v + 1)}
-                  variant="secondary"
-                />
-              ) : null}
-            </View>
-          }
-          renderItem={({ item }) => (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`${item.display_name}에게 메시지`}
-              onPress={() => onSelect(item.uid)}
-              style={s.roomRow}
-            >
-              <Avatar profile={item} />
-              <View style={s.grow}>
-                <AppText variant="subheading">{item.display_name}</AppText>
-                {!!RELATION_LABEL[item.relation ?? 'none'] && (
-                  <AppText variant="caption" color={colors.textMuted}>
-                    {RELATION_LABEL[item.relation ?? 'none']}
+      <KeyboardAvoidingView
+        style={s.grow}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <Header
+          title={group ? '새 그룹 채팅' : '새 대화'}
+          onBack={onBack}
+          right={
+            group ? (
+              <Pressable
+                accessibilityRole="button"
+                disabled={selected.length < 2 || opening}
+                accessibilityLabel="그룹 만들기"
+                onPress={create}
+                style={s.headerAction}
+              >
+                {opening ? (
+                  <ActivityIndicator color={colors.primary} />
+                ) : (
+                  <AppText
+                    variant="label"
+                    color={
+                      selected.length < 2
+                        ? colors.textSubtle
+                        : colors.primaryAction
+                    }
+                  >
+                    만들기
                   </AppText>
                 )}
-              </View>
-            </Pressable>
-          )}
+              </Pressable>
+            ) : opening ? (
+              <ActivityIndicator color={colors.primary} />
+            ) : undefined
+          }
         />
-      )}
+        {!!openError && (
+          <AppText color={colors.danger} style={s.notice}>
+            {openError}
+          </AppText>
+        )}
+        {group ? (
+          <>
+            <TextInput
+              value={name}
+              onChangeText={value => {
+                attempt.current = null;
+                setName(value);
+              }}
+              editable={!opening}
+              maxLength={40}
+              placeholder="채팅방 이름 (선택)"
+              placeholderTextColor={colors.textSubtle}
+              accessibilityLabel="채팅방 이름"
+              style={s.groupName}
+            />
+            <AppText
+              variant="label"
+              color={colors.textMuted}
+              style={s.selectionLabel}
+            >
+              {`참여자 2~9명 선택 · ${selected.length}명 선택됨`}
+            </AppText>
+            {selected.length > 0 && (
+              <View>
+                <ScrollView
+                  horizontal
+                  keyboardShouldPersistTaps="handled"
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={s.selectedList}
+                >
+                  {selected.map(person => (
+                    <Pressable
+                      key={person.uid}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${person.display_name} 선택 해제`}
+                      disabled={opening}
+                      onPress={() => toggle(person)}
+                      style={s.personChip}
+                    >
+                      <AppText variant="label" color={colors.primaryInk}>
+                        {person.display_name}
+                      </AppText>
+                      <X size={15} color={colors.primaryInk} />
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+          </>
+        ) : (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="그룹 채팅 만들기"
+            disabled={opening}
+            onPress={onGroup}
+            style={[s.roomRow, s.groupEntry]}
+          >
+            <Avatar group />
+            <View style={s.grow}>
+              <AppText variant="subheading">그룹 채팅 만들기</AppText>
+              <AppText variant="caption" color={colors.textMuted}>
+                러너 여러 명과 함께 대화해요
+              </AppText>
+            </View>
+            <ChevronRight size={20} color={colors.textMuted} />
+          </Pressable>
+        )}
+        <View style={s.search}>
+          <Search size={20} color={colors.textMuted} />
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            editable={!opening}
+            maxLength={21}
+            placeholder="닉네임 또는 @아이디 검색"
+            placeholderTextColor={colors.textSubtle}
+            style={s.searchInput}
+            accessibilityLabel="대화 상대 검색"
+          />
+        </View>
+        <AppText variant="label" color={colors.textMuted} style={s.notice}>
+          {query.trim() ? '검색 결과' : '내가 팔로우하는 러너'}
+        </AppText>
+        {loading ? (
+          <ActivityIndicator color={colors.primary} />
+        ) : (
+          <FlatList
+            data={people}
+            keyExtractor={p => p.uid}
+            contentContainerStyle={s.list}
+            keyboardShouldPersistTaps="handled"
+            ListEmptyComponent={
+              <AppText align="center" color={colors.textMuted}>
+                {error ||
+                  (query.trim()
+                    ? '검색 결과가 없어요.'
+                    : '아직 팔로우한 러너가 없어요. 닉네임으로 검색해 보세요.')}
+              </AppText>
+            }
+            ListFooterComponent={
+              <View>
+                {!!error && people.length > 0 && (
+                  <AppText color={colors.danger}>{error}</AppText>
+                )}
+                {nextCursor ? (
+                  <Button
+                    label={loadingMore ? '불러오는 중…' : '더 보기'}
+                    disabled={loadingMore}
+                    onPress={loadMore}
+                    variant="secondary"
+                  />
+                ) : error ? (
+                  <Button
+                    label="다시 시도"
+                    onPress={() => setRevision(v => v + 1)}
+                    variant="secondary"
+                  />
+                ) : null}
+              </View>
+            }
+            renderItem={({ item }) => {
+              const checked = selected.some(person => person.uid === item.uid);
+              return (
+                <Pressable
+                  accessibilityRole={group ? 'checkbox' : 'button'}
+                  accessibilityLabel={
+                    group
+                      ? item.display_name
+                      : `${item.display_name}에게 메시지`
+                  }
+                  accessibilityState={group ? { checked } : undefined}
+                  disabled={
+                    opening || (group && !checked && selected.length >= 9)
+                  }
+                  onPress={() => (group ? toggle(item) : onSelect(item.uid))}
+                  style={s.roomRow}
+                >
+                  <Avatar profile={item} />
+                  <View style={s.grow}>
+                    <AppText variant="subheading">{item.display_name}</AppText>
+                    {!!RELATION_LABEL[item.relation ?? 'none'] && (
+                      <AppText variant="caption" color={colors.textMuted}>
+                        {RELATION_LABEL[item.relation ?? 'none']}
+                      </AppText>
+                    )}
+                  </View>
+                  {group && (
+                    <View style={[s.check, checked && s.checked]}>
+                      {checked && <Check size={15} color="white" />}
+                    </View>
+                  )}
+                </Pressable>
+              );
+            }}
+          />
+        )}
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -611,10 +919,12 @@ export function ConversationView({
   id,
   onBack,
   onProfile,
+  onLeave,
 }: {
   id: string;
   onBack: () => void;
   onProfile?: (uid: string) => void;
+  onLeave?: () => void;
 }) {
   const uid = myUid();
   const { height: windowHeight } = useWindowDimensions();
@@ -638,6 +948,9 @@ export function ConversationView({
     [more, setMore] = useState(false),
     [loadingMore, setLoadingMore] = useState(false),
     [foreground, setForeground] = useState(AppState.currentState === 'active');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [membersOpen, setMembersOpen] = useState(false);
+  const leaving = useRef(false);
   const historyLoaded = useRef(false);
   const [atLatest, setAtLatest] = useState(true);
   const atLatestRef = useRef(true);
@@ -731,6 +1044,7 @@ export function ConversationView({
   useEffect(() => {
     if (
       !room?.last_message_id ||
+      !!error ||
       !foreground ||
       !atLatest ||
       newest !== room.last_message_id ||
@@ -743,8 +1057,11 @@ export function ConversationView({
     markConversationRead(id, messageId).catch(() => {
       readRequest.current = '';
     });
-  }, [room, uid, id, newest, foreground, atLatest]);
-  const peer = room?.members.find(member => member !== uid);
+  }, [room, uid, id, newest, foreground, atLatest, error]);
+  const groupRoom = room?.kind === 'group' ? room : null;
+  const peer = groupRoom
+    ? undefined
+    : room?.members.find(member => member !== uid);
   const currentProfile = usePostAuthor(peer, room);
   const profile = currentProfile ?? (peer ? room?.profiles[peer] : undefined);
   const blocked = !!room?.blocked_by.length;
@@ -801,9 +1118,8 @@ export function ConversationView({
       if (alive.current) setLoadingMore(false);
     }
   };
-  const menu = () => {
-    if (!room) return;
-    const mine = room.blocked_by.includes(uid);
+  const confirmBlock = () => {
+    const mine = room?.blocked_by.includes(uid);
     Alert.alert(
       '대화 설정',
       mine
@@ -822,10 +1138,83 @@ export function ConversationView({
       ],
     );
   };
+  const confirmLeave = () => {
+    if (leaving.current) return;
+    Alert.alert(
+      '그룹 채팅방 나가기',
+      '나가면 이 채팅방의 메시지를 더 이상 볼 수 없어요.',
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: '나가기',
+          style: 'destructive',
+          onPress: async () => {
+            if (leaving.current) return;
+            leaving.current = true;
+            try {
+              await leaveGroupConversation(id);
+              if (onLeave) onLeave();
+              else if (alive.current) onBack();
+            } catch (e) {
+              if (alive.current)
+                Alert.alert('채팅방을 나가지 못했어요', chatError(e));
+            } finally {
+              leaving.current = false;
+            }
+          },
+        },
+      ],
+    );
+  };
+  const settings: ActionSheetItem[] = groupRoom
+    ? [
+        {
+          label: `참여자 ${groupRoom.members.length}명 보기`,
+          icon: Users,
+          onPress: () => setMembersOpen(true),
+        },
+        {
+          label: '채팅방 나가기',
+          icon: LogOut,
+          danger: true,
+          onPress: confirmLeave,
+        },
+      ]
+    : [
+        ...(peer && onProfile
+          ? [
+              {
+                label: '상대 프로필 보기',
+                icon: UserRound,
+                onPress: () => onProfile(peer),
+              },
+            ]
+          : []),
+        {
+          label: room?.blocked_by.includes(uid)
+            ? '대화 차단 해제'
+            : '대화 차단',
+          icon: Ban,
+          danger: !room?.blocked_by.includes(uid),
+          onPress: confirmBlock,
+        },
+      ];
   return (
     <SafeAreaView style={s.screen} edges={['top', 'bottom']}>
       <Header
-        title={profile?.display_name ?? '대화'}
+        title={
+          groupRoom
+            ? conversationTitle(groupRoom, uid)
+            : profile?.display_name ?? '대화'
+        }
+        subtitle={
+          groupRoom ? `그룹 채팅 · ${groupRoom.members.length}명` : undefined
+        }
+        avatar={
+          room ? (
+            <Avatar profile={profile} group={!!groupRoom} compact />
+          ) : undefined
+        }
         onBack={onBack}
         onTitlePress={peer && onProfile ? () => onProfile(peer) : undefined}
         right={
@@ -833,7 +1222,11 @@ export function ConversationView({
             icon={MoreHorizontal}
             variant="plain"
             accessibilityLabel="대화 설정"
-            onPress={menu}
+            disabled={!room}
+            onPress={() => {
+              Keyboard.dismiss();
+              setSettingsOpen(true);
+            }}
           />
         }
       />
@@ -851,9 +1244,11 @@ export function ConversationView({
             <ActivityIndicator style={s.loader} color={colors.primary} />
           ) : messages.length === 0 ? (
             <View style={[s.grow, s.empty]}>
-              <Avatar profile={profile} />
+              <Avatar profile={profile} group={!!groupRoom} />
               <AppText variant="subheading">
-                {profile?.display_name}님과의 대화
+                {groupRoom
+                  ? '첫 메시지를 보내 보세요'
+                  : `${profile?.display_name ?? '러너'}님과의 대화`}
               </AppText>
               <AppText color={colors.textMuted}>
                 러닝 이야기로 인사를 나눠 보세요.
@@ -917,11 +1312,16 @@ export function ConversationView({
                   !previous ||
                   new Date(previous.createdAt).toDateString() !==
                     new Date(item.createdAt).toDateString();
-                const read =
+                const readCount =
                   own &&
                   index === chronological.length - 1 &&
-                  peer &&
-                  (room?.read_at[peer] ?? 0) >= item.createdAt;
+                  item.createdAt > 0
+                    ? (room?.members ?? []).filter(
+                        member =>
+                          member !== uid &&
+                          (room?.read_at[member] ?? 0) >= item.createdAt,
+                      ).length
+                    : 0;
                 return (
                   <View>
                     {showDay && (
@@ -934,8 +1334,16 @@ export function ConversationView({
                         {day}
                       </AppText>
                     )}
-                    <View style={[s.messageRow, own && s.ownRow]}>
-                      {!own && <Avatar profile={profile} />}
+                    {!own && groupRoom && (
+                      <GroupSender room={groupRoom} uid={item.sender_uid} />
+                    )}
+                    <View
+                      style={[
+                        s.messageRow,
+                        own ? s.ownRow : groupRoom && s.groupBubbleRow,
+                      ]}
+                    >
+                      {!own && !groupRoom && <Avatar profile={profile} />}
                       <View
                         style={[s.bubble, own ? s.ownBubble : s.otherBubble]}
                       >
@@ -952,13 +1360,18 @@ export function ConversationView({
                       variant="label"
                       align={own ? 'right' : 'left'}
                       color={colors.textSubtle}
-                      style={s.messageMeta}
+                      style={[
+                        s.messageMeta,
+                        !own && groupRoom && s.groupBubbleRow,
+                      ]}
                     >
                       {new Date(item.createdAt).toLocaleTimeString('ko-KR', {
                         hour: '2-digit',
                         minute: '2-digit',
                       })}
-                      {read ? ' · 읽음' : ''}
+                      {readCount > 0
+                        ? ` · 읽음${groupRoom ? ` ${readCount}` : ''}`
+                        : ''}
                     </AppText>
                   </View>
                 );
@@ -1031,6 +1444,45 @@ export function ConversationView({
           </View>
         </View>
       </KeyboardAvoidingView>
+      <ActionSheet
+        visible={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        items={settings}
+      />
+      {groupRoom && (
+        <Modal
+          visible={membersOpen}
+          animationType="slide"
+          onRequestClose={() => setMembersOpen(false)}
+        >
+          <SafeAreaView style={s.screen}>
+            <Header
+              title={`참여자 ${groupRoom.members.length}명`}
+              onBack={() => setMembersOpen(false)}
+            />
+            <FlatList
+              data={groupRoom.members}
+              keyExtractor={member => member}
+              contentContainerStyle={s.list}
+              renderItem={({ item }) => (
+                <GroupMemberRow
+                  room={groupRoom}
+                  member={item}
+                  currentUser={uid}
+                  onProfile={
+                    onProfile
+                      ? member => {
+                          setMembersOpen(false);
+                          onProfile(member);
+                        }
+                      : undefined
+                  }
+                />
+              )}
+            />
+          </SafeAreaView>
+        </Modal>
+      )}
     </SafeAreaView>
   );
 }
@@ -1051,6 +1503,13 @@ const s = StyleSheet.create({
   // 탐색·내 프로필의 머리글과 같은 높이로 맞춘다
   headerNoBack: { paddingLeft: 20, minHeight: 48 },
   headerTitle: { flex: 1 },
+  headerIdentity: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  headerAction: {
+    minWidth: 58,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   spacer: { width: 44 },
   list: { padding: 20, gap: 8, flexGrow: 1 },
   empty: {
@@ -1077,6 +1536,7 @@ const s = StyleSheet.create({
     overflow: 'hidden',
   },
   avatarImage: { width: '100%', height: '100%' },
+  avatarCompact: { width: 30, height: 30, borderRadius: 15 },
   roomMeta: { alignItems: 'flex-end', gap: 10 },
   unreadDot: {
     width: 8,
@@ -1085,6 +1545,40 @@ const s = StyleSheet.create({
     backgroundColor: colors.primary,
   },
   unreadText: { fontFamily: fonts.semibold },
+  groupEntry: { marginHorizontal: 20, paddingVertical: 12 },
+  groupName: {
+    marginHorizontal: 20,
+    minHeight: 48,
+    color: colors.text,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    fontFamily: fonts.regular,
+    fontSize: 16,
+  },
+  selectionLabel: { marginHorizontal: 20, marginTop: 12 },
+  selectedList: { paddingHorizontal: 20, paddingTop: 10, gap: 8 },
+  personChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minHeight: 44,
+    paddingHorizontal: 12,
+    borderRadius: 22,
+    backgroundColor: colors.primarySoft,
+  },
+  check: {
+    width: 23,
+    height: 23,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checked: {
+    backgroundColor: colors.primaryAction,
+    borderColor: colors.primaryAction,
+  },
   search: {
     margin: 20,
     paddingHorizontal: 16,
@@ -1109,6 +1603,13 @@ const s = StyleSheet.create({
   },
   messageRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
   ownRow: { justifyContent: 'flex-end' },
+  groupSender: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  groupBubbleRow: { marginLeft: 38 },
   bubble: {
     maxWidth: '78%',
     paddingHorizontal: 16,

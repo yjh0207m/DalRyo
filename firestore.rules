@@ -137,12 +137,18 @@ service cloud.firestore {
       match /comments/{commentId} { allow read: if visibleParent(id); allow write: if false; }
     }
     match /follows/{id} { allow read: if signedIn(); allow write: if false; }
-    match /conversations/{id} {
-      allow read: if signedIn() && request.auth.uid in resource.data.members;
+    // Both chat collections store member UIDs and public name/photo snapshots.
+    // The authenticated server validates and performs all writes.
+    match /{chatCollection}/{id} {
+      function isChatCollection() {
+        return chatCollection in ['conversations', 'group_conversations'];
+      }
+      allow read: if isChatCollection() && signedIn() && request.auth.uid in resource.data.members;
       allow write: if false;
       match /messages/{messageId} {
-        allow read: if signedIn() && exists(/databases/$(database)/documents/conversations/$(id))
-          && request.auth.uid in get(/databases/$(database)/documents/conversations/$(id)).data.members;
+        allow read: if isChatCollection() && signedIn()
+          && exists(/databases/$(database)/documents/$(chatCollection)/$(id))
+          && request.auth.uid in get(/databases/$(database)/documents/$(chatCollection)/$(id)).data.members;
         allow write: if false;
       }
     }

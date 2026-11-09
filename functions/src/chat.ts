@@ -21,6 +21,51 @@ function profile(data: DocumentData) {
         : null,
   };
 }
+function emptyRoom(members: string[], profiles: DocumentData) {
+  return {
+    members,
+    profiles,
+    blocked_by: [],
+    read_at: {},
+    last_text: '',
+    last_sender_uid: null,
+    last_message_id: null,
+    last_sent_at: null,
+    created_at: FieldValue.serverTimestamp(),
+    updated_at: FieldValue.serverTimestamp(),
+  };
+}
+
+function blockRefs(a: string, b: string) {
+  const db = getFirestore();
+  return [db.doc(`users/${a}/blocks/${b}`), db.doc(`users/${b}/blocks/${a}`)];
+}
+
+function groupBlockRefs(a: string, b: string) {
+  return [
+    ...blockRefs(a, b),
+    getFirestore().doc(`conversations/${conversationId(a, b)}`),
+  ];
+}
+
+async function ensureCanChat(
+  tx: FirebaseFirestore.Transaction,
+  refs: FirebaseFirestore.DocumentReference[],
+) {
+  if (!refs.length) return;
+  const blocks = await tx.getAll(...refs);
+  if (
+    blocks.some(
+      doc =>
+        doc.exists &&
+        (doc.ref.parent.id === 'blocks' || doc.get('blocked_by')?.length),
+    )
+  )
+    throw new HttpsError(
+      'permission-denied',
+      '차단 관계가 있어 메시지를 주고받을 수 없어요.',
+    );
+}
 export function conversationId(a: string, b: string) {
   return createHash('sha256')
     .update(JSON.stringify([a, b].sort()))
@@ -54,27 +99,94 @@ export async function chatAction(uid: string, input: Record<string, unknown>) {
           '이 러너와 대화할 수 없어요.',
         );
       if (!room.exists)
-        tx.create(ref, {
-          members: [uid, peer].sort(),
-          profiles: {
+        tx.create(
+          ref,
+          emptyRoom([uid, peer].sort(), {
             [uid]: profile(mine.data()!),
             [peer]: profile(other.data()!),
-          },
-          blocked_by: [],
-          read_at: {},
-          last_text: '',
-          last_sender_uid: null,
-          last_message_id: null,
-          last_sent_at: null,
-          created_at: FieldValue.serverTimestamp(),
-          updated_at: FieldValue.serverTimestamp(),
-        });
+          }),
+        );
       // Existing rooms keep their history and block state.
     });
     return { conversationId: id };
   }
-  const id = documentId(input.conversationId),
-    ref = db.collection('conversations').doc(id);
+  if (input.action === 'chatCreateGroup') {
+    if (
+      !Array.isArray(input.uids) ||
+      input.uids.length < 2 ||
+      input.uids.length > 9
+    )
+      throw new HttpsError(
+        'invalid-argument',
+        '함께 대화할 러너를 2~9명 선택해 주세요.',
+      );
+    const members = [uid, ...input.uids.map(documentId)].sort();
+    if (new Set(members).size !== members.length)
+      throw new HttpsError('invalid-argument', '참여자 목록을 확인해 주세요.');
+    const name = text(input.name ?? '', '채팅방 이름', 0, 40);
+    const requestId = documentId(input.requestId);
+    const id = `group_${createHash('sha256')
+      .update(JSON.stringify([uid, requestId]))
+      .digest('hex')}`;
+    const ref = db.doc(`group_conversations/${id}`);
+    await db.runTransaction(async tx => {
+      const existing = await tx.get(ref);
+      if (existing.exists) {
+        if (!existing.get('members').includes(uid))
+          throw new HttpsError('permission-denied', '이미 나간 채팅방이에요.');
+        return;
+      }
+      const users = await tx.getAll(
+        ...members.map(member => db.doc(`users/${member}`)),
+      );
+      if (users.some(user => !user.exists))
+        throw new HttpsError(
+          'not-found',
+          '참여자 중 찾을 수 없는 러너가 있어요.',
+        );
+      await ensureCanChat(
+        tx,
+        members.flatMap((a, index) =>
+          members.slice(index + 1).flatMap(b => groupBlockRefs(a, b)),
+        ),
+      );
+      tx.create(ref, {
+        ...emptyRoom(
+          members,
+          Object.fromEntries(
+            users.map(user => [user.id, profile(user.data()!)]),
+          ),
+        ),
+        kind: 'group',
+        name,
+      });
+    });
+    return { conversationId: id };
+  }
+  const id = documentId(input.conversationId);
+  const group = id.startsWith('group_');
+  const ref = db
+    .collection(group ? 'group_conversations' : 'conversations')
+    .doc(id);
+  if (input.action === 'chatLeave') {
+    await db.runTransaction(async tx => {
+      const room = await tx.get(ref);
+      if (
+        room.get('kind') !== 'group' ||
+        !Object.hasOwn(room.get('profiles'), uid)
+      )
+        throw new HttpsError(
+          'permission-denied',
+          '이 그룹 채팅방에서 나갈 수 없어요.',
+        );
+      if (!room.get('members').includes(uid)) return;
+      const readAt = { ...room.get('read_at') };
+      delete readAt[uid];
+      // Keep the author snapshot for messages remaining members can still read.
+      tx.update(ref, { members: FieldValue.arrayRemove(uid), read_at: readAt });
+    });
+    return { ok: true };
+  }
   if (input.action === 'chatSend') {
     const messageId = documentId(input.messageId),
       body = text(input.text, '메시지', 1, 2000),
@@ -88,14 +200,27 @@ export async function chatAction(uid: string, input: Record<string, unknown>) {
           throw new HttpsError('already-exists', '이미 전송한 메시지예요.');
         return; // Lost responses may be retried without duplicating the message.
       }
+      const peers = (room.get('members') as string[]).filter(
+        member => member !== uid,
+      );
       if (room.get('blocked_by').length)
         throw new HttpsError(
           'permission-denied',
           '차단된 대화에서는 메시지를 보낼 수 없어요.',
         );
       const last = room.get('last_sent_at') as Timestamp | null;
-      if (last && Date.now() - last.toMillis() < 500)
+      if (
+        last &&
+        (!group || room.get('last_sender_uid') === uid) &&
+        Date.now() - last.toMillis() < 500
+      )
         throw new HttpsError('resource-exhausted', '잠시 후 다시 보내 주세요.');
+      await ensureCanChat(
+        tx,
+        peers.flatMap(peer =>
+          group ? groupBlockRefs(uid, peer) : blockRefs(uid, peer),
+        ),
+      );
       const stamp = FieldValue.serverTimestamp();
       tx.create(message, { sender_uid: uid, text: body, created_at: stamp });
       tx.update(ref, {
@@ -115,11 +240,29 @@ export async function chatAction(uid: string, input: Record<string, unknown>) {
       if (!room.exists || !room.get('members').includes(uid))
         throw new HttpsError('permission-denied', '대화를 볼 수 없어요.');
       if (input.action === 'chatBlock') {
+        if (group)
+          throw new HttpsError(
+            'invalid-argument',
+            '그룹 채팅방은 차단할 수 없어요.',
+          );
         if (typeof input.blocked !== 'boolean')
           throw new HttpsError(
             'invalid-argument',
             '차단 상태를 확인해 주세요.',
           );
+        if (!input.blocked) {
+          const peer = (room.get('members') as string[]).find(
+            member => member !== uid,
+          );
+          if (
+            peer &&
+            (await tx.get(db.doc(`users/${uid}/blocks/${peer}`))).exists
+          )
+            throw new HttpsError(
+              'failed-precondition',
+              '러너 차단은 설정의 차단한 계정에서 해제해 주세요.',
+            );
+        }
         tx.update(ref, {
           blocked_by: input.blocked
             ? FieldValue.arrayUnion(uid)

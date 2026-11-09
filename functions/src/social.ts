@@ -194,7 +194,14 @@ export const socialAction = onCall(
     const actor = publicUser(uid, mine);
     try {
       if (
-        ['chatOpen', 'chatSend', 'chatRead', 'chatBlock'].includes(input.action)
+        [
+          'chatOpen',
+          'chatCreateGroup',
+          'chatSend',
+          'chatRead',
+          'chatBlock',
+          'chatLeave',
+        ].includes(input.action)
       )
         return await chatAction(uid, input);
       if (input.action === 'publicProfiles') {

@@ -19,6 +19,7 @@ import {
   ConversationView,
 } from '../src/screens/community/ChatScreen';
 import { socialRequest } from '../src/services/social.service';
+import { ActionSheet } from '../src/components/ui';
 import type {
   Conversation,
   ChatMessage,
@@ -27,6 +28,7 @@ import type {
 const mockSend = jest.fn(),
   mockRead = jest.fn(),
   mockEarlier = jest.fn(),
+  mockCreateGroup = jest.fn(),
   mockWatchInbox = jest.fn();
 let mockRoomNext: (room: Conversation) => void;
 let mockMessageNext: (page: ChatPage<ChatMessage>) => void;
@@ -68,6 +70,7 @@ jest.mock('../src/services/chat.service', () => ({
   markConversationRead: (...args: unknown[]) => mockRead(...args),
   earlierMessages: (...args: unknown[]) => mockEarlier(...args),
   blockConversation: jest.fn(),
+  createGroupConversation: (...args: unknown[]) => mockCreateGroup(...args),
   hasUnread: (r: Conversation) =>
     r.last_sender_uid !== 'me' && r.lastSentAt > (r.read_at.me ?? 0),
   mergeChatItems: (old: ChatMessage[], fresh: ChatMessage[]) => [
@@ -85,7 +88,10 @@ jest.mock('lucide-react-native', () => {
     },
   );
 });
-jest.mock('react-native-safe-area-context', () => ({ SafeAreaView: MockView }));
+jest.mock('react-native-safe-area-context', () => ({
+  SafeAreaView: MockView,
+  useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }),
+}));
 let tree: Renderer.ReactTestRenderer;
 beforeEach(() => {
   AppState.currentState = 'active';
@@ -116,6 +122,69 @@ function sendButton() {
 async function type(value: string) {
   await act(() => tree.root.findByType(TextInput).props.onChangeText(value));
 }
+
+test('the direct conversation menu offers profile and block separately', async () => {
+  const onProfile = jest.fn();
+  await act(() => {
+    tree = Renderer.create(
+      <ConversationView id="room" onBack={jest.fn()} onProfile={onProfile} />,
+    );
+  });
+  const menuButton = tree.root.find(
+    node =>
+      typeof node.type === 'function' &&
+      node.type.name === 'IconButton' &&
+      node.props.accessibilityLabel === '대화 설정',
+  );
+  await act(() => menuButton.props.onPress());
+  const sheet = tree.root.findByType(ActionSheet);
+  expect(sheet.props.visible).toBe(true);
+  expect(
+    sheet.props.items.map((item: { label: string }) => item.label),
+  ).toEqual(['상대 프로필 보기', '대화 차단']);
+  await act(() => sheet.props.items[0].onPress());
+  expect(onProfile).toHaveBeenCalledWith('peer');
+});
+
+test('group messages show the correct authors and the menu shows participants and leave', async () => {
+  await render();
+  await act(() => {
+    mockRoomNext({
+      ...room,
+      kind: 'group',
+      name: '아침 러닝',
+      members: ['me', 'peer', 'other'],
+      profiles: {
+        ...room.profiles,
+        other: { display_name: '다른 러너', profile_image: null },
+      },
+    });
+    mockMessageNext({
+      items: [
+        { ...one, id: 'two', sender_uid: 'other', text: '반가워요' },
+        one,
+      ],
+      cursor: null,
+      more: false,
+    });
+  });
+  const texts = tree.root
+    .findAll(node => String(node.type) === 'Text')
+    .map(node => node.props.children);
+  expect(texts).toEqual(
+    expect.arrayContaining([
+      '아침 러닝',
+      '그룹 채팅 · 3명',
+      '친구',
+      '다른 러너',
+      '반가워요',
+    ]),
+  );
+  const sheet = tree.root.findByType(ActionSheet);
+  expect(
+    sheet.props.items.map((item: { label: string }) => item.label),
+  ).toEqual(['참여자 3명 보기', '채팅방 나가기']);
+});
 
 test('returning from runner search reconnects the inbox after a listener error', async () => {
   mockWatchInbox.mockImplementationOnce((_next, error) => {
@@ -588,6 +657,58 @@ describe('searching for someone to start a chat with', () => {
     following_count: 0,
     influencer_tier: 'none',
     relation,
+  });
+
+  test('a group keeps selections across searches and retries creation with the same request ID', async () => {
+    jest.useFakeTimers();
+    try {
+      (socialRequest as jest.Mock).mockImplementation(async action => ({
+        users:
+          action === 'search' ? [person('b', '민준')] : [person('a', '민서')],
+      }));
+      mockCreateGroup
+        .mockRejectedValueOnce(new Error('offline'))
+        .mockResolvedValueOnce('group-room');
+      await act(() => {
+        tree = Renderer.create(<ChatScreen onBack={jest.fn()} />);
+      });
+      const button = (label: string) =>
+        tree.root.find(
+          node =>
+            typeof node.type === 'function' &&
+            node.type.name === 'Pressable' &&
+            node.props.accessibilityLabel === label,
+        );
+      await act(() => button('새 대화').props.onPress());
+      await act(() => button('그룹 채팅 만들기').props.onPress());
+      await act(async () => jest.runOnlyPendingTimers());
+      await act(() => button('민서').props.onPress());
+      expect(button('그룹 만들기').props.disabled).toBe(true);
+      await act(() =>
+        tree.root
+          .findByProps({ accessibilityLabel: '대화 상대 검색', maxLength: 21 })
+          .props.onChangeText('민준'),
+      );
+      await act(async () => jest.advanceTimersByTime(300));
+      await act(() => button('민준').props.onPress());
+      await act(() =>
+        tree.root
+          .findByProps({ accessibilityLabel: '채팅방 이름', maxLength: 40 })
+          .props.onChangeText('아침 러닝'),
+      );
+      await act(() => button('그룹 만들기').props.onPress());
+      expect(button('민서 선택 해제')).toBeDefined();
+      await act(() => button('그룹 만들기').props.onPress());
+      expect(mockCreateGroup.mock.calls).toEqual([
+        [['a', 'b'], '아침 러닝', 'stable-message'],
+        [['a', 'b'], '아침 러닝', 'stable-message'],
+      ]);
+      expect(tree.root.findByType(ConversationView).props.id).toBe(
+        'group-room',
+      );
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test('lists people I follow first, then people who follow me, then strangers, and says which is which', async () => {
