@@ -1,3 +1,4 @@
+import {Platform, Settings} from 'react-native';
 import {auth, firestore, messaging} from '../lib/firebase';
 import type {AuthResult, PhoneConfirmation} from '../types/auth.types';
 
@@ -16,6 +17,15 @@ function normalizeKoreanPhoneNumber(phoneNumber: string) {
 }
 
 export async function requestPhoneVerification(phoneNumber: string): Promise<PhoneConfirmation> {
+  if (Platform.OS === 'ios') {
+    const config = Settings.get('DalRyoPhoneAuthConfig');
+    if (config?.bundleMatchesFirebase === false) {
+      throw new Error('설치된 앱의 식별자가 Firebase 등록 정보와 달라요. 앱 식별자를 변경하지 않은 파일로 다시 설치해 주세요. (ios-bundle-mismatch)');
+    }
+    if (config?.callbackSchemeRegistered === false) {
+      throw new Error('웹 인증 후 앱으로 돌아오는 설정이 누락됐어요. 최신 iOS 빌드로 다시 설치해 주세요. (ios-auth-callback-missing)');
+    }
+  }
   const normalizedPhoneNumber = normalizeKoreanPhoneNumber(phoneNumber);
   return auth().signInWithPhoneNumber(normalizedPhoneNumber);
 }

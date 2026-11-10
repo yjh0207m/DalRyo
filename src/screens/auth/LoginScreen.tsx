@@ -29,7 +29,6 @@ export function PhoneLoginScreen({onBack, onVerified}: Props) {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [code, setCode] = useState('');
   const {canRequestCode, canVerifyCode, errorMessage, requestCode, state, verifyCode} = usePhoneAuth();
-  const isCodeSent = state === 'codeSent' || state === 'error' || state === 'verifying';
 
   const handleRequestCode = () => {
     if (!phoneNumber.trim()) {
@@ -72,7 +71,7 @@ export function PhoneLoginScreen({onBack, onVerified}: Props) {
             <TextInput
               value={code}
               onChangeText={setCode}
-              editable={isCodeSent}
+              editable={canVerifyCode}
               keyboardType="number-pad"
               maxLength={6}
               placeholder="인증번호 6자리를 입력해주세요"
@@ -86,11 +85,13 @@ export function PhoneLoginScreen({onBack, onVerified}: Props) {
 
           {Platform.OS === 'ios' && state === 'requesting' ? (
             <Text style={styles.timerText}>웹 인증 화면이 열리면 인증을 마친 뒤 앱으로 돌아와 주세요.</Text>
-          ) : (
+          ) : canVerifyCode ? (
             <Text style={styles.timerText}>
-              {state === 'codeSent' ? '인증번호를 입력해 주세요.' : '인증번호가 오지 않았나요?'}  <Text style={styles.timerStrong}>00:59</Text>
+              문자로 받은 인증번호를 입력해 주세요. 문자가 오지 않으면 다시 요청해 주세요.
             </Text>
-          )}
+          ) : state === 'idle' ? (
+            <Text style={styles.timerText}>휴대폰 번호를 입력한 뒤 인증요청을 눌러 주세요.</Text>
+          ) : null}
           {!!errorMessage && <Text accessibilityRole="alert" style={styles.errorText}>{errorMessage}</Text>}
 
           <TouchableOpacity
@@ -122,7 +123,6 @@ const styles = StyleSheet.create({
   disabledButton: {opacity: 0.55},
   requestButtonText: {color: GREEN, fontSize: 16, fontFamily: fonts.extrabold},
   timerText: {color: '#888888', fontSize: 15, marginTop: 18},
-  timerStrong: {color: GREEN, fontFamily: fonts.extrabold},
   errorText: {color: '#C95B5B', fontSize: 14, fontFamily: fonts.bold, lineHeight: 20, marginTop: 12},
   nextButton: {height: 62, borderRadius: 14, backgroundColor: MINT, alignItems: 'center', justifyContent: 'center', marginTop: 70, shadowColor: MINT, shadowOpacity: 0.06, shadowRadius: 16, shadowOffset: {width: 0, height: 8}, elevation: 0},
   nextButtonDisabled: {opacity: 0.45},

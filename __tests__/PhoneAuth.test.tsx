@@ -9,12 +9,12 @@ jest.mock('../src/services/auth.service', () => ({
   verifyPhoneCode: jest.fn(),
 }));
 
-test('iOS web authentication can be retried after closing a blank page', async () => {
+test.each(['auth/web-context-cancelled', 'auth/popup-closed-by-user'])('iOS web authentication can be retried after %s', async errorCode => {
   jest.replaceProperty(Platform, 'OS', 'ios');
   const request = jest.mocked(requestPhoneVerification);
   request.mockRejectedValueOnce(
     Object.assign(new Error('Web context canceled'), {
-      code: 'auth/web-context-cancelled',
+      code: errorCode,
     }),
   );
   request.mockResolvedValueOnce({ verificationId: 'fixture', confirm: jest.fn() });

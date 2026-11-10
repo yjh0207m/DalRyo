@@ -18,6 +18,15 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
   ) -> Bool {
     // GoogleService-Info.plist로 Firebase 초기화 (React Native 시작 전에 호출해야 함)
     FirebaseApp.configure()
+    if let firebase = FirebaseApp.app() {
+      let urlTypes = Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]] ?? []
+      let schemes = urlTypes.flatMap { $0["CFBundleURLSchemes"] as? [String] ?? [] }
+      let callbackScheme = "app-" + firebase.options.googleAppID.replacingOccurrences(of: ":", with: "-")
+      UserDefaults.standard.set([
+        "bundleMatchesFirebase": Bundle.main.bundleIdentifier == firebase.options.bundleID,
+        "callbackSchemeRegistered": schemes.contains(callbackScheme)
+      ], forKey: "DalRyoPhoneAuthConfig")
+    }
 
     let delegate = ReactNativeDelegate()
     let factory = RCTReactNativeFactory(delegate: delegate)
