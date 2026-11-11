@@ -19,7 +19,7 @@ import {
   ConversationView,
 } from '../src/screens/community/ChatScreen';
 import { socialRequest } from '../src/services/social.service';
-import { ActionSheet } from '../src/components/ui';
+import { ActionSheet, AppText } from '../src/components/ui';
 import type {
   Conversation,
   ChatMessage,
@@ -27,6 +27,8 @@ import type {
 } from '../src/services/chat.service';
 const mockSend = jest.fn(),
   mockRead = jest.fn(),
+  mockMute = jest.fn(),
+  mockRename = jest.fn(),
   mockEarlier = jest.fn(),
   mockCreateGroup = jest.fn(),
   mockWatchInbox = jest.fn();
@@ -68,6 +70,8 @@ jest.mock('../src/services/chat.service', () => ({
   newMessageId: () => 'stable-message',
   sendMessage: (...args: unknown[]) => mockSend(...args),
   markConversationRead: (...args: unknown[]) => mockRead(...args),
+  setConversationMuted: (...args: unknown[]) => mockMute(...args),
+  renameGroupConversation: (...args: unknown[]) => mockRename(...args),
   earlierMessages: (...args: unknown[]) => mockEarlier(...args),
   blockConversation: jest.fn(),
   createGroupConversation: (...args: unknown[]) => mockCreateGroup(...args),
@@ -100,6 +104,8 @@ beforeEach(() => {
   (socialRequest as jest.Mock).mockResolvedValue({ users: [], cursor: null });
   mockSend.mockResolvedValue({});
   mockRead.mockResolvedValue({});
+  mockMute.mockResolvedValue({});
+  mockRename.mockResolvedValue({});
   mockWatchInbox.mockImplementation(next => {
     next({ items: [], cursor: null, more: false });
     return () => {};
@@ -123,6 +129,129 @@ async function type(value: string) {
   await act(() => tree.root.findByType(TextInput).props.onChangeText(value));
 }
 
+function messageLabels(prefix: string) {
+  return tree.root
+    .findAllByType(AppText)
+    .filter(node => node.props.testID?.startsWith(prefix));
+}
+
+test('only the last consecutive message from the same sender in a minute shows its time', async () => {
+  await render();
+  const start = new Date(2026, 10, 11, 12, 0).getTime();
+  await act(() =>
+    mockMessageNext({
+      items: [
+        { ...one, id: 'a', sender_uid: 'me', createdAt: start },
+        { ...one, id: 'b', sender_uid: 'me', createdAt: start + 1000 },
+        { ...one, id: 'c', createdAt: start + 2000 },
+        { ...one, id: 'd', sender_uid: 'me', createdAt: start + 3000 },
+        { ...one, id: 'e', sender_uid: 'me', createdAt: start + 60000 },
+        { ...one, id: 'f', sender_uid: 'me', createdAt: start + 86460000 },
+      ],
+      cursor: null,
+      more: false,
+    }),
+  );
+  // The initial fixture is also present; a later peer message in another minute
+  // must keep its own time, even if the displayed clock time is the same.
+  expect(messageLabels('message-time-').map(node => node.props.testID)).toEqual(
+    [
+      'message-time-one',
+      'message-time-b',
+      'message-time-c',
+      'message-time-d',
+      'message-time-e',
+      'message-time-f',
+    ],
+  );
+
+  await act(() =>
+    mockMessageNext({
+      items: [
+        { ...one, id: 'g', sender_uid: 'me', createdAt: start + 86461000 },
+      ],
+      cursor: null,
+      more: false,
+    }),
+  );
+  expect(
+    messageLabels('message-time-').map(node => node.props.testID),
+  ).not.toContain('message-time-f');
+  expect(
+    messageLabels('message-time-').map(node => node.props.testID),
+  ).toContain('message-time-g');
+});
+
+test('each sent message hides its unread number once the peer has read it', async () => {
+  await render();
+  await act(() => {
+    mockRoomNext({ ...room, read_at: { me: 3000, peer: 1500 } });
+    mockMessageNext({
+      items: [
+        { ...one, id: 'first', sender_uid: 'me', createdAt: 1100 },
+        { ...one, id: 'second', sender_uid: 'me', createdAt: 2000 },
+        { ...one, id: 'reply', createdAt: 3000 },
+      ],
+      cursor: null,
+      more: false,
+    });
+  });
+  expect(
+    messageLabels('message-unread-').map(node => [
+      node.props.testID,
+      node.props.children,
+    ]),
+  ).toEqual([['message-unread-second', 1]]);
+  await act(() => mockRoomNext({ ...room, read_at: { me: 3000, peer: 3000 } }));
+  expect(messageLabels('message-unread-')).toHaveLength(0);
+});
+
+test('group unread numbers decrease and disappear, excluding the sender and former members', async () => {
+  await render();
+  await act(() => {
+    mockRoomNext({
+      ...room,
+      kind: 'group',
+      members: ['me', 'peer', 'other'],
+      read_at: { me: 4000, peer: 2000, other: 1000, departed: 0 },
+    });
+    mockMessageNext({
+      items: [
+        { ...one, id: 'first', sender_uid: 'me', createdAt: 1500 },
+        { ...one, id: 'second', sender_uid: 'me', createdAt: 3000 },
+      ],
+      cursor: null,
+      more: false,
+    });
+  });
+  expect(
+    messageLabels('message-unread-').map(node => node.props.children),
+  ).toEqual([1, 2]);
+  await act(() =>
+    mockRoomNext({
+      ...room,
+      kind: 'group',
+      members: ['me', 'peer', 'other'],
+      read_at: { me: 4000, peer: 4000, other: 2000 },
+    }),
+  );
+  expect(
+    messageLabels('message-unread-').map(node => [
+      node.props.testID,
+      node.props.children,
+    ]),
+  ).toEqual([['message-unread-second', 1]]);
+  await act(() =>
+    mockRoomNext({
+      ...room,
+      kind: 'group',
+      members: ['me', 'peer'],
+      read_at: { me: 4000, peer: 4000, other: 4000 },
+    }),
+  );
+  expect(messageLabels('message-unread-')).toHaveLength(0);
+});
+
 test('the direct conversation menu offers profile and block separately', async () => {
   const onProfile = jest.fn();
   await act(() => {
@@ -141,7 +270,7 @@ test('the direct conversation menu offers profile and block separately', async (
   expect(sheet.props.visible).toBe(true);
   expect(
     sheet.props.items.map((item: { label: string }) => item.label),
-  ).toEqual(['상대 프로필 보기', '대화 차단']);
+  ).toEqual(['상대 프로필 보기', '이 방 알림 끄기', '대화 차단']);
   await act(() => sheet.props.items[0].onPress());
   expect(onProfile).toHaveBeenCalledWith('peer');
 });
@@ -183,7 +312,65 @@ test('group messages show the correct authors and the menu shows participants an
   const sheet = tree.root.findByType(ActionSheet);
   expect(
     sheet.props.items.map((item: { label: string }) => item.label),
-  ).toEqual(['참여자 3명 보기', '채팅방 나가기']);
+  ).toEqual([
+    '참여자 3명 보기',
+    '채팅방 이름 변경',
+    '이 방 알림 끄기',
+    '채팅방 나가기',
+  ]);
+});
+
+test('the notification setting follows this member and updates only this room', async () => {
+  await render();
+  const choose = (label: string) =>
+    act(async () => {
+      const item = tree.root
+        .findByType(ActionSheet)
+        .props.items.find(
+          (option: { label: string }) => option.label === label,
+        );
+      await item.onPress();
+    });
+  await act(() => mockRoomNext({ ...room, muted_by: ['peer'] }));
+  await choose('이 방 알림 끄기');
+  expect(mockMute).toHaveBeenLastCalledWith('room', true);
+  await act(() => mockRoomNext({ ...room, muted_by: ['peer', 'me'] }));
+  await choose('이 방 알림 켜기');
+  expect(mockMute).toHaveBeenLastCalledWith('room', false);
+});
+
+test('group rename keeps the entered name on failure and saves it on retry', async () => {
+  await render();
+  const group: Conversation = { ...room, kind: 'group', name: '아침 러닝' };
+  await act(() => mockRoomNext(group));
+  await act(() =>
+    tree.root
+      .findByType(ActionSheet)
+      .props.items.find(
+        (item: { label: string }) => item.label === '채팅방 이름 변경',
+      )
+      .onPress(),
+  );
+  const input = () =>
+    tree.root
+      .findAllByType(TextInput)
+      .find(node => node.props.accessibilityLabel === '새 채팅방 이름')!;
+  expect(input().props.value).toBe('아침 러닝');
+  await act(() => input().props.onChangeText(' 저녁 러닝 '));
+  mockRename.mockRejectedValueOnce(new Error('잠시 연결이 끊겼어요'));
+  const save = () =>
+    act(async () => tree.root.findByProps({ label: '저장' }).props.onPress());
+  await save();
+  expect(input().props.value).toBe(' 저녁 러닝 ');
+  await save();
+  expect(mockRename).toHaveBeenLastCalledWith('room', '저녁 러닝');
+  await act(() => mockRoomNext({ ...group, name: '저녁 러닝' }));
+  expect(input()).toBeUndefined();
+  expect(
+    tree.root
+      .findAllByType(AppText)
+      .some(node => node.props.children === '저녁 러닝'),
+  ).toBe(true);
 });
 
 test('returning from runner search reconnects the inbox after a listener error', async () => {

@@ -1,10 +1,17 @@
 import {useEffect, useRef, useState} from 'react';
+import type {FirebaseMessagingTypes} from '@react-native-firebase/messaging';
 import {auth, firestore, messaging} from '../lib/firebase';
 
-export function usePushNotifications(uid: string | undefined, enabled: boolean, onOpen: () => void) {
+function chatRoomId(message: FirebaseMessagingTypes.RemoteMessage) {
+  const id = message.data?.target_id;
+  return message.data?.type === 'chat' && typeof id === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(id)
+    ? id : undefined;
+}
+
+export function usePushNotifications(uid: string | undefined, enabled: boolean, onOpen: (roomId?: string) => void) {
   const open = useRef(onOpen);
   open.current = onOpen;
-  const [notice, setNotice] = useState<{title: string; body: string} | null>(null);
+  const [notice, setNotice] = useState<{title: string; body: string; roomId?: string} | null>(null);
   useEffect(() => {
     setNotice(null);
     if (!uid) return;
@@ -20,10 +27,10 @@ export function usePushNotifications(uid: string | undefined, enabled: boolean, 
     sync().catch(() => undefined);
     const stopToken = messaging().onTokenRefresh(token => {store(token);});
     const stopMessage = messaging().onMessage(async message => {
-      if (!cancelled) setNotice({title: message.notification?.title ?? '달료', body: message.notification?.body ?? '새 알림이 있어요.'});
+      if (!cancelled) setNotice({title: message.notification?.title ?? '달료', body: message.notification?.body ?? '새 알림이 있어요.', roomId: chatRoomId(message)});
     });
-    const stopOpen = messaging().onNotificationOpenedApp(() => {if (!cancelled) open.current();});
-    messaging().getInitialNotification().then(message => {if (message && !cancelled) open.current();}).catch(() => undefined);
+    const stopOpen = messaging().onNotificationOpenedApp(message => {if (!cancelled) open.current(chatRoomId(message));});
+    messaging().getInitialNotification().then(message => {if (message && !cancelled) open.current(chatRoomId(message));}).catch(() => undefined);
     return () => {cancelled = true; stopToken(); stopMessage(); stopOpen();};
   }, [uid, enabled]);
   useEffect(() => {

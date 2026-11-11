@@ -51,6 +51,27 @@ try{
   assert.equal((await assertSucceeds(getDocs(inbox('group_conversations')))).docs[0].id, groupId);
   assert.deepEqual((await assertSucceeds(getDocs(inbox('conversations')))).docs.map(item => item.id), [id]);
  });
+ await test('room notification settings are per member and group names are shared', async () => {
+  await assert.rejects(call(c, 'chatMute', { conversationId: id, muted: true }), { code: 'PERMISSION_DENIED' });
+  await assert.rejects(call(a, 'chatMute', { conversationId: id, muted: 'yes' }), { code: 'INVALID_ARGUMENT' });
+  await call(a, 'chatMute', { conversationId: id, muted: true, uid: b.uid });
+  assert.deepEqual((await read(base())).muted_by, [a.uid]);
+  await call(b, 'chatMute', { conversationId: id, muted: false });
+  assert.deepEqual((await read(base())).muted_by, [a.uid]);
+  await call(a, 'chatMute', { conversationId: groupId, muted: true });
+  await call(a, 'chatMute', { conversationId: id, muted: false });
+  assert.deepEqual((await read(base())).muted_by, []);
+  assert.deepEqual((await read(groupPath())).muted_by, [a.uid]);
+  await assert.rejects(call(a, 'chatRename', { conversationId: id, name: '저녁 러닝' }), { code: 'INVALID_ARGUMENT' });
+  await assert.rejects(call(b, 'chatRename', { conversationId: groupId, name: ' '.repeat(2) }), { code: 'INVALID_ARGUMENT' });
+  await assert.rejects(call(b, 'chatRename', { conversationId: groupId, name: '가'.repeat(41) }), { code: 'INVALID_ARGUMENT' });
+  const updatedAt = (await read(groupPath())).updated_at.toMillis();
+  await call(b, 'chatRename', { conversationId: groupId, name: ' 저녁 러닝 ' });
+  const renamed = await read(groupPath());
+  assert.equal(renamed.name, '저녁 러닝');
+  assert.equal(renamed.updated_at.toMillis(), updatedAt);
+  await assertFails(updateDoc(doc(bob, groupPath()), { name: 'forged', muted_by: [a.uid] }));
+ });
  await test('only group members can read, send and mark the latest message read', async () => {
   const outsider = await signup();
   await admin(db => setDoc(doc(db, `users/${outsider.uid}`), { display_name: 'Outsider' }));
@@ -62,8 +83,8 @@ try{
   await assertFails(setDoc(doc(eve, 'group_conversations/forged'), { members: [c.uid, outsider.uid] }));
   await assertFails(getDocs(collection(stranger, `${groupPath()}/messages`)));
   await assertFails(updateDoc(doc(eve, groupPath()), { members: [c.uid, outsider.uid] }));
-  for (const action of ['chatSend', 'chatRead', 'chatLeave']) {
-   await assert.rejects(call(outsider, action, { conversationId: groupId, messageId: 'first', text: 'test' }), { code: 'PERMISSION_DENIED' });
+  for (const action of ['chatSend', 'chatRead', 'chatLeave', 'chatMute', 'chatRename']) {
+   await assert.rejects(call(outsider, action, { conversationId: groupId, messageId: 'first', text: 'test', muted: true, name: 'test' }), { code: 'PERMISSION_DENIED' });
   }
   await assert.rejects(call(a, 'chatBlock', { conversationId: groupId, blocked: true }), { code: 'INVALID_ARGUMENT' });
   await call(b, 'chatSend', { conversationId: groupId, messageId: 'first', text: '안녕하세요' });
@@ -82,6 +103,7 @@ try{
   await assert.rejects(call(b, 'chatSend', { conversationId: groupId, messageId: 'blocked-group', text: 'test' }), { code: 'PERMISSION_DENIED' });
   await call(b, 'chatBlock', { conversationId: direct, blocked: false });
   await assert.rejects(call(a, 'chatLeave', { conversationId: id }), { code: 'PERMISSION_DENIED' });
+  await call(c, 'chatMute', { conversationId: groupId, muted: true });
   await call(c, 'chatLeave', { conversationId: groupId });
   await call(c, 'chatLeave', { conversationId: groupId });
   await assertFails(getDoc(doc(eve, groupPath())));
@@ -91,7 +113,46 @@ try{
   const group = await read(groupPath());
   assert.deepEqual(group.members, [a.uid, b.uid].sort());
   assert.equal(group.read_at[c.uid], undefined);
+  assert.deepEqual(group.muted_by, [a.uid]);
   assert.equal(group.profiles[c.uid].display_name, 'Eve');
+ });
+ await test('new messages notify eligible recipients once, even if push delivery fails', async () => {
+  assert.equal(process.env.FIRESTORE_EMULATOR_HOST, '127.0.0.1:8080');
+  const { createRequire } = require('node:module');
+  const fromFunctions = createRequire(require.resolve('../functions/package.json'));
+  const { initializeApp, deleteApp } = fromFunctions('firebase-admin/app');
+  const { getMessaging } = fromFunctions('firebase-admin/messaging');
+  const { chatAction } = require('../functions/lib/chat');
+  const app = initializeApp({ projectId: project });
+  const messaging = getMessaging(app);
+  const originalSend = messaging.sendEachForMulticast;
+  const pushes = [];
+  messaging.sendEachForMulticast = async payload => {
+   pushes.push(payload);
+   throw Object.assign(new Error('mock delivery failure'), { code: 'messaging/unavailable' });
+  };
+  try {
+   const d = await signup();
+   await admin(async db => {
+    await setDoc(doc(db, `users/${d.uid}`), { display_name: 'D', fcm_token: 'fixture-d', notification_settings: { push: false } });
+    for (const [user, token] of [[a, 'fixture-a'], [b, 'fixture-b'], [c, 'fixture-c']]) {
+     await updateDoc(doc(db, `users/${user.uid}`), { fcm_token: token, notification_settings: { push: true } });
+    }
+   });
+   const { conversationId } = await call(a, 'chatCreateGroup', { uids: [b.uid, c.uid, d.uid], name: '달리기 모임', requestId: 'push-test' });
+   await call(c, 'chatMute', { conversationId, muted: true });
+   const send = { action: 'chatSend', conversationId, messageId: 'push-one', text: '같이 달려요' };
+   assert.deepEqual(await chatAction(a.uid, send, 'Alice'), { messageId: 'push-one' });
+   await chatAction(a.uid, send, 'Alice');
+   assert.equal(pushes.length, 1);
+   assert.deepEqual(pushes[0].tokens, ['fixture-b']);
+   assert.equal(pushes[0].notification.title, '달리기 모임');
+   assert.deepEqual(pushes[0].data, { type: 'chat', target_id: conversationId });
+   assert.equal((await read(`group_conversations/${conversationId}/messages/push-one`)).text, send.text);
+  } finally {
+   messaging.sendEachForMulticast = originalSend;
+   await deleteApp(app);
+  }
  });
  console.log(`${passed} chat integration and security scenarios passed`);
 }finally{await env.cleanup();}

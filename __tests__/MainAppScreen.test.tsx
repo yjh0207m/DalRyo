@@ -219,8 +219,16 @@ jest.mock('../src/screens/run/RunRecoveryScreen', () => ({
 jest.mock('../src/hooks/useNotifications', () => ({
   useUnreadNotifications: () => false,
 }));
+let mockOpenPush: (roomId?: string) => void;
 jest.mock('../src/hooks/usePushNotifications', () => ({
-  usePushNotifications: () => ({ notice: null, dismiss: jest.fn() }),
+  usePushNotifications: (
+    _uid: string,
+    _enabled: boolean,
+    onOpen: typeof mockOpenPush,
+  ) => {
+    mockOpenPush = onOpen;
+    return { notice: null, dismiss: jest.fn() };
+  },
 }));
 jest.mock('../src/hooks/useRunRecovery', () => ({
   useRunRecovery: () => ({
@@ -372,6 +380,16 @@ test('the development-only character preview is reachable from settings', async 
 });
 
 describe('opening a notification', () => {
+  test('tapping a chat push opens its conversation from another screen', async () => {
+    await render();
+    await press('홈 알림');
+    await act(() => mockOpenPush('group_room'));
+    expect(texts()).not.toContain('알림 화면');
+    expect(texts()).toContain(
+      '커뮤니티 화면 열린 경로 {"page":"chat","roomId":"group_room"}',
+    );
+  });
+
   const openNotifications = async () => {
     await press('홈 알림');
     expect(texts()).toContain('알림 화면');

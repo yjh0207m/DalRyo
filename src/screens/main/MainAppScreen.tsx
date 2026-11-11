@@ -73,7 +73,23 @@ export function MainAppScreen({user, character, onHomeReady}: Props) {
   const [together, setTogether] = useState<{friendUid?: string} | null>(null);
   const [recordSubpage,setRecordSubpage]=useState(false);
   const hasUnread = useUnreadNotifications(user?.uid);
-  const push = usePushNotifications(user?.uid, user?.notification_settings?.push ?? false, () => setNotificationsOpen(true));
+  const openPush = (roomId?: string) => {
+    if (!roomId) {
+      setNotificationsOpen(true);
+      return;
+    }
+    setNotificationsOpen(false);
+    setSettingsOpen(false);
+    setBlockedOpen(false);
+    setParksOpen(false);
+    setInventoryMode(null);
+    setCharacterPreviewOpen(false);
+    setRunSheetOpen(false);
+    setCommunityLink({page: 'chat', roomId});
+    setCommunityKey(key => key + 1);
+    setActiveTab('community');
+  };
+  const push = usePushNotifications(user?.uid, user?.notification_settings?.push ?? false, openPush);
 
   const recovery = useRunRecovery(user?.uid);
   // 위에 겹쳐 열려 있는 전체 화면(설정, 알림, 보관함 등). 열려 있는 동안 아래 탭 화면은 그대로 두고 눌리지 않게 한다
@@ -258,7 +274,7 @@ export function MainAppScreen({user, character, onHomeReady}: Props) {
         <TabPagerView pager={pager} renderTab={renderTab} />
         {!(activeTab === 'community' && communitySubpage) && !(activeTab === 'records' && recordSubpage) && <BottomTabBar activeTab={activeTab} onChange={tab => (tab === 'run' ? openRunSheet() : pager.goTo(tab))} />}
         <RunStartSheet visible={runSheetOpen} onClose={() => setRunSheetOpen(false)} onSelect={selectGoal} onParkPress={()=>{setRunSheetOpen(false);setParksOpen(true);}}/>
-        {push.notice && <Pressable accessibilityRole="button" onPress={() => {push.dismiss(); setNotificationsOpen(true);}} style={styles.pushBanner}>
+        {push.notice && <Pressable accessibilityRole="button" onPress={() => {push.dismiss(); openPush(push.notice?.roomId);}} style={styles.pushBanner}>
           <AppText variant="subheading">{push.notice.title}</AppText><AppText variant="caption">{push.notice.body}</AppText>
         </Pressable>}
       </View>

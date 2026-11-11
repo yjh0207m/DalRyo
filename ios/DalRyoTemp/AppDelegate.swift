@@ -1,4 +1,5 @@
 import UIKit
+import FirebaseAuth
 import FirebaseCore
 import React
 import React_RCTAppDelegate
@@ -17,6 +18,15 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
   ) -> Bool {
     // GoogleService-Info.plist로 Firebase 초기화 (React Native 시작 전에 호출해야 함)
     FirebaseApp.configure()
+    if let firebase = FirebaseApp.app() {
+      let urlTypes = Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]] ?? []
+      let schemes = urlTypes.flatMap { $0["CFBundleURLSchemes"] as? [String] ?? [] }
+      let callbackScheme = "app-" + firebase.options.googleAppID.replacingOccurrences(of: ":", with: "-")
+      UserDefaults.standard.set([
+        "bundleMatchesFirebase": Bundle.main.bundleIdentifier == firebase.options.bundleID,
+        "callbackSchemeRegistered": schemes.contains(callbackScheme)
+      ], forKey: "DalRyoPhoneAuthConfig")
+    }
 
     let delegate = ReactNativeDelegate()
     let factory = RCTReactNativeFactory(delegate: delegate)
@@ -34,6 +44,15 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     )
 
     return true
+  }
+
+  func application(
+    _ application: UIApplication,
+    open url: URL,
+    options: [UIApplication.OpenURLOptionsKey: Any] = [:]
+  ) -> Bool {
+    // Forward the reCAPTCHA return URL if Firebase's delegate proxy didn't consume it.
+    return Auth.auth().canHandle(url)
   }
 }
 

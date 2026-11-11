@@ -29,12 +29,15 @@ import { usePostAuthor } from '../../hooks/usePostAuthor';
 import {
   ArrowUp,
   Ban,
+  Bell,
+  BellOff,
   Check,
   ChevronLeft,
   ChevronRight,
   LogOut,
   MessageSquare,
   MoreHorizontal,
+  Pencil,
   Plus,
   Search,
   UserRound,
@@ -66,7 +69,9 @@ import {
   mergeChatItems,
   newMessageId,
   openConversation,
+  renameGroupConversation,
   sendMessage,
+  setConversationMuted,
   watchConversation,
   watchConversations,
   watchMessages,
@@ -208,6 +213,7 @@ type GroupDraft = { uids: string[]; name: string; requestId: string };
 export function ChatScreen({
   onBack,
   initialPeer,
+  initialRoomId,
   onProfile,
   onTogether,
   onDetailChange,
@@ -216,6 +222,7 @@ export function ChatScreen({
 }: {
   onBack: () => void;
   initialPeer?: string;
+  initialRoomId?: string;
   onProfile?: (uid: string) => void;
   // 있으면 목록 맨 위에 "같이 달리기" 버튼을 보여 준다
   onTogether?: () => void;
@@ -226,7 +233,7 @@ export function ChatScreen({
   // 목록 맨 위의 뒤로 가기 버튼을 숨긴다(시스템 뒤로 가기는 그대로 동작)
   hideBack?: boolean;
 }) {
-  const [roomId, setRoomId] = useState<string | null>(null);
+  const [roomId, setRoomId] = useState<string | null>(initialRoomId ?? null);
   const [opening, setOpening] = useState(!!initialPeer);
   const [error, setError] = useState('');
   const [revision, setRevision] = useState(0);
@@ -300,7 +307,7 @@ export function ChatScreen({
   }, [revision]);
   const back = useCallback(() => {
     if (roomId) {
-      if (initialPeer) onBack();
+      if (initialPeer || initialRoomId) onBack();
       else setRoomId(null);
     } else if (choosing) {
       if (openRequest.current) return;
@@ -312,12 +319,12 @@ export function ChatScreen({
       setChoosing(false);
       setRevision(value => value + 1);
     } else onBack();
-  }, [roomId, choosing, creatingGroup, initialPeer, onBack]);
+  }, [roomId, choosing, creatingGroup, initialPeer, initialRoomId, onBack]);
   const onLeave = () => {
     if (!roomId || !alive.current) return;
     leftRooms.current.add(roomId);
     setRooms(old => old.filter(item => item.id !== roomId));
-    setRoomId(current => (current === roomId ? null : current));
+    back();
   };
   useBack(back);
   const loadMore = async () => {
@@ -445,13 +452,14 @@ export function ChatScreen({
             const group = item.kind === 'group';
             const peer = item.members.find(member => member !== uid);
             const unread = hasUnread(item, uid);
+            const muted = item.muted_by?.includes(uid);
             const title = conversationTitle(item, uid);
             return (
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={`${title} 대화${
                   unread ? ', 새 메시지' : ''
-                }`}
+                }${muted ? ', 알림 꺼짐' : ''}`}
                 onPress={() => setRoomId(item.id)}
                 style={s.roomRow}
               >
@@ -490,6 +498,7 @@ export function ChatScreen({
                     })}
                   </AppText>
                   {unread && <View style={s.unreadDot} />}
+                  {muted && <BellOff size={14} color={colors.textMuted} />}
                 </View>
               </Pressable>
             );
@@ -950,6 +959,11 @@ export function ConversationView({
     [foreground, setForeground] = useState(AppState.currentState === 'active');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
+  const [renameDraft, setRenameDraft] = useState<string | null>(null);
+  const [renameError, setRenameError] = useState('');
+  const [savingName, setSavingName] = useState(false);
+  const changingMute = useRef(false);
+  const savingNameRef = useRef(false);
   const leaving = useRef(false);
   const historyLoaded = useRef(false);
   const [atLatest, setAtLatest] = useState(true);
@@ -1166,6 +1180,44 @@ export function ConversationView({
       ],
     );
   };
+  const muted = room?.muted_by?.includes(uid) ?? false;
+  const changeMute = async () => {
+    if (changingMute.current) return;
+    changingMute.current = true;
+    try {
+      await setConversationMuted(id, !muted);
+    } catch (e) {
+      if (alive.current)
+        Alert.alert('알림 설정을 바꾸지 못했어요', chatError(e));
+    } finally {
+      changingMute.current = false;
+    }
+  };
+  const closeRename = () => {
+    if (!savingNameRef.current) setRenameDraft(null);
+  };
+  const saveName = async () => {
+    const name = renameDraft?.trim();
+    if (!name || savingNameRef.current) return;
+    savingNameRef.current = true;
+    setSavingName(true);
+    setRenameError('');
+    Keyboard.dismiss();
+    try {
+      await renameGroupConversation(id, name);
+      if (alive.current) setRenameDraft(null);
+    } catch (e) {
+      if (alive.current) setRenameError(chatError(e));
+    } finally {
+      savingNameRef.current = false;
+      if (alive.current) setSavingName(false);
+    }
+  };
+  const muteOption = {
+    label: muted ? '이 방 알림 켜기' : '이 방 알림 끄기',
+    icon: muted ? Bell : BellOff,
+    onPress: changeMute,
+  };
   const settings: ActionSheetItem[] = groupRoom
     ? [
         {
@@ -1173,6 +1225,15 @@ export function ConversationView({
           icon: Users,
           onPress: () => setMembersOpen(true),
         },
+        {
+          label: '채팅방 이름 변경',
+          icon: Pencil,
+          onPress: () => {
+            setRenameError('');
+            setRenameDraft(groupRoom.name ?? '');
+          },
+        },
+        muteOption,
         {
           label: '채팅방 나가기',
           icon: LogOut,
@@ -1190,6 +1251,7 @@ export function ConversationView({
               },
             ]
           : []),
+        muteOption,
         {
           label: room?.blocked_by.includes(uid)
             ? '대화 차단 해제'
@@ -1274,6 +1336,7 @@ export function ConversationView({
               }}
               scrollEventThrottle={150}
               data={chronological}
+              extraData={room?.read_at}
               onContentSizeChange={() => {
                 if (initialScroll.current || atLatestRef.current) {
                   initialScroll.current = false;
@@ -1300,6 +1363,14 @@ export function ConversationView({
               renderItem={({ item, index }) => {
                 const own = item.sender_uid === uid;
                 const previous = chronological[index - 1];
+                const next = chronological[index + 1];
+                const showTime =
+                  !next ||
+                  next.sender_uid !== item.sender_uid ||
+                  item.createdAt <= 0 ||
+                  next.createdAt <= 0 ||
+                  Math.floor(next.createdAt / 60000) !==
+                    Math.floor(item.createdAt / 60000);
                 const day = new Date(item.createdAt).toLocaleDateString(
                   'ko-KR',
                   {
@@ -1312,18 +1383,16 @@ export function ConversationView({
                   !previous ||
                   new Date(previous.createdAt).toDateString() !==
                     new Date(item.createdAt).toDateString();
-                const readCount =
-                  own &&
-                  index === chronological.length - 1 &&
+                const unreadCount =
                   item.createdAt > 0
                     ? (room?.members ?? []).filter(
                         member =>
-                          member !== uid &&
-                          (room?.read_at[member] ?? 0) >= item.createdAt,
+                          member !== item.sender_uid &&
+                          (room?.read_at[member] ?? 0) < item.createdAt,
                       ).length
                     : 0;
                 return (
-                  <View>
+                  <View style={s.messageItem}>
                     {showDay && (
                       <AppText
                         align="center"
@@ -1344,6 +1413,16 @@ export function ConversationView({
                       ]}
                     >
                       {!own && !groupRoom && <Avatar profile={profile} />}
+                      {own && unreadCount > 0 && (
+                        <AppText
+                          testID={`message-unread-${item.id}`}
+                          accessibilityLabel={`아직 읽지 않은 사람 ${unreadCount}명`}
+                          color={colors.primaryInk}
+                          style={s.unreadCount}
+                        >
+                          {unreadCount}
+                        </AppText>
+                      )}
                       <View
                         style={[s.bubble, own ? s.ownBubble : s.otherBubble]}
                       >
@@ -1355,24 +1434,34 @@ export function ConversationView({
                           {item.text}
                         </AppText>
                       </View>
+                      {!own && unreadCount > 0 && (
+                        <AppText
+                          testID={`message-unread-${item.id}`}
+                          accessibilityLabel={`아직 읽지 않은 사람 ${unreadCount}명`}
+                          color={colors.primaryInk}
+                          style={s.unreadCount}
+                        >
+                          {unreadCount}
+                        </AppText>
+                      )}
                     </View>
-                    <AppText
-                      variant="label"
-                      align={own ? 'right' : 'left'}
-                      color={colors.textSubtle}
-                      style={[
-                        s.messageMeta,
-                        !own && groupRoom && s.groupBubbleRow,
-                      ]}
-                    >
-                      {new Date(item.createdAt).toLocaleTimeString('ko-KR', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                      {readCount > 0
-                        ? ` · 읽음${groupRoom ? ` ${readCount}` : ''}`
-                        : ''}
-                    </AppText>
+                    {showTime && (
+                      <AppText
+                        testID={`message-time-${item.id}`}
+                        variant="label"
+                        align={own ? 'right' : 'left'}
+                        color={colors.textSubtle}
+                        style={[
+                          s.messageMeta,
+                          !own && groupRoom && s.groupBubbleRow,
+                        ]}
+                      >
+                        {new Date(item.createdAt).toLocaleTimeString('ko-KR', {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </AppText>
+                    )}
                   </View>
                 );
               }}
@@ -1449,6 +1538,53 @@ export function ConversationView({
         onClose={() => setSettingsOpen(false)}
         items={settings}
       />
+      {groupRoom && renameDraft !== null && (
+        <Modal animationType="slide" onRequestClose={closeRename}>
+          <SafeAreaView style={s.screen}>
+            <Header title="채팅방 이름 변경" onBack={closeRename} />
+            <KeyboardAvoidingView
+              style={s.grow}
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            >
+              <ScrollView keyboardShouldPersistTaps="handled">
+                <TextInput
+                  value={renameDraft}
+                  onChangeText={setRenameDraft}
+                  editable={!savingName}
+                  maxLength={40}
+                  placeholder="새 채팅방 이름"
+                  placeholderTextColor={colors.textSubtle}
+                  accessibilityLabel="새 채팅방 이름"
+                  style={s.groupName}
+                />
+                <AppText
+                  variant="caption"
+                  color={colors.textMuted}
+                  style={s.selectionLabel}
+                >
+                  변경한 이름은 모든 참여자에게 보여요.
+                </AppText>
+                {!!renameError && (
+                  <AppText
+                    accessibilityRole="alert"
+                    color={colors.danger}
+                    style={s.notice}
+                  >
+                    {renameError}
+                  </AppText>
+                )}
+                <View style={s.renameActions}>
+                  <Button
+                    label={savingName ? '저장 중…' : '저장'}
+                    disabled={savingName || !renameDraft.trim()}
+                    onPress={saveName}
+                  />
+                </View>
+              </ScrollView>
+            </KeyboardAvoidingView>
+          </SafeAreaView>
+        </Modal>
+      )}
       {groupRoom && (
         <Modal
           visible={membersOpen}
@@ -1555,6 +1691,7 @@ const s = StyleSheet.create({
     fontFamily: fonts.regular,
     fontSize: 16,
   },
+  renameActions: { paddingHorizontal: 20, paddingTop: 20 },
   selectionLabel: { marginHorizontal: 20, marginTop: 12 },
   selectedList: { paddingHorizontal: 20, paddingTop: 10, gap: 8 },
   personChip: {
@@ -1602,6 +1739,7 @@ const s = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   messageRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
+  messageItem: { marginBottom: 6 },
   ownRow: { justifyContent: 'flex-end' },
   groupSender: {
     flexDirection: 'row',
@@ -1625,7 +1763,8 @@ const s = StyleSheet.create({
     borderBottomLeftRadius: 6,
   },
   messageText: { fontSize: 15, lineHeight: 23 },
-  messageMeta: { fontSize: 10, paddingVertical: 6, marginBottom: 8 },
+  messageMeta: { fontSize: 10, paddingTop: 4, paddingBottom: 6 },
+  unreadCount: { fontSize: 11, fontFamily: fonts.semibold, paddingBottom: 2 },
   day: { paddingVertical: 14 },
   composer: {
     flexDirection: 'row',
