@@ -201,9 +201,11 @@ export const socialAction = onCall(
           'chatRead',
           'chatBlock',
           'chatLeave',
+          'chatMute',
+          'chatRename',
         ].includes(input.action)
       )
-        return await chatAction(uid, input);
+        return await chatAction(uid, input, actor.display_name);
       if (input.action === 'publicProfiles') {
         if (
           !Array.isArray(input.uids) ||

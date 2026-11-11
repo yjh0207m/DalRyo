@@ -107,6 +107,7 @@ type Props = {
 export type CommunityLink =
   | { page: 'post'; id: string }
   | { page: 'profile'; uid: string }
+  | { page: 'chat'; roomId: string }
   // 설정의 "저장한 게시물"에서 넘어올 때
   | { page: 'saved' };
 type Route =
@@ -119,7 +120,7 @@ type Route =
   | { page: 'search' }
   | { page: 'rankings' }
   | { page: 'saved' }
-  | { page: 'chat'; peer?: string };
+  | { page: 'chat'; peer?: string; roomId?: string };
 const WRITE_SIZE = 52;
 const VISIBILITY = {
   public: '전체 공개',
@@ -232,6 +233,7 @@ function CommunityContent(
       return (
         <ChatScreen
           initialPeer={route.peer}
+          initialRoomId={route.roomId}
           onBack={goBack}
           onProfile={showProfile}
         />

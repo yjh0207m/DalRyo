@@ -16,6 +16,7 @@ export type Conversation = {
   members: string[];
   profiles: Record<string, ChatProfile>;
   blocked_by: string[];
+  muted_by?: string[];
   read_at: Record<string, number>;
   last_text: string;
   last_sender_uid: string | null;
@@ -215,6 +216,12 @@ export async function createGroupConversation(
 }
 export function leaveGroupConversation(conversationId: string) {
   return socialRequest('chatLeave', { conversationId });
+}
+export function setConversationMuted(conversationId: string, muted: boolean) {
+  return socialRequest('chatMute', { conversationId, muted });
+}
+export function renameGroupConversation(conversationId: string, name: string) {
+  return socialRequest('chatRename', { conversationId, name });
 }
 export function newMessageId() {
   return firestore().collection('conversations').doc().id;

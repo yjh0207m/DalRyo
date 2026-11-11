@@ -5,6 +5,8 @@ import {
   Timestamp,
   type DocumentData,
 } from 'firebase-admin/firestore';
+import { getMessaging } from 'firebase-admin/messaging';
+import { logger } from 'firebase-functions';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { documentId, text } from './validation';
 
@@ -72,7 +74,11 @@ export function conversationId(a: string, b: string) {
     .digest('hex');
 }
 // Writes use the existing authenticated social callable. Clients only read their rooms.
-export async function chatAction(uid: string, input: Record<string, unknown>) {
+export async function chatAction(
+  uid: string,
+  input: Record<string, unknown>,
+  senderName: string,
+) {
   const db = getFirestore();
   if (input.action === 'chatOpen') {
     const peer = documentId(input.uid);
@@ -168,6 +174,33 @@ export async function chatAction(uid: string, input: Record<string, unknown>) {
   const ref = db
     .collection(group ? 'group_conversations' : 'conversations')
     .doc(id);
+  if (input.action === 'chatMute' || input.action === 'chatRename') {
+    await db.runTransaction(async tx => {
+      const room = await tx.get(ref);
+      if (!room.exists || !room.get('members').includes(uid))
+        throw new HttpsError('permission-denied', '대화에 참여할 수 없어요.');
+      if (input.action === 'chatMute') {
+        if (typeof input.muted !== 'boolean')
+          throw new HttpsError(
+            'invalid-argument',
+            '알림 설정을 확인해 주세요.',
+          );
+        tx.update(ref, {
+          muted_by: input.muted
+            ? FieldValue.arrayUnion(uid)
+            : FieldValue.arrayRemove(uid),
+        });
+      } else {
+        if (!group || room.get('kind') !== 'group')
+          throw new HttpsError(
+            'invalid-argument',
+            '그룹 채팅방의 이름만 바꿀 수 있어요.',
+          );
+        tx.update(ref, { name: text(input.name, '채팅방 이름', 1, 40) });
+      }
+    });
+    return { ok: true };
+  }
   if (input.action === 'chatLeave') {
     await db.runTransaction(async tx => {
       const room = await tx.get(ref);
@@ -183,7 +216,11 @@ export async function chatAction(uid: string, input: Record<string, unknown>) {
       const readAt = { ...room.get('read_at') };
       delete readAt[uid];
       // Keep the author snapshot for messages remaining members can still read.
-      tx.update(ref, { members: FieldValue.arrayRemove(uid), read_at: readAt });
+      tx.update(ref, {
+        members: FieldValue.arrayRemove(uid),
+        muted_by: FieldValue.arrayRemove(uid),
+        read_at: readAt,
+      });
     });
     return { ok: true };
   }
@@ -191,7 +228,7 @@ export async function chatAction(uid: string, input: Record<string, unknown>) {
     const messageId = documentId(input.messageId),
       body = text(input.text, '메시지', 1, 2000),
       message = ref.collection('messages').doc(messageId);
-    await db.runTransaction(async tx => {
+    const created = await db.runTransaction(async tx => {
       const [room, old] = await Promise.all([tx.get(ref), tx.get(message)]);
       if (!room.exists || !room.get('members').includes(uid))
         throw new HttpsError('permission-denied', '대화에 참여할 수 없어요.');
@@ -231,7 +268,57 @@ export async function chatAction(uid: string, input: Record<string, unknown>) {
         updated_at: stamp,
         read_at: { ...room.get('read_at'), [uid]: stamp },
       });
+      return true;
     });
+    if (created) {
+      // Push failure must not turn a saved message into a failed send.
+      try {
+        const room = await ref.get();
+        const muted = new Set<string>(room.get('muted_by') ?? []);
+        const recipients = ((room.get('members') ?? []) as string[]).filter(
+          member => member !== uid && !muted.has(member),
+        );
+        if (recipients.length) {
+          const users = await db.getAll(
+            ...recipients.map(member => db.doc(`users/${member}`)),
+          );
+          const tokens = [
+            ...new Set(
+              users.flatMap(doc => {
+                const user = doc.data();
+                return user?.notification_settings?.push === true &&
+                  typeof user.fcm_token === 'string' &&
+                  user.fcm_token
+                  ? [user.fcm_token]
+                  : [];
+              }),
+            ),
+          ];
+          if (tokens.length) {
+            const result = await getMessaging().sendEachForMulticast({
+              tokens,
+              notification: {
+                title: group ? room.get('name') || '그룹 채팅' : senderName,
+                body: group
+                  ? `${senderName}님이 새 메시지를 보냈어요.`
+                  : '새 메시지가 도착했어요.',
+              },
+              data: { type: 'chat', target_id: id },
+              android: { priority: 'high', notification: { sound: 'default' } },
+              apns: { payload: { aps: { sound: 'default' } } },
+            });
+            if (result.failureCount)
+              logger.warn('chat push partially failed', {
+                failures: result.failureCount,
+              });
+          }
+        }
+      } catch (error) {
+        logger.warn('chat push failed', {
+          code: (error as { code?: string })?.code,
+        });
+      }
+    }
     return { messageId };
   }
   if (input.action === 'chatRead' || input.action === 'chatBlock') {
