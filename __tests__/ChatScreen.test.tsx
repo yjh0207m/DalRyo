@@ -290,7 +290,14 @@ test('group messages show the correct authors and the menu shows participants an
     });
     mockMessageNext({
       items: [
-        { ...one, id: 'two', sender_uid: 'other', text: '반가워요' },
+        {
+          ...one,
+          id: 'two',
+          sender_uid: 'other',
+          createdAt: 1002,
+          text: '반가워요',
+        },
+        { ...one, id: 'peer-followup', createdAt: 1001, text: '같이 달려요' },
         one,
       ],
       cursor: null,
@@ -309,6 +316,7 @@ test('group messages show the correct authors and the menu shows participants an
       '반가워요',
     ]),
   );
+  expect(texts.filter(value => value === '친구')).toHaveLength(1);
   const sheet = tree.root.findByType(ActionSheet);
   expect(
     sheet.props.items.map((item: { label: string }) => item.label),
@@ -500,10 +508,24 @@ test('old messages use the current peer photo even when the room was created wit
       : undefined,
   );
   await render();
+  await act(() =>
+    mockMessageNext({
+      items: [
+        { ...one, id: 'same-minute', createdAt: 2000 },
+        { ...one, id: 'next-minute', createdAt: 61000 },
+      ],
+      cursor: null,
+      more: false,
+    }),
+  );
   expect(room.profiles.peer.profile_image).toBeNull();
-  expect(
-    tree.root.findAllByType(Image).map(image => image.props.source.uri),
-  ).toContain('https://example.test/current-peer.jpg');
+  const photos = tree.root
+    .findAllByType(Image)
+    .map(image => image.props.source.uri);
+  // One in the header, one per group of received messages.
+  expect(photos).toEqual(
+    Array(3).fill('https://example.test/current-peer.jpg'),
+  );
   (usePostAuthor as jest.Mock).mockReturnValue({
     display_name: '친구',
     profile_image: null,

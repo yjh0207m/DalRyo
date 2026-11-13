@@ -598,6 +598,17 @@ function GroupSender({ room, uid }: { room: Conversation; uid: string }) {
   );
 }
 
+function sameMessageGroup(message: ChatMessage, neighbor?: ChatMessage) {
+  return (
+    !!neighbor &&
+    neighbor.sender_uid === message.sender_uid &&
+    message.createdAt > 0 &&
+    neighbor.createdAt > 0 &&
+    Math.floor(neighbor.createdAt / 60000) ===
+      Math.floor(message.createdAt / 60000)
+  );
+}
+
 function NewChat({
   group,
   onGroup,
@@ -1364,25 +1375,14 @@ export function ConversationView({
                 const own = item.sender_uid === uid;
                 const previous = chronological[index - 1];
                 const next = chronological[index + 1];
-                const showTime =
-                  !next ||
-                  next.sender_uid !== item.sender_uid ||
-                  item.createdAt <= 0 ||
-                  next.createdAt <= 0 ||
-                  Math.floor(next.createdAt / 60000) !==
-                    Math.floor(item.createdAt / 60000);
-                const day = new Date(item.createdAt).toLocaleDateString(
-                  'ko-KR',
-                  {
-                    month: 'long',
-                    day: 'numeric',
-                    weekday: 'short',
-                  },
-                );
+                const firstInGroup = !sameMessageGroup(item, previous);
+                const showTime = !sameMessageGroup(item, next);
+                const date = new Date(item.createdAt);
                 const showDay =
                   !previous ||
                   new Date(previous.createdAt).toDateString() !==
-                    new Date(item.createdAt).toDateString();
+                    date.toDateString();
+                const showDirectAvatar = !own && !groupRoom && firstInGroup;
                 const unreadCount =
                   item.createdAt > 0
                     ? (room?.members ?? []).filter(
@@ -1392,7 +1392,7 @@ export function ConversationView({
                       ).length
                     : 0;
                 return (
-                  <View style={s.messageItem}>
+                  <View style={showTime ? s.messageGroupEnd : s.messageItem}>
                     {showDay && (
                       <AppText
                         align="center"
@@ -1400,19 +1400,24 @@ export function ConversationView({
                         color={colors.textSubtle}
                         style={s.day}
                       >
-                        {day}
+                        {date.toLocaleDateString('ko-KR', {
+                          month: 'long',
+                          day: 'numeric',
+                          weekday: 'short',
+                        })}
                       </AppText>
                     )}
-                    {!own && groupRoom && (
+                    {!own && groupRoom && firstInGroup && (
                       <GroupSender room={groupRoom} uid={item.sender_uid} />
                     )}
                     <View
-                      style={[
-                        s.messageRow,
-                        own ? s.ownRow : groupRoom && s.groupBubbleRow,
-                      ]}
+                      style={[s.messageRow, own ? s.ownRow : s.incomingIndent]}
                     >
-                      {!own && !groupRoom && <Avatar profile={profile} />}
+                      {showDirectAvatar && (
+                        <View style={s.directAvatar}>
+                          <Avatar profile={profile} compact />
+                        </View>
+                      )}
                       {own && unreadCount > 0 && (
                         <AppText
                           testID={`message-unread-${item.id}`}
@@ -1451,12 +1456,9 @@ export function ConversationView({
                         variant="label"
                         align={own ? 'right' : 'left'}
                         color={colors.textSubtle}
-                        style={[
-                          s.messageMeta,
-                          !own && groupRoom && s.groupBubbleRow,
-                        ]}
+                        style={[s.messageMeta, !own && s.incomingIndent]}
                       >
-                        {new Date(item.createdAt).toLocaleTimeString('ko-KR', {
+                        {date.toLocaleTimeString('ko-KR', {
                           hour: '2-digit',
                           minute: '2-digit',
                         })}
@@ -1739,7 +1741,8 @@ const s = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   messageRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
-  messageItem: { marginBottom: 6 },
+  messageItem: { marginBottom: 4 },
+  messageGroupEnd: { marginBottom: 10 },
   ownRow: { justifyContent: 'flex-end' },
   groupSender: {
     flexDirection: 'row',
@@ -1747,9 +1750,11 @@ const s = StyleSheet.create({
     gap: 8,
     marginBottom: 4,
   },
-  groupBubbleRow: { marginLeft: 38 },
+  incomingIndent: { marginLeft: 38 },
+  directAvatar: { position: 'absolute', left: -38, top: 0 },
   bubble: {
     maxWidth: '78%',
+    flexShrink: 1,
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 20,
@@ -1763,7 +1768,7 @@ const s = StyleSheet.create({
     borderBottomLeftRadius: 6,
   },
   messageText: { fontSize: 15, lineHeight: 23 },
-  messageMeta: { fontSize: 10, paddingTop: 4, paddingBottom: 6 },
+  messageMeta: { fontSize: 10, paddingTop: 3 },
   unreadCount: { fontSize: 11, fontFamily: fonts.semibold, paddingBottom: 2 },
   day: { paddingVertical: 14 },
   composer: {
