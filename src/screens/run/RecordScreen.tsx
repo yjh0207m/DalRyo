@@ -18,7 +18,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Footprints,
-  Route,
 } from 'lucide-react-native';
 import Svg, { Circle, Polyline } from 'react-native-svg';
 import { FINISH_COLOR, START_COLOR, routeSegments } from '../../utils/routeMap';
@@ -161,15 +160,20 @@ export function RecordScreen({
           <Card style={styles.monthHero}>
             <View style={styles.monthHeroHeading}>
               <AppText variant="label" color={colors.primaryInk}>
-                MONTHLY DISTANCE
+                이번 달 누적 거리
               </AppText>
               <Badge label={`${runsByDay.size}일 · ${runs.length}회`} />
             </View>
             <View style={styles.distance}>
-              <AppText style={styles.monthDistance} color={colors.primaryInk}>
+              <AppText
+                style={styles.monthDistance}
+                color={colors.primaryInk}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+              >
                 {summary.distanceKm.toFixed(2)}
               </AppText>
-              <AppText variant="heading" color={colors.primaryInk}>
+              <AppText variant="subheading" color={colors.textMuted}>
                 km
               </AppText>
             </View>
@@ -421,26 +425,29 @@ function RunCard({ run, onOpen }: { run: RunDocument; onOpen: () => void }) {
         <View style={styles.journalMain}>
           <View style={styles.journalMainText}>
             <View style={styles.distance}>
-              <AppText style={styles.runDistance}>
+              <AppText
+                style={styles.runDistance}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+              >
                 {run.distance_km.toFixed(2)}
               </AppText>
               <AppText variant="caption" color={colors.textMuted}>
                 km
               </AppText>
             </View>
-            <AppText variant="caption" color={colors.textMuted}>
-              {String(date.getHours()).padStart(2, '0')}:
-              {String(date.getMinutes()).padStart(2, '0')}에 남긴 발자국
+            <AppText variant="subheading" color={colors.primaryInk}>
+              {run.distance_km > 0 && run.avg_pace_sec > 0
+                ? `${formatPace(run.avg_pace_sec)} /km`
+                : '평균 페이스 —'}
             </AppText>
           </View>
-          <View
-            style={styles.routeThumb}
-            accessible
-            accessibilityLabel={
-              points.length > 1 ? 'GPS 경로 미리보기' : '저장된 GPS 경로 없음'
-            }
-          >
-            {points.length > 1 ? (
+          {points.length > 1 && (
+            <View
+              style={styles.routeThumb}
+              accessible
+              accessibilityLabel="GPS 경로 미리보기"
+            >
               <Svg width="100%" height="100%" viewBox="-8 -8 316 176">
                 {routeSegments(
                   points.map(point => [point.x, point.y] as [number, number]),
@@ -474,27 +481,22 @@ function RunCard({ run, onOpen }: { run: RunDocument; onOpen: () => void }) {
                   strokeWidth={4}
                 />
               </Svg>
-            ) : (
-              <>
-                <Route size={24} color={colors.primaryBorder} />
-                <AppText style={styles.noRoute} color={colors.textMuted}>
-                  경로 없음
-                </AppText>
-              </>
-            )}
-          </View>
+            </View>
+          )}
         </View>
         <View style={styles.journalStats}>
-          <JournalMetric
-            label="시간"
-            value={formatDuration(run.duration_sec)}
-          />
-          <JournalMetric
-            label="평균 페이스"
-            value={run.distance_km > 0 ? formatPace(run.avg_pace_sec) : '—'}
-          />
-          <JournalMetric label="칼로리" value={`${run.calories} kcal`} />
-          <ArrowUpRight size={18} color={colors.primaryInk} />
+          <AppText
+            variant="caption"
+            color={colors.textMuted}
+            style={styles.journalMainText}
+          >
+            {`${String(date.getHours()).padStart(2, '0')}:${String(
+              date.getMinutes(),
+            ).padStart(2, '0')} · ${formatDuration(run.duration_sec)} 달림 · ${
+              run.calories
+            } kcal`}
+          </AppText>
+          <ArrowUpRight size={17} color={colors.primaryInk} />
         </View>
       </Card>
     </Pressable>
@@ -505,7 +507,8 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.surface },
   content: { paddingHorizontal: spacing.xl },
   monthHero: {
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: colors.primarySoft,
+    borderWidth: 0,
     padding: 22,
     marginTop: 4,
   },
@@ -515,6 +518,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   monthDistance: {
+    flexShrink: 1,
     fontFamily: fonts.extrabold,
     fontSize: 50,
     lineHeight: 62,
@@ -550,39 +554,37 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primaryAction,
   },
   calendarCard: { marginTop: 16 },
-  journalCard: { paddingVertical: spacing.md },
+  journalCard: { paddingBottom: spacing.lg },
   journalMain: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 16,
-    marginVertical: 14,
+    marginVertical: spacing.sm,
   },
   journalMainText: { flex: 1 },
   runDistance: {
     fontFamily: fonts.bold,
-    fontSize: 37,
-    lineHeight: 46,
+    flexShrink: 1,
+    fontSize: 34,
+    lineHeight: 41,
     letterSpacing: -1.2,
     fontVariant: ['tabular-nums'],
   },
   routeThumb: {
-    width: 102,
-    height: 82,
-    borderRadius: 16,
+    width: 96,
+    height: 72,
+    borderRadius: 12,
     backgroundColor: colors.surfaceMuted,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 8,
     gap: 5,
   },
-  noRoute: { fontSize: 9, lineHeight: 12 },
   journalStats: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingTop: 14,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
+    paddingTop: spacing.xs,
   },
   section: { marginTop: spacing.lg },
   // 헤더 바로 아래 첫 줄. 부제목이 있던 때의 위쪽 여백(14)은 없앴다
@@ -661,7 +663,11 @@ const styles = StyleSheet.create({
   emptyIcon: {
     padding: spacing.sm,
   },
-  runCard: { marginBottom: spacing.md },
+  runCard: {
+    marginBottom: spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
   runHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',

@@ -1,5 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import {
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import {
   SafeAreaView,
   useSafeAreaInsets,
@@ -19,8 +26,14 @@ import {
 import { useDialect } from '../../locales/DialectProvider';
 import { LobbyCharacter } from '../../components/character/LobbyCharacter';
 import { CompanionScene } from '../../components/scene/CompanionScene';
-import { ExpBar, StreakChip } from '../../components/game/Hud';
-import { AppText, Badge, Card, IconButton } from '../../components/ui';
+import { StreakChip } from '../../components/game/Hud';
+import {
+  AppText,
+  Badge,
+  Card,
+  IconButton,
+  ProgressBar,
+} from '../../components/ui';
 import { RunRecordsStatus } from '../../components/ui/RunRecordsStatus';
 import { useRunRecords } from '../../hooks/useRunRecords';
 import { TAB_BAR_HEIGHT } from '../../navigation/BottomTabBar';
@@ -29,6 +42,7 @@ import {
   getRunStartedAtDate,
 } from '../../services/run.service';
 import { colors, fonts, radius, spacing } from '../../theme';
+import { formatDuration } from '../../utils/pace';
 import {
   CHARACTER_STAGE_ORDER,
   type CharacterDocument,
@@ -72,6 +86,7 @@ export function HomeScreen({
 }: Props) {
   const insets = useSafeAreaInsets(),
     t = useDialect();
+  const compact = useWindowDimensions().width <= 360;
   const lastRunAtMs = user?.last_run_at?.toMillis() ?? null;
   const {
     runs: weekRuns,
@@ -133,11 +148,11 @@ export function HomeScreen({
         {character && (
           <>
             <Card padded={false} style={styles.companion}>
-              <CompanionScene>
+              <CompanionScene height={compact ? 218 : undefined}>
                 <LobbyCharacter
                   type={character.character_type}
                   stage={character.stage}
-                  size={185}
+                  size={compact ? 170 : 185}
                   bubblePlacement="beside"
                   onReady={() => setCharacterDrawn(true)}
                   frozen={stoneLevel === 'stone'}
@@ -150,12 +165,13 @@ export function HomeScreen({
                 />
               </CompanionScene>
               <View pointerEvents="none" style={styles.companionHeader}>
-                <View>
-                  <AppText style={styles.eyebrow} color={colors.primaryInk}>
-                    RUNNING MATE
-                  </AppText>
-                  <AppText variant="heading">{character.pet_name}</AppText>
-                </View>
+                <AppText
+                  variant="title"
+                  numberOfLines={1}
+                  style={styles.petName}
+                >
+                  {character.pet_name}
+                </AppText>
                 <View style={styles.level}>
                   <AppText variant="label" color={colors.primaryInk}>
                     LV.{' '}
@@ -166,19 +182,13 @@ export function HomeScreen({
                 </View>
               </View>
               <View style={styles.companionFooter}>
-                <ExpBar
-                  height={4}
-                  value={
-                    character.stage === 'egg' ? 0 : next ? next.progress : 1
-                  }
-                />
                 <View style={styles.progressRow}>
                   <AppText variant="label" color={colors.textMuted}>
                     현재 {totalKm.toFixed(1)}km
                   </AppText>
                   <AppText
-                    variant="label"
-                    color={colors.textMuted}
+                    variant="subheading"
+                    color={colors.primaryInk}
                     style={styles.progressLabel}
                   >
                     {character.stage === 'egg'
@@ -190,6 +200,13 @@ export function HomeScreen({
                       : '함께 완성한 멋진 달리너'}
                   </AppText>
                 </View>
+                <ProgressBar
+                  height={5}
+                  trackColor={colors.primaryBorder}
+                  value={
+                    character.stage === 'egg' ? 0 : next ? next.progress : 1
+                  }
+                />
               </View>
             </Card>
             <View style={styles.shortcuts}>
@@ -241,7 +258,7 @@ export function HomeScreen({
         )}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <AppText variant="subheading">오늘의 러닝</AppText>
+            <AppText variant="heading">오늘의 러닝</AppText>
             <AppText variant="label" color={colors.textMuted}>
               {now.getMonth() + 1}.{String(now.getDate()).padStart(2, '0')}{' '}
               {WEEK_LABELS[todayIndex]}
@@ -258,7 +275,12 @@ export function HomeScreen({
                   달린 거리
                 </AppText>
                 <View style={styles.valueRow}>
-                  <AppText style={styles.distance} color={colors.primaryInk}>
+                  <AppText
+                    style={styles.distance}
+                    color={colors.primaryInk}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                  >
                     {today.distanceKm.toFixed(2)}
                   </AppText>
                   <AppText variant="caption" color={colors.textMuted}>
@@ -270,18 +292,28 @@ export function HomeScreen({
                 <AppText variant="label" color={colors.textMuted}>
                   시간
                 </AppText>
-                <AppText variant="number" color={colors.text}>
-                  {Math.round(today.durationSec / 60)}
+                <AppText
+                  variant="subheading"
+                  style={styles.summaryNumber}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                >
+                  {formatDuration(today.durationSec)}
                 </AppText>
                 <AppText variant="label" color={colors.textMuted}>
-                  min
+                  분:초
                 </AppText>
               </View>
               <View style={styles.smallMetric}>
                 <AppText variant="label" color={colors.textMuted}>
                   칼로리
                 </AppText>
-                <AppText variant="number" color={colors.text}>
+                <AppText
+                  variant="subheading"
+                  style={styles.summaryNumber}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                >
                   {today.calories}
                 </AppText>
                 <AppText variant="label" color={colors.textMuted}>
@@ -292,9 +324,9 @@ export function HomeScreen({
           )}
         </View>
         {status === 'success' && (
-          <Card tone="flat" padded={false} style={styles.section}>
+          <Card tone="flat" padded={false} style={styles.weekSection}>
             <View style={styles.sectionHeader}>
-              <AppText variant="subheading">이번 주의 발자국</AppText>
+              <AppText variant="heading">이번 주의 발자국</AppText>
               <Badge
                 label={`${Math.min(
                   ranDays.size,
@@ -457,13 +489,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
+    gap: spacing.sm,
   },
-  eyebrow: {
-    fontFamily: fonts.semibold,
-    fontSize: 9,
-    lineHeight: 15,
-    letterSpacing: 1.5,
-  },
+  petName: { flex: 1 },
   level: {
     backgroundColor: colors.surface,
     paddingHorizontal: 10,
@@ -472,21 +500,22 @@ const styles = StyleSheet.create({
   },
   companionFooter: {
     paddingHorizontal: 18,
-    paddingTop: 12,
+    paddingTop: 14,
     paddingBottom: 14,
     gap: 9,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceMuted,
   },
   shortcuts: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.md },
   shortcut: {
     flex: 1,
     minHeight: 76,
     alignItems: 'center',
-    justifyContent: 'center',
+    paddingTop: spacing.sm,
     gap: 6,
   },
   shortcutPressed: { backgroundColor: colors.surfaceMuted },
   section: { marginTop: 24 },
+  weekSection: { marginTop: spacing.lg },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -497,7 +526,7 @@ const styles = StyleSheet.create({
   todayCard: {
     paddingVertical: spacing.sm,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 14,
   },
   distanceMetric: { flex: 1.4, gap: 6 },
@@ -518,6 +547,11 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   smallMetric: { flex: 0.8, gap: 3 },
+  summaryNumber: {
+    fontSize: 21,
+    lineHeight: 26,
+    fontVariant: ['tabular-nums'],
+  },
   weekRow: { flexDirection: 'row', justifyContent: 'space-between' },
   weekDay: { alignItems: 'center', gap: 10 },
   weekDot: {

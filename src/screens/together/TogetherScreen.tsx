@@ -446,13 +446,7 @@ export function TogetherScreen({
           disabled={busy}
           onPress={back}
         />
-        <AppText
-          variant="label"
-          color={colors.textMuted}
-          style={styles.eyebrow}
-        >
-          TOGETHER RUN
-        </AppText>
+        <View style={styles.grow} />
         {room && (
           <Button
             label="나가기"
@@ -505,9 +499,6 @@ export function TogetherScreen({
             !roomId && (
               <View style={styles.hero}>
                 <TrackMark />
-                <AppText variant="label" color={colors.primaryInk}>
-                  친구와 함께하는 러닝
-                </AppText>
                 <AppText variant="title" style={styles.heroTitle}>
                   같이 달리기
                 </AppText>
@@ -705,7 +696,7 @@ export function TogetherScreen({
               )}
 
               {friends.length > 0 && (
-                <View style={styles.section}>
+                <View style={[styles.section, styles.setupSection]}>
                   <AppText variant="heading">러닝 설정</AppText>
                   <View style={styles.row}>
                     <View style={styles.grow}>
@@ -778,7 +769,14 @@ export function TogetherScreen({
             </>
           )}
         </ScrollView>
-        {!!footer && <View style={styles.footer}>{footer}</View>}
+        {!!footer && (
+          <View style={styles.footer}>
+            {!roomId && selected.length > 0 && (
+              <SelectedFriends friends={friends} selected={selected} />
+            )}
+            {footer}
+          </View>
+        )}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -816,6 +814,43 @@ function TrackMark() {
           ]}
         />
       ))}
+    </View>
+  );
+}
+
+function SelectedFriends({
+  friends,
+  selected,
+}: {
+  friends: RoomFriend[];
+  selected: string[];
+}) {
+  const people = friends.filter(friend => selected.includes(friend.uid));
+  if (!people.length) return null;
+  const shown = people.slice(0, 3);
+  const remaining = people.length - shown.length;
+  return (
+    <View style={styles.selectedSummary}>
+      <View
+        style={styles.selectedAvatars}
+        importantForAccessibility="no-hide-descendants"
+        accessibilityElementsHidden
+      >
+        {shown.map(friend => (
+          <RunnerAvatar key={friend.uid} uri={friend.profile_image} size={28} />
+        ))}
+      </View>
+      <AppText
+        variant="caption"
+        style={styles.grow}
+        numberOfLines={2}
+        accessibilityLabel={`초대할 친구 ${people
+          .map(friend => friend.display_name)
+          .join(', ')}`}
+      >
+        {shown.map(friend => friend.display_name).join(', ')}
+        {remaining > 0 ? ` 외 ${remaining}명` : ''}
+      </AppText>
     </View>
   );
 }
@@ -996,7 +1031,6 @@ const styles = StyleSheet.create({
     minHeight: 52,
     gap: spacing.xs,
   },
-  eyebrow: { flex: 1, letterSpacing: 1.8 },
   content: { gap: spacing.xxl, paddingBottom: spacing.xxl },
   feedback: { marginHorizontal: spacing.xl },
   hero: {
@@ -1030,6 +1064,7 @@ const styles = StyleSheet.create({
     borderColor: colors.primaryBorder,
   },
   section: { paddingHorizontal: spacing.xl, gap: spacing.sm },
+  setupSection: { gap: spacing.md },
   sectionHeading: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1042,11 +1077,21 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
+    gap: spacing.sm,
   },
+  selectedSummary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  selectedAvatars: { flexDirection: 'row', gap: spacing.xs },
   input: {
     minHeight: 48,
     marginTop: spacing.xs,
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: colors.background,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
     borderRadius: 12,
     paddingHorizontal: spacing.md,
     color: colors.text,
@@ -1061,7 +1106,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     minHeight: 48,
     marginTop: spacing.xs,
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: colors.background,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
     borderRadius: 12,
     paddingHorizontal: spacing.md,
   },
