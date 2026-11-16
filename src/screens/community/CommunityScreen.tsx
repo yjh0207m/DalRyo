@@ -1014,24 +1014,33 @@ export function PostCard({
             <View style={styles.runTileTop}>
               <Footprints size={20} color={colors.primaryInk} />
               <AppText variant="label" color={colors.primaryInk}>
-                MY RUNNING LOG
+                공유한 러닝 기록
               </AppText>
             </View>
             <View style={styles.runTileDistance}>
-              <AppText style={styles.runTileNumber}>
+              <AppText
+                style={styles.runTileNumber}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+              >
                 {(post.distance_km ?? 0).toFixed(2)}
               </AppText>
               <AppText variant="heading" color={colors.primaryInk}>
                 km
               </AppText>
             </View>
-            <AppText color={colors.primaryInk}>
-              나의 속도로 채운 오늘의 한 걸음.
-            </AppText>
-            <AppText variant="caption" color={colors.primaryInk}>
-              {formatPace(post.avg_pace_sec ?? 0)} /km · {post.calories ?? 0}{' '}
-              kcal
-            </AppText>
+            <View style={styles.runTileStats}>
+              {!!post.avg_pace_sec && (
+                <AppText variant="subheading" color={colors.primaryInk}>
+                  {formatPace(post.avg_pace_sec)} /km
+                </AppText>
+              )}
+              {post.calories != null && (
+                <AppText variant="caption" color={colors.textMuted}>
+                  {post.calories} kcal
+                </AppText>
+              )}
+            </View>
           </View>
         ) : (
           <View style={styles.textPost}>
@@ -1048,8 +1057,8 @@ export function PostCard({
           <View style={styles.attachedRun}>
             <Footprints color={colors.primaryInk} size={16} />
             <AppText variant="caption" color={colors.primaryInk}>
-              {(post.distance_km ?? 0).toFixed(2)} km ·{' '}
-              {formatPace(post.avg_pace_sec ?? 0)} /km
+              {(post.distance_km ?? 0).toFixed(2)} km
+              {!!post.avg_pace_sec && ` · ${formatPace(post.avg_pace_sec)} /km`}
             </AppText>
           </View>
         )}
@@ -1100,40 +1109,45 @@ export function PostCard({
           />
         </Pressable>
       </View>
-      <View style={styles.postCaption}>
-        <AppText variant="label">
-          {post.like_count > 0
-            ? `응원 ${post.like_count}개`
-            : '첫 응원을 보내보세요'}
-        </AppText>
-        {hasMedia && !!post.text && (
-          <Pressable
-            accessibilityRole={detail ? undefined : 'button'}
-            disabled={detail}
-            onPress={onOpen}
-          >
-            <AppText
-              style={styles.captionText}
-              numberOfLines={detail ? undefined : 3}
-              selectable={detail}
+      {((hasMedia && !!post.text) ||
+        post.like_count > 0 ||
+        post.comment_count > 0) && (
+        <View style={styles.postCaption}>
+          {hasMedia && !!post.text && (
+            <Pressable
+              accessibilityRole={detail ? undefined : 'button'}
+              disabled={detail}
+              onPress={onOpen}
             >
-              <AppText variant="subheading">{authorName} </AppText>
-              {post.text}
-            </AppText>
-          </Pressable>
-        )}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="댓글 모두 보기"
-          onPress={onComments}
-        >
-          <AppText variant="caption" color={colors.textMuted}>
-            {post.comment_count > 0
-              ? `댓글 ${post.comment_count}개 모두 보기`
-              : '댓글로 응원을 남겨 보세요'}
-          </AppText>
-        </Pressable>
-      </View>
+              <AppText
+                style={styles.captionText}
+                numberOfLines={detail ? undefined : 3}
+                selectable={detail}
+              >
+                {post.text}
+              </AppText>
+            </Pressable>
+          )}
+          {(post.like_count > 0 || post.comment_count > 0) && (
+            <View style={styles.postCounts}>
+              {post.like_count > 0 && (
+                <AppText variant="label">{`응원 ${post.like_count}개`}</AppText>
+              )}
+              {post.comment_count > 0 && (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="댓글 모두 보기"
+                  onPress={onComments}
+                >
+                  <AppText variant="caption" color={colors.textMuted}>
+                    {`댓글 ${post.comment_count}개 모두 보기`}
+                  </AppText>
+                </Pressable>
+              )}
+            </View>
+          )}
+        </View>
+      )}
     </View>
   );
 }
@@ -2366,8 +2380,8 @@ const styles = StyleSheet.create({
   },
   post: {
     backgroundColor: colors.surface,
-    marginBottom: spacing.sm,
-    paddingBottom: spacing.lg,
+    marginBottom: spacing.xs,
+    paddingBottom: spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
@@ -2412,15 +2426,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: spacing.lg,
-    paddingVertical: 14,
+    paddingVertical: spacing.sm,
     gap: 8,
   },
   postActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingTop: 4,
-    gap: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    gap: 2,
   },
   socialIcon: {
     width: 44,
@@ -2429,18 +2443,31 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   postCaption: { paddingHorizontal: spacing.lg, gap: 7 },
+  postCounts: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
   captionText: { fontSize: 14, lineHeight: 21 },
   postAuthorName: { fontSize: 15, lineHeight: 21 },
   postMeta: { fontSize: 12, lineHeight: 16 },
   runTile: {
-    padding: 28,
-    gap: 16,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.xxl,
+    gap: spacing.md,
     backgroundColor: colors.primarySoft,
-    minHeight: 250,
   },
   runTileTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   runTileDistance: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
+  runTileStats: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'baseline',
+    gap: spacing.md,
+  },
   runTileNumber: {
+    flexShrink: 1,
     fontFamily: fonts.extrabold,
     fontSize: 62,
     lineHeight: 74,
@@ -2461,7 +2488,7 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.sm,
   },
   textPostBody: {
-    fontFamily: fonts.medium,
+    fontFamily: fonts.regular,
     fontSize: 16,
     lineHeight: 24,
     letterSpacing: -0.2,

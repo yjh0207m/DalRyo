@@ -104,7 +104,8 @@ test('the greeting block is gone: no headline and no subtitle with the name', ()
 
 test('the running mate card shows the name and level without a speech line', () => {
   const all = texts();
-  expect(all).toContain('RUNNING MATE');
+  expect(all).not.toContain('RUNNING MATE');
+  expect(all).toContain('LV. 02');
   expect(all).toContain('달료');
   expect(all.some(text => text.startsWith('home.'))).toBe(false);
 });
@@ -218,7 +219,7 @@ describe('shortcuts under the character card', () => {
 
   test('they come right after the character card and before today’s run', () => {
     const all = texts();
-    expect(all.indexOf('RUNNING MATE')).toBeLessThan(all.indexOf('아이템'));
+    expect(all.indexOf('LV. 02')).toBeLessThan(all.indexOf('아이템'));
     expect(all.indexOf('퀘스트')).toBeLessThan(all.indexOf('오늘의 러닝'));
   });
 

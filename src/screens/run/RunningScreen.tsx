@@ -224,8 +224,8 @@ export function RunningScreen({
       </View>
       <Card style={[styles.stats, compact && styles.compactStats]}>
         <View style={styles.cardHeading}>
-          <AppText style={styles.eyebrow} color={colors.textMuted}>
-            DISTANCE
+          <AppText variant="label" color={colors.textMuted}>
+            달린 거리
           </AppText>
           <AppText
             variant="label"
@@ -233,8 +233,7 @@ export function RunningScreen({
             numberOfLines={1}
             style={styles.contextTitle}
           >
-            {contextLabel ??
-              (paused ? '잠깐 쉬어 가도 괜찮아요' : '나의 속도로 달리는 중')}
+            {contextLabel}
           </AppText>
         </View>
         <View style={styles.heroValue}>
@@ -255,19 +254,16 @@ export function RunningScreen({
             value={formatDuration(session.elapsedSec)}
             unit="분:초"
           />
-          <View style={styles.divider} />
           <Stat
             label="현재 페이스"
             value={currentPaceSec > 0 ? formatPace(currentPaceSec) : '—'}
             unit="/km"
           />
-          <View style={styles.divider} />
           <Stat
             label="평균 페이스"
             value={paceSec > 0 ? formatPace(paceSec) : `—`}
             unit="/km"
           />
-          <View style={styles.divider} />
           <Stat label="칼로리" value={String(session.calories)} unit="kcal" />
         </View>
         {progress !== null && (
@@ -346,11 +342,6 @@ export function RunningScreen({
               </View>
             </RunningWorld>
           )}
-          {worldHeight >= 190 && (
-            <View pointerEvents="none" style={styles.sceneCaption}>
-              <FootstepLabel paused={paused} />
-            </View>
-          )}
         </View>
       )}
       <View style={[styles.controlDock, { paddingBottom: insets.bottom + 16 }]}>
@@ -418,14 +409,6 @@ export function RunningScreen({
     </View>
   );
 }
-function FootstepLabel({ paused }: { paused: boolean }) {
-  return (
-    <AppText style={styles.sceneLabel} color={colors.primaryInk}>
-      {paused ? 'TAKE A BREATH' : 'ONE STEP AT A TIME'}
-    </AppText>
-  );
-}
-
 // 1km를 넘길 때마다, 그리고 목표를 처음 달성했을 때 캐릭터가 잠깐 응원한다
 const CHEER_MS = 3500;
 function useCheer(
@@ -540,12 +523,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  eyebrow: {
-    fontFamily: fonts.semibold,
-    fontSize: 10,
-    lineHeight: 15,
-    letterSpacing: 1.8,
-  },
   heroValue: {
     flexDirection: 'row',
     alignItems: 'baseline',
@@ -580,18 +557,13 @@ const styles = StyleSheet.create({
   statLabel: { fontSize: 11, lineHeight: 16, maxWidth: '100%' },
   statNumber: {
     fontFamily: fonts.bold,
-    fontSize: 21,
-    lineHeight: 28,
+    fontSize: 24,
+    lineHeight: 30,
     letterSpacing: -0.6,
     fontVariant: ['tabular-nums'],
     maxWidth: '100%',
   },
-  statUnit: { fontSize: 10, lineHeight: 14 },
-  divider: {
-    height: 36,
-    width: StyleSheet.hairlineWidth,
-    backgroundColor: colors.border,
-  },
+  statUnit: { fontSize: 11, lineHeight: 15 },
   progress: { marginTop: 18, gap: 9 },
   ground: { flex: 1, minHeight: 0 },
   character: {
@@ -600,19 +572,6 @@ const styles = StyleSheet.create({
     marginTop: -CHARACTER_SIZE * 0.82,
   },
   cheer: { bottom: CHARACTER_SIZE * 0.98 },
-  sceneCaption: {
-    position: 'absolute',
-    top: 14,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-  },
-  sceneLabel: {
-    fontFamily: fonts.semibold,
-    fontSize: 9,
-    lineHeight: 14,
-    letterSpacing: 2.2,
-  },
   controlDock: {
     backgroundColor: colors.surface,
     borderTopLeftRadius: 28,

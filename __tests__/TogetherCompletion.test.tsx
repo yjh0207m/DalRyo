@@ -302,7 +302,7 @@ test('the friend picker shows profile photos and keeps selections when searching
     await act(() => search.props.onChangeText('민수'));
     expect(
       tree.root.findAllByType(Image).map(node => node.props.source.uri),
-    ).toEqual(['https://example.test/b.jpg']);
+    ).toEqual(['https://example.test/b.jpg', 'https://example.test/a.jpg']);
     await act(() => select('민수'));
     expect(
       tree.root.findByProps({ label: '2명에게 요청 보내기' }).props.disabled,
