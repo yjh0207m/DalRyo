@@ -27,13 +27,7 @@ import { useDialect } from '../../locales/DialectProvider';
 import { LobbyCharacter } from '../../components/character/LobbyCharacter';
 import { CompanionScene } from '../../components/scene/CompanionScene';
 import { StreakChip } from '../../components/game/Hud';
-import {
-  AppText,
-  Badge,
-  Card,
-  IconButton,
-  ProgressBar,
-} from '../../components/ui';
+import { AppText, Card, IconButton, ProgressBar } from '../../components/ui';
 import { RunRecordsStatus } from '../../components/ui/RunRecordsStatus';
 import { useRunRecords } from '../../hooks/useRunRecords';
 import { TAB_BAR_HEIGHT } from '../../navigation/BottomTabBar';
@@ -207,6 +201,35 @@ export function HomeScreen({
                     character.stage === 'egg' ? 0 : next ? next.progress : 1
                   }
                 />
+                {stoneLevel !== 'none' && (
+                  <View style={styles.notice}>
+                    {stoneLevel === 'stone' ? (
+                      <Mountain color={colors.textMuted} size={22} />
+                    ) : (
+                      <Snowflake color={colors.accentInk} size={22} />
+                    )}
+                    <View style={styles.flex}>
+                      <AppText variant="subheading">
+                        {t(
+                          stoneLevel === 'stone'
+                            ? 'char.stone'
+                            : stoneLevel === 'warn3'
+                            ? 'char.warn3'
+                            : 'char.warn5',
+                        )}
+                      </AppText>
+                      <AppText variant="caption" color={colors.textMuted}>
+                        {t(
+                          stoneLevel === 'stone'
+                            ? 'char.stoneBody'
+                            : stoneLevel === 'warn3'
+                            ? 'char.warn3Body'
+                            : 'char.warn5Body',
+                        )}
+                      </AppText>
+                    </View>
+                  </View>
+                )}
               </View>
             </Card>
             <View style={styles.shortcuts}>
@@ -224,38 +247,6 @@ export function HomeScreen({
             </View>
           </>
         )}
-        {stoneLevel !== 'none' && (
-          <Card
-            tone={stoneLevel === 'stone' ? 'stone' : 'warm'}
-            style={styles.notice}
-          >
-            {stoneLevel === 'stone' ? (
-              <Mountain color={colors.textMuted} size={22} />
-            ) : (
-              <Snowflake color={colors.accentInk} size={22} />
-            )}
-            <View style={styles.flex}>
-              <AppText variant="subheading">
-                {t(
-                  stoneLevel === 'stone'
-                    ? 'char.stone'
-                    : stoneLevel === 'warn3'
-                    ? 'char.warn3'
-                    : 'char.warn5',
-                )}
-              </AppText>
-              <AppText variant="caption" color={colors.textMuted}>
-                {t(
-                  stoneLevel === 'stone'
-                    ? 'char.stoneBody'
-                    : stoneLevel === 'warn3'
-                    ? 'char.warn3Body'
-                    : 'char.warn5Body',
-                )}
-              </AppText>
-            </View>
-          </Card>
-        )}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <AppText variant="heading">오늘의 러닝</AppText>
@@ -268,6 +259,10 @@ export function HomeScreen({
             <Card tone="flat" padded={false}>
               <RunRecordsStatus status={status} onRetry={retry} />
             </Card>
+          ) : today.count === 0 ? (
+            <AppText color={colors.textMuted}>
+              오늘의 첫 달리기를 시작해 보세요.
+            </AppText>
           ) : (
             <View style={styles.todayCard}>
               <View style={styles.distanceMetric}>
@@ -327,12 +322,16 @@ export function HomeScreen({
           <Card tone="flat" padded={false} style={styles.weekSection}>
             <View style={styles.sectionHeader}>
               <AppText variant="heading">이번 주의 발자국</AppText>
-              <Badge
-                label={`${Math.min(
+              <AppText
+                variant="label"
+                color={colors.primaryInk}
+                numberOfLines={1}
+              >
+                {`${Math.min(
                   ranDays.size,
                   WEEKLY_GOAL_DAYS,
                 )} / ${WEEKLY_GOAL_DAYS}일`}
-              />
+              </AppText>
             </View>
             <View style={styles.weekRow}>
               {WEEK_LABELS.map((day, index) => {
@@ -392,7 +391,7 @@ function getWeekStreak(ranDays: Set<number>, todayIndex: number) {
 
 function summarizeWeek(runs: RunDocument[]) {
   const now = new Date();
-  const today = { distanceKm: 0, durationSec: 0, calories: 0 };
+  const today = { count: 0, distanceKm: 0, durationSec: 0, calories: 0 };
   const ranDays = new Set<number>();
 
   runs.forEach(run => {
@@ -400,6 +399,7 @@ function summarizeWeek(runs: RunDocument[]) {
     ranDays.add((startedAt.getDay() + 6) % 7);
 
     if (startedAt.toDateString() === now.toDateString()) {
+      today.count += 1;
       today.distanceKm += run.distance_km;
       today.durationSec += run.duration_sec;
       today.calories += run.calories;
@@ -579,7 +579,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    marginTop: 16,
+    marginTop: spacing.xs,
+    paddingTop: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
   },
   flex: { flex: 1 },
 });

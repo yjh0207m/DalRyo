@@ -102,6 +102,22 @@ test('the greeting block is gone: no headline and no subtitle with the name', ()
   expect(all).not.toContain('유조현');
 });
 
+test('a day without runs shows the start hint even when earlier runs exist', async () => {
+  mockRuns.mockReturnValue(mockRuns().slice(0, 1));
+  await act(() =>
+    tree.update(
+      <HomeScreen
+        user={user}
+        character={character}
+        onNotificationPress={jest.fn()}
+        onSettingsPress={jest.fn()}
+      />,
+    ),
+  );
+  expect(texts()).toContain('오늘의 첫 달리기를 시작해 보세요.');
+  expect(texts()).not.toContain('0.00');
+});
+
 test('the running mate card shows the name and level without a speech line', () => {
   const all = texts();
   expect(all).not.toContain('RUNNING MATE');

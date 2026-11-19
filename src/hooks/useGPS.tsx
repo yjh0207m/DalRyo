@@ -66,6 +66,7 @@ export function useGPS(onFix: (fix: GpsFix) => void) {
         if (accuracy > MAX_ACCURACY_M) {
           return;
         }
+        setStatus('tracking');
         onFixRef.current({
           lat: latitude,
           lng: longitude,
@@ -75,7 +76,7 @@ export function useGPS(onFix: (fix: GpsFix) => void) {
           receivedAt: Date.now(),
         });
       },
-      () => setStatus('error'),
+      error => setStatus(error.code === error.PERMISSION_DENIED ? 'denied' : 'error'),
       {enableHighAccuracy: true, distanceFilter: 3, interval: 1000, fastestInterval: 1000},
     );
     setStatus('tracking');
