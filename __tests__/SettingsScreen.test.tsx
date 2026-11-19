@@ -441,7 +441,7 @@ describe('saved posts', () => {
     });
     await press('저장한 게시물');
     expect(onOpenSaved).toHaveBeenCalledTimes(1);
-    expect(texts()).toContain('북마크한 게시물을 모아 봐요');
+    expect(texts()).toContain('커뮤니티');
   });
 
   test('are not offered when nothing handles them', async () => {
