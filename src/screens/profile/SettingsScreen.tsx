@@ -32,7 +32,7 @@ import {
   type LucideIcon,
 } from 'lucide-react-native';
 import type { Asset } from 'react-native-image-picker';
-import { AppText, Button, Card, IconButton } from '../../components/ui';
+import { AppText, Button, IconButton } from '../../components/ui';
 import { createTranslator } from '../../locales/translate';
 import { SlideScreen } from '../../navigation/slide';
 import { saveAccount } from '../../services/account.service';
@@ -80,7 +80,7 @@ const SECTION_ICON: Record<Section, LucideIcon> = {
   region: MapPin,
   dialect: MessageCircle,
 };
-const SECTIONS: Section[] = ['profile', 'notifications', 'region', 'dialect'];
+const PREFERENCE_SECTIONS = ['notifications', 'region', 'dialect'] as const;
 const PROFILE_KEYS = [
   'displayName',
   'userId',
@@ -400,8 +400,21 @@ export function SettingsScreen({
       return (
         <>
           {NOTIFICATION_LABELS.map(([key, label]) => (
-            <View key={key} style={styles.switchRow}>
-              <AppText>{label}</AppText>
+            <View
+              key={key}
+              style={[styles.switchRow, key === 'push' && styles.masterSwitch]}
+            >
+              <AppText
+                variant="subheading"
+                color={
+                  key !== 'push' && !notifications.push
+                    ? colors.textMuted
+                    : colors.text
+                }
+                style={styles.flex}
+              >
+                {label}
+              </AppText>
               <Switch
                 accessibilityLabel={label}
                 value={notifications[key]}
@@ -415,7 +428,11 @@ export function SettingsScreen({
               />
             </View>
           ))}
-          <AppText variant="caption" color={colors.textMuted}>
+          <AppText
+            variant="caption"
+            color={colors.textMuted}
+            style={styles.fieldLabel}
+          >
             앱 안의 알림 목록은 푸시 설정과 관계없이 확인할 수 있어요.
           </AppText>
         </>
@@ -499,6 +516,9 @@ export function SettingsScreen({
         error={section ? null : error}
         saved={saved}
         summary={summary}
+        profileName={initial.displayName}
+        petName={initialPetName}
+        profileImage={initialImage}
         onOpen={open}
         onBack={onBack}
         onSignOut={requestSignOut}
@@ -522,6 +542,9 @@ function List({
   error,
   saved,
   summary,
+  profileName,
+  petName,
+  profileImage,
   onOpen,
   onBack,
   onSignOut,
@@ -534,6 +557,9 @@ function List({
   error: string | null;
   saved: boolean;
   summary: Record<Section, string>;
+  profileName: string;
+  petName: string;
+  profileImage: string | null;
   onOpen: (section: Section) => void;
   onBack: () => void;
   onSignOut: () => void;
@@ -580,104 +606,91 @@ function List({
             설정을 저장했어요.
           </AppText>
         )}
-        <Card style={styles.listCard} padded={false}>
-          {SECTIONS.map((section, index) => {
-            const Icon = SECTION_ICON[section];
-            return (
-              <Pressable
-                key={section}
-                accessibilityRole="button"
-                accessibilityLabel={`${SECTION_TITLE[section]}, ${summary[section]}`}
-                disabled={busy}
-                onPress={() => onOpen(section)}
-                style={({ pressed }) => [
-                  styles.listRow,
-                  index < SECTIONS.length - 1 && styles.listDivider,
-                  pressed && styles.listPressed,
-                ]}
-              >
-                <View style={styles.listIcon}>
-                  <Icon color={colors.primaryInk} size={20} strokeWidth={2} />
-                </View>
-                <View style={styles.flex}>
-                  <AppText variant="subheading">
-                    {SECTION_TITLE[section]}
-                  </AppText>
-                  <AppText
-                    variant="caption"
-                    color={colors.textMuted}
-                    numberOfLines={1}
-                  >
-                    {summary[section]}
-                  </AppText>
-                </View>
-                <ChevronRight color={colors.textSubtle} size={18} />
-              </Pressable>
-            );
-          })}
-        </Card>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`내 프로필, ${summary.profile}`}
+          disabled={busy}
+          onPress={() => onOpen('profile')}
+          style={({ pressed }) => [
+            styles.profileEntry,
+            pressed && styles.profilePressed,
+          ]}
+        >
+          {profileImage ? (
+            <Image
+              source={{ uri: profileImage }}
+              style={styles.profileAvatar}
+            />
+          ) : (
+            <View style={[styles.profileAvatar, styles.photoPlaceholder]}>
+              <UserRound color={colors.primaryInk} size={25} />
+            </View>
+          )}
+          <View style={styles.flex}>
+            <AppText variant="label" color={colors.primaryInk}>
+              내 프로필
+            </AppText>
+            <AppText variant="heading" numberOfLines={1}>
+              {profileName}
+            </AppText>
+            <AppText
+              variant="caption"
+              color={colors.textMuted}
+              numberOfLines={1}
+            >
+              캐릭터 · {petName}
+            </AppText>
+          </View>
+          <ChevronRight color={colors.primaryInk} size={20} />
+        </Pressable>
+        <View style={styles.listGroup}>
+          <AppText
+            variant="label"
+            color={colors.textMuted}
+            accessibilityRole="header"
+            style={styles.groupTitle}
+          >
+            앱 환경
+          </AppText>
+          {PREFERENCE_SECTIONS.map(item => (
+            <SettingsRow
+              key={item}
+              icon={SECTION_ICON[item]}
+              label={SECTION_TITLE[item]}
+              value={summary[item]}
+              active={item === 'notifications' && summary[item] === '켜짐'}
+              disabled={busy}
+              onPress={() => onOpen(item)}
+            />
+          ))}
+        </View>
         {(onOpenSaved || onOpenBlocked) && (
-          <Card style={styles.listCard} padded={false}>
+          <View style={styles.listGroup}>
+            <AppText
+              variant="label"
+              color={colors.textMuted}
+              accessibilityRole="header"
+              style={styles.groupTitle}
+            >
+              커뮤니티
+            </AppText>
             {onOpenSaved && (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="저장한 게시물"
+              <SettingsRow
+                icon={Bookmark}
+                label="저장한 게시물"
                 disabled={busy}
                 onPress={onOpenSaved}
-                style={({ pressed }) => [
-                  styles.listRow,
-                  !!onOpenBlocked && styles.listDivider,
-                  pressed && styles.listPressed,
-                ]}
-              >
-                <View style={styles.listIcon}>
-                  <Bookmark
-                    color={colors.primaryInk}
-                    size={20}
-                    strokeWidth={2}
-                  />
-                </View>
-                <View style={styles.flex}>
-                  <AppText variant="subheading">저장한 게시물</AppText>
-                  <AppText
-                    variant="caption"
-                    color={colors.textMuted}
-                    numberOfLines={1}
-                  >
-                    북마크한 게시물을 모아 봐요
-                  </AppText>
-                </View>
-                <ChevronRight color={colors.textSubtle} size={18} />
-              </Pressable>
+              />
             )}
             {onOpenBlocked && (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="차단한 사용자"
+              <SettingsRow
+                icon={Ban}
+                label="차단한 사용자"
                 disabled={busy}
                 onPress={onOpenBlocked}
-                style={({ pressed }) => [
-                  styles.listRow,
-                  pressed && styles.listPressed,
-                ]}
-              >
-                <View style={styles.listIcon}>
-                  <Ban color={colors.primaryInk} size={20} strokeWidth={2} />
-                </View>
-                <View style={styles.flex}>
-                  <AppText variant="subheading">차단한 사용자</AppText>
-                  <AppText
-                    variant="caption"
-                    color={colors.textMuted}
-                    numberOfLines={1}
-                  >
-                    차단을 확인하고 해제해요
-                  </AppText>
-                </View>
-                <ChevronRight color={colors.textSubtle} size={18} />
-              </Pressable>
+              />
             )}
-          </Card>
+          </View>
         )}
         {error && (
           <AppText
@@ -692,14 +705,23 @@ function List({
         {busy && (
           <ActivityIndicator color={colors.primary} style={styles.message} />
         )}
-        <Button
-          label="로그아웃"
-          icon={LogOut}
-          variant="ghost"
-          onPress={onSignOut}
-          disabled={busy}
-          style={styles.section}
-        />
+        <View style={styles.listGroup}>
+          <AppText
+            variant="label"
+            color={colors.textMuted}
+            accessibilityRole="header"
+            style={styles.groupTitle}
+          >
+            계정
+          </AppText>
+          <SettingsRow
+            icon={LogOut}
+            label="로그아웃"
+            danger
+            disabled={busy}
+            onPress={onSignOut}
+          />
+        </View>
         {__DEV__ && onPreviewCharacter && (
           <Button
             label="캐릭터 미리보기 (개발용)"
@@ -710,6 +732,55 @@ function List({
         )}
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function SettingsRow({
+  icon: Icon,
+  label,
+  value,
+  active,
+  danger,
+  disabled,
+  onPress,
+}: {
+  icon: LucideIcon;
+  label: string;
+  value?: string;
+  active?: boolean;
+  danger?: boolean;
+  disabled: boolean;
+  onPress: () => void;
+}) {
+  const tint = danger ? colors.danger : colors.text;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={value ? `${label}, ${value}` : label}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [styles.listRow, pressed && styles.listPressed]}
+    >
+      <Icon
+        color={danger ? colors.danger : colors.primaryInk}
+        size={20}
+        strokeWidth={1.8}
+      />
+      <AppText variant="subheading" color={tint} style={styles.flex}>
+        {label}
+      </AppText>
+      {!!value && (
+        <AppText
+          variant="caption"
+          color={active ? colors.primaryInk : colors.textMuted}
+          style={styles.rowValue}
+          numberOfLines={1}
+        >
+          {value}
+        </AppText>
+      )}
+      {!danger && <ChevronRight color={colors.textSubtle} size={16} />}
+    </Pressable>
   );
 }
 
@@ -787,10 +858,14 @@ function SectionPage({
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={[
             styles.content,
-            { paddingBottom: insetsBottom + spacing.xxxl },
+            { paddingBottom: spacing.xxl },
           ]}
         >
-          <Card style={styles.section}>{children}</Card>
+          <View style={styles.detailFields}>{children}</View>
+        </ScrollView>
+        <View
+          style={[styles.saveBar, { paddingBottom: insetsBottom + spacing.sm }]}
+        >
           {error && (
             <AppText
               variant="caption"
@@ -813,9 +888,8 @@ function SectionPage({
             label={busy === 'save' ? '저장 중…' : '저장'}
             onPress={onSave}
             disabled={!!busy || !dirty}
-            style={styles.section}
           />
-        </ScrollView>
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -869,36 +943,56 @@ function Choice({
   );
 }
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.background },
+  screen: { flex: 1, backgroundColor: colors.surface },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.md,
+    minHeight: 52,
   },
   spacer: { width: 44 },
   content: { paddingHorizontal: spacing.xl },
-  section: { marginTop: spacing.lg },
-  listCard: { marginTop: spacing.lg, overflow: 'hidden' },
+  profileEntry: {
+    marginTop: spacing.lg,
+    borderRadius: radius.lg,
+    backgroundColor: colors.primarySoft,
+    padding: spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    minHeight: 96,
+  },
+  profilePressed: { backgroundColor: colors.primaryBorder },
+  profileAvatar: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: colors.surface,
+  },
+  listGroup: { marginTop: spacing.xxl },
+  groupTitle: { marginBottom: spacing.xs },
   listRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
+    minHeight: 54,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.xs,
   },
-  listDivider: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-  },
-  listPressed: { backgroundColor: colors.surfaceMuted },
-  listIcon: {
-    width: 40,
-    height: 40,
+  listPressed: {
+    backgroundColor: colors.surfaceMuted,
     borderRadius: radius.sm,
-    backgroundColor: colors.primarySoft,
-    alignItems: 'center',
-    justifyContent: 'center',
+  },
+  rowValue: { maxWidth: '42%', flexShrink: 1 },
+  detailFields: { marginTop: spacing.md },
+  saveBar: {
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    backgroundColor: colors.surface,
+    gap: spacing.sm,
   },
   field: { marginTop: spacing.lg, gap: spacing.sm },
   fieldLabel: { marginTop: spacing.md },
@@ -951,5 +1045,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     minHeight: 52,
+    gap: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  masterSwitch: {
+    backgroundColor: colors.primarySoft,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.sm,
   },
 });

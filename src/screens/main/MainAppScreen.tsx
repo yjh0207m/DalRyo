@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useRef, useState} from 'react';
 import {ActivityIndicator, Alert, Pressable, StatusBar, StyleSheet, View} from 'react-native';
 import {CommunityScreen, type CommunityLink} from '../community/CommunityScreen';
 import {TogetherScreen} from '../together/TogetherScreen';
@@ -27,7 +27,7 @@ import {useRunRecovery} from '../../hooks/useRunRecovery';
 import {RunRecoveryScreen} from '../run/RunRecoveryScreen';
 import {sessionResult} from '../../utils/runSession';
 import type {RunContext, RunSessionSnapshot} from '../../types/runSession';
-import {colors} from '../../theme';
+import {colors, spacing} from '../../theme';
 import type {CharacterDocument, CharacterStage} from '../../types/character.types';
 import type {RunDocument, RunGoalType} from '../../types/run.types';
 import type {UserDocument} from '../../types/user.types';
@@ -51,12 +51,13 @@ type RunFlow =
   // 시간·거리·칼로리 목표는 값을 고르는 화면을 먼저 거친다
   | {phase: 'setup'; goalType: Exclude<RunGoalType, 'free'>}
   | ({phase: 'running'} & RunStart)
-  | ({phase: 'saving'; result: RunResult} & RunStart)
+  | ({phase: 'saving'; result: RunResult; localId?: string; saveFailed?: boolean} & RunStart)
   | {phase: 'complete'; before: RunStartSnapshot; run: RunDocument};
 
 export function MainAppScreen({user, character, onHomeReady}: Props) {
   const [activeTab, setActiveTab] = useState<MainTab>('home');
   const [runFlow, setRunFlow] = useState<RunFlow | null>(null);
+  const savingRun = useRef(false);
   const [runSheetOpen, setRunSheetOpen] = useState(false);
   const [parksOpen,setParksOpen]=useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -149,12 +150,16 @@ export function MainAppScreen({user, character, onHomeReady}: Props) {
   };
 
   const saveRun = async (flow: Extract<RunFlow, {phase: 'running' | 'saving'}>, result: RunResult) => {
-    setRunFlow({...flow, phase: 'saving', result});
+    if (savingRun.current) return;
+    savingRun.current = true;
+    let localId = flow.phase === 'saving' ? flow.localId : undefined;
+    setRunFlow({...flow, phase: 'saving', result, localId, saveFailed: false});
 
     try {
-      const id = await queueRun(flow.context, result);
+      localId ??= await queueRun(flow.context, result);
       recovery.dismiss();
-      const run = await uploadPendingRun(flow.context.uid, id);
+      setRunFlow({...flow, phase: 'saving', result, localId, saveFailed: false});
+      const run = await uploadPendingRun(flow.context.uid, localId);
       recovery.refresh();
       setRunFlow({
         phase: 'complete',
@@ -162,10 +167,10 @@ export function MainAppScreen({user, character, onHomeReady}: Props) {
         run,
       });
     } catch {
-      Alert.alert('저장을 완료하지 못했어요', '기기에 남아 있는 기록은 다시 열 때 복구하거나 자동으로 저장해요. 앱을 삭제하면 기기 기록이 사라질 수 있어요.', [
-        {text: '홈으로', onPress: () => {setRunFlow(null); recovery.refresh();}},
-        {text: '다시 시도', onPress: () => saveRun(flow, result)},
-      ]);
+      recovery.refresh();
+      setRunFlow({...flow, phase: 'saving', result, localId, saveFailed: true});
+    } finally {
+      savingRun.current = false;
     }
   };
 
@@ -213,11 +218,24 @@ export function MainAppScreen({user, character, onHomeReady}: Props) {
 
     if (runFlow.phase === 'saving') {
       return (
-        <View style={styles.savingScreen}>
-          <ActivityIndicator color={colors.primary} size="large" />
-          <AppText variant="subheading" color={colors.textMuted} style={styles.savingText}>
-            기록 저장 중
+        <View style={[styles.savingScreen, styles.saveStatus]}>
+          {!runFlow.saveFailed && <ActivityIndicator color={colors.primary} size="large" />}
+          <AppText variant="heading" align="center" accessibilityLiveRegion="polite">
+            {runFlow.localId ? '이 기기에 기록을 보관했어요' : runFlow.saveFailed ? '기기에 기록을 보관하지 못했어요' : '달리기 기록을 보관하는 중'}
           </AppText>
+          <AppText align="center" color={colors.textMuted}>
+            {runFlow.saveFailed
+              ? runFlow.localId
+                ? '연결되면 자동으로 동기화를 다시 시도해요.'
+                : '저장 공간을 확인한 뒤 다시 시도해 주세요.'
+              : runFlow.localId ? '서버와 동기화하는 중이에요.' : '기기에 기록을 저장하고 있어요.'}
+          </AppText>
+          {runFlow.saveFailed && (
+            <View style={styles.saveActions}>
+              <Button label={runFlow.localId ? '동기화 다시 시도' : '다시 보관'} onPress={() => saveRun(runFlow, runFlow.result)} />
+              <Button label="홈으로" variant="ghost" onPress={() => closeRunFlow('home')} />
+            </View>
+          )}
         </View>
       );
     }
@@ -270,7 +288,7 @@ export function MainAppScreen({user, character, onHomeReady}: Props) {
     <View style={styles.screen}>
       <View style={styles.main} accessibilityElementsHidden={overlayOpen} importantForAccessibility={overlayOpen ? 'no-hide-descendants' : 'auto'}>
         <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
-        {recovery.pending > 0 && <View style={styles.pendingBanner}><AppText variant="caption">기기에 보관한 기록 {recovery.pending}개 · {recovery.syncing ? '저장 중' : '연결되면 자동 저장'}</AppText><Button label="다시 저장" size="md" variant="ghost" disabled={recovery.syncing} onPress={recovery.sync}/></View>}
+        {recovery.pending > 0 && <View style={styles.pendingBanner}><AppText variant="caption" style={styles.pendingText}>기기에 보관한 기록 {recovery.pending}개 · {recovery.syncing ? '동기화 중' : '연결되면 자동 동기화'}</AppText><Button label="동기화" size="md" variant="ghost" disabled={recovery.syncing} onPress={recovery.sync}/></View>}
         <TabPagerView pager={pager} renderTab={renderTab} />
         {!(activeTab === 'community' && communitySubpage) && !(activeTab === 'records' && recordSubpage) && <BottomTabBar activeTab={activeTab} onChange={tab => (tab === 'run' ? openRunSheet() : pager.goTo(tab))} />}
         <RunStartSheet visible={runSheetOpen} onClose={() => setRunSheetOpen(false)} onSelect={selectGoal} onParkPress={()=>{setRunSheetOpen(false);setParksOpen(true);}}/>
@@ -288,6 +306,8 @@ const styles = StyleSheet.create({
   main: {flex: 1},
   pendingBanner: {paddingTop: 40, paddingHorizontal: 20, backgroundColor: colors.primarySoft, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'},
   savingScreen: {flex: 1, backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center'},
-  savingText: {marginTop: 16},
+  pendingText: {flex: 1},
+  saveStatus: {paddingHorizontal: spacing.xxl, gap: spacing.md},
+  saveActions: {alignSelf: 'stretch', gap: spacing.xs, marginTop: spacing.md},
   pushBanner: {position: 'absolute', top: 56, left: 20, right: 20, padding: 16, backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.primary},
 });

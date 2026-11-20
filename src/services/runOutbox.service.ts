@@ -31,8 +31,12 @@ export async function queueRun(context: RunContext, result: RunResult) {
       await AsyncStorage.setItem(key(context.uid), JSON.stringify(runs));
     }
     // Keep the finished native journal until the durable outbox copy exists.
-    const active = await readActiveRun(context.uid);
-    if (active?.startedAtMs === result.startedAt.getTime() && active.phase === 'finished') await commandRun(active, 'clear');
+    try {
+      const active = await readActiveRun(context.uid);
+      if (active?.startedAtMs === result.startedAt.getTime() && active.phase === 'finished') await commandRun(active, 'clear');
+    } catch {
+      // Recovery can clear the journal later. The outbox copy is already durable.
+    }
     return id;
   });
 }

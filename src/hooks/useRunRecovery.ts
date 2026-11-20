@@ -17,7 +17,7 @@ export function useRunRecovery(uid?: string) {
     try {
       const [session, queue] = await Promise.all([readActiveRun(uid), pendingRuns(uid)]);
       const copied = session?.phase === 'finished' && queue.some(run => run.id === `${uid}_${session.startedAtMs}`);
-      if (copied) await commandRun(session!, 'clear');
+      if (copied) await commandRun(session!, 'clear').catch(() => undefined);
       if (revision === epoch.current) {setActive(copied ? null : session); setPending(queue.length); setStatus('ready');}
     } catch {if (revision === epoch.current) setStatus('error');}
   }, [uid]);

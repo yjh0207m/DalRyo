@@ -173,6 +173,7 @@ async function push(
       token: user.fcm_token,
       notification: { title: '달료', body },
       data: { type: kind, target_id: target },
+      apns: { payload: { aps: { sound: 'default' } } },
     })
     .catch(error => logger.warn('social push failed', { code: error?.code }));
 }

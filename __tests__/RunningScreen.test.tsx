@@ -45,7 +45,9 @@ const context = {
 } as RunContext;
 const restore = { context, phase: 'running' } as RunSessionSnapshot;
 let tree: Renderer.ReactTestRenderer;
-function screen(overrides: Partial<React.ComponentProps<typeof RunningScreen>> = {}) {
+function screen(
+  overrides: Partial<React.ComponentProps<typeof RunningScreen>> = {},
+) {
   return (
     <RunningScreen
       context={context}
@@ -109,33 +111,41 @@ test.each([
   },
 );
 test.each([0, -1, NaN, Infinity])(
-  'unavailable speed %s shows a dash while average remains available',
+  'unavailable speed %s shows measurement status while average remains available',
   async speed => {
     mockSession.speedKmh = speed;
     await render();
-    expect(value('현재 페이스')).toBe('—');
+    expect(value('현재 페이스')).toBe('측정 중');
     expect(value('평균 페이스')).toBe('5\'00"');
   },
 );
 test.each([
-  { phase: 'paused', gpsStatus: 'tracking' },
-  { phase: 'ready', gpsStatus: 'tracking' },
-  { phase: 'running', gpsStatus: 'error' },
-  { phase: 'running', gpsStatus: 'denied' },
+  { phase: 'paused', gpsStatus: 'tracking', expected: '—' },
+  { phase: 'ready', gpsStatus: 'tracking', expected: '—' },
+  { phase: 'running', gpsStatus: 'error', expected: '위치 확인 중' },
+  { phase: 'running', gpsStatus: 'denied', expected: '위치 꺼짐' },
 ])('current pace is unavailable for $phase/$gpsStatus', async state => {
-  Object.assign(mockSession, state);
+  const { expected, ...sessionState } = state;
+  Object.assign(mockSession, sessionState);
   await render();
-  expect(value('현재 페이스')).toBe('—');
+  expect(value('현재 페이스')).toBe(expected);
   expect(value('평균 페이스')).toBe('5\'00"');
 });
 
 test('group goal finishes exactly once even if the native tracker already stopped', async () => {
   const onFinish = jest.fn();
-  const result = {distanceKm: 2};
+  const result = { distanceKm: 2 };
   mockSession.finish.mockClear().mockResolvedValueOnce(result);
-  const props = {finishAtGoal: true, goalType: 'distance' as const, goalValue: 2, onFinish};
+  const props = {
+    finishAtGoal: true,
+    goalType: 'distance' as const,
+    goalValue: 2,
+    onFinish,
+  };
   mockSession.phase = 'finished';
-  await act(async () => { tree = Renderer.create(screen(props)); });
+  await act(async () => {
+    tree = Renderer.create(screen(props));
+  });
   await act(async () => tree.update(screen(props)));
   expect(mockSession.finish).toHaveBeenCalledTimes(1);
   expect(onFinish).toHaveBeenCalledWith(result);

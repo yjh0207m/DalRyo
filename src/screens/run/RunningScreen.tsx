@@ -18,7 +18,6 @@ import {
   AppText,
   Badge,
   Button,
-  Card,
   IconButton,
   ProgressBar,
 } from '../../components/ui';
@@ -195,12 +194,12 @@ export function RunningScreen({
     ? '시작 준비'
     : '기록 중';
   return (
-    <View style={[styles.screen, { paddingTop: insets.top + 8 }]}>
+    <View style={styles.screen}>
       <StatusBar
         barStyle={countdown > 0 ? 'light-content' : 'dark-content'}
-        backgroundColor={countdown > 0 ? colors.primary : colors.sky}
+        backgroundColor={countdown > 0 ? colors.primary : colors.surface}
       />
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
         <View style={styles.statusLabel}>
           <View style={[styles.statusDot, paused && styles.pausedDot]} />
           <AppText
@@ -222,7 +221,7 @@ export function RunningScreen({
           onPress={confirmCancel}
         />
       </View>
-      <Card style={[styles.stats, compact && styles.compactStats]}>
+      <View style={[styles.stats, compact && styles.compactStats]}>
         <View style={styles.cardHeading}>
           <AppText variant="label" color={colors.textMuted}>
             달린 거리
@@ -256,8 +255,18 @@ export function RunningScreen({
           />
           <Stat
             label="현재 페이스"
-            value={currentPaceSec > 0 ? formatPace(currentPaceSec) : '—'}
-            unit="/km"
+            value={
+              currentPaceSec > 0
+                ? formatPace(currentPaceSec)
+                : paused || session.phase !== 'running'
+                ? '—'
+                : session.gpsStatus === 'denied'
+                ? '위치 꺼짐'
+                : session.gpsStatus === 'error'
+                ? '위치 확인 중'
+                : '측정 중'
+            }
+            unit={currentPaceSec > 0 ? '/km' : undefined}
           />
           <Stat
             label="평균 페이스"
@@ -283,7 +292,7 @@ export function RunningScreen({
             <ProgressBar value={progress} height={5} />
           </View>
         )}
-      </Card>
+      </View>
       {!!session.error && (
         <View style={styles.sessionError}>
           <AppText color={colors.danger} accessibilityRole="alert">
@@ -446,7 +455,7 @@ function Stat({
 }: {
   label: string;
   value: string;
-  unit: string;
+  unit?: string;
 }) {
   return (
     <View style={styles.stat}>
@@ -459,12 +468,20 @@ function Stat({
       >
         {label}
       </AppText>
-      <AppText style={styles.statNumber} numberOfLines={1} adjustsFontSizeToFit>
+      <AppText
+        style={[styles.statNumber, !unit && styles.statStatus]}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+      >
         {value}
       </AppText>
-      <AppText style={styles.statUnit} color={colors.textMuted}>
-        {unit}
-      </AppText>
+      {unit ? (
+        <AppText style={styles.statUnit} color={colors.textMuted}>
+          {unit}
+        </AppText>
+      ) : (
+        <View style={styles.emptyUnit} />
+      )}
     </View>
   );
 }
@@ -499,7 +516,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    minHeight: 50,
+    backgroundColor: colors.surface,
   },
   statusLabel: { flexDirection: 'row', gap: 6, alignItems: 'center' },
   statusDot: {
@@ -510,13 +527,12 @@ const styles = StyleSheet.create({
   },
   pausedDot: { backgroundColor: colors.accent },
   stats: {
-    marginHorizontal: 20,
-    marginTop: 12,
-    padding: 22,
-    borderWidth: 0,
-    borderRadius: 28,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 20,
   },
-  compactStats: { padding: 18, marginTop: 6 },
+  compactStats: { paddingHorizontal: 14, paddingTop: 6, paddingBottom: 14 },
   cardHeading: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -564,6 +580,8 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
   },
   statUnit: { fontSize: 11, lineHeight: 15 },
+  statStatus: { fontSize: 13, letterSpacing: 0, color: colors.textMuted },
+  emptyUnit: { height: 15 },
   progress: { marginTop: 18, gap: 9 },
   ground: { flex: 1, minHeight: 0 },
   character: {

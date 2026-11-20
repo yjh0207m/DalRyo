@@ -27,6 +27,12 @@ test('a different account cannot upload or consume another account queue',async(
  const id=await queueRun(context,result);mockAuth.currentUser={uid:'other'};
  await expect(uploadPendingRun('owner',id)).rejects.toThrow('기록을 시작한 계정');expect(mockSave).not.toHaveBeenCalled();expect(await pendingRuns('owner')).toHaveLength(1);
 });
+test('a journal cleanup failure still acknowledges the durable local copy', async () => {
+  mockActive.mockResolvedValue({ context, startedAtMs: 100000, phase: 'finished' });
+  mockCommand.mockRejectedValueOnce(new Error('journal unavailable'));
+  const id = await queueRun(context, result);
+  expect((await pendingRuns('owner')).map(run => run.id)).toEqual([id]);
+});
 test('a lost acknowledgement times out without deleting the durable copy',async()=>{
  jest.useFakeTimers();const id=await queueRun(context,result);
  let resolve!: (value:unknown)=>void;mockSave.mockImplementationOnce(()=>new Promise(done=>{resolve=done;}));

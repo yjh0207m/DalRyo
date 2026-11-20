@@ -92,6 +92,7 @@ export function TogetherScreen({
   const [result, setResult] = useState<RunResult | null>(null);
   const [showRecord, setShowRecord] = useState(false);
   const [savedRun, setSavedRun] = useState<RunDocument|null>(null);
+  const [localRunId, setLocalRunId] = useState<string | null>(null);
   const sessionContext = useRef<RunContext | null>(restore?.context ?? null);
   const startSnapshot = useRef<RunStartSnapshot>(restore?.context.before ?? {stageBefore: character.stage, totalKmBefore:user.total_km,wasFrozen:user.is_frozen});
   const [syncError, setSyncError] = useState(false);
@@ -241,7 +242,8 @@ export function TogetherScreen({
     setError(null);
     try {
       if (!sessionContext.current) throw new Error('시작 기록을 찾지 못했어요.');
-      const id = await queueRun(sessionContext.current, value);
+      const id = localRunId ?? await queueRun(sessionContext.current, value);
+      if (mounted.current) setLocalRunId(id);
       const run = await uploadPendingRun(user.uid, id);
       if (mounted.current) setSavedRun(run);
     } catch (e) {
@@ -252,6 +254,12 @@ export function TogetherScreen({
     }
   };
   if (result) {
+    const saveMessage = localRunId
+      ? busy
+        ? '이 기기에 보관했어요. 서버와 동기화 중이에요.'
+        : '이 기기에 보관했어요. 연결되면 자동으로 동기화를 다시 시도해요.'
+      : busy ? '기기에 기록을 보관하는 중이에요.' : '기기에 기록을 보관하지 못했어요.';
+    const retryLabel = localRunId ? '동기화 다시 시도' : '다시 보관';
     if (savedRun && (showRecord || !keepTrack)) {
       return (
         <CompletedRunScreen
@@ -268,6 +276,7 @@ export function TogetherScreen({
               }
               setResult(null);
               setSavedRun(null);
+              setLocalRunId(null);
             }
           }}
         />
@@ -307,9 +316,9 @@ export function TogetherScreen({
           <AppText variant="caption" align="center" color={colors.textMuted}>
             {friendsRunning ? '친구의 달리기를 보고 있어요' : room ? '같이 달리기가 끝났어요' : '방 상태를 확인하고 있어요'}
           </AppText>
-          {error && <AppText variant="caption" color={colors.danger}>{error}</AppText>}
+          {!savedRun && <AppText variant="caption" color={colors.textMuted} accessibilityLiveRegion="polite">{saveMessage}</AppText>}
           <Button
-            label={busy ? '기록 저장 중…' : savedRun ? '내 기록 보기' : '다시 저장'}
+            label={busy ? '기록 저장 중…' : savedRun ? '내 기록 보기' : retryLabel}
             disabled={busy}
             onPress={() => savedRun ? setShowRecord(true) : save(result)}
           />
@@ -322,17 +331,17 @@ export function TogetherScreen({
           barStyle="dark-content"
           backgroundColor={colors.background}
         />
-        <ActivityIndicator animating={busy} color={colors.primary} />
+        {busy && <ActivityIndicator color={colors.primary} />}
         <AppText variant="subheading">같이 달린 기록 저장</AppText>
+        <AppText align="center" color={colors.textMuted} accessibilityLiveRegion="polite">{saveMessage}</AppText>
         {error && (
           <>
-            <AppText color={colors.danger}>{error}</AppText>
             <Button
-              label="다시 저장"
+              label={retryLabel}
               disabled={busy}
               onPress={() => save(result)}
             />
-            <Button label="기기에 보관하고 나가기" variant="ghost" onPress={onBack}/>
+            <Button label="나가기" variant="ghost" onPress={onBack}/>
           </>
         )}
       </SafeAreaView>

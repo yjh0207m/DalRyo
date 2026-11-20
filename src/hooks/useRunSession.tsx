@@ -85,7 +85,7 @@ export function useRunSession({context, restore}: {context: RunContext; restore?
     phase: (snapshot?.phase ?? 'ready') as RunPhase,
     elapsedSec: Math.floor((snapshot?.elapsedMs ?? 0) / 1000), distanceKm: snapshot?.distanceKm ?? 0, speedKmh: snapshot?.speedKmh ?? 0,
     calories: estimateCalories(snapshot?.distanceKm ?? 0, context.weightKg),
-    gpsStatus: (snapshot?.gpsStatus ?? fallbackStatus) as GpsStatus, error, busy, begin,
+    gpsStatus: (nativeRunTracker ? snapshot?.gpsStatus ?? fallbackStatus : fallbackStatus) as GpsStatus, error, busy, begin,
     pause: () => change('pause'), resume: () => change('resume'),
     cancel: async () => {if (!current.current) return true; return (await change('clear')) === null && current.current === null;},
     finish: async () => {

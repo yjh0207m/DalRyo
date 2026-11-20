@@ -2,6 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { PanResponder, Pressable, Text, View } from 'react-native';
 import Renderer, { act } from 'react-test-renderer';
 import { MainAppScreen } from '../src/screens/main/MainAppScreen';
+import { CompletedRunScreen } from '../src/screens/run/CompletedRunScreen';
+import { RunningScreen } from '../src/screens/run/RunningScreen';
+import { RunStartSheet } from '../src/screens/run/RunStartSheet';
+import { queueRun, uploadPendingRun } from '../src/services/runOutbox.service';
+import type { RunDocument } from '../src/types/run.types';
 import type { CharacterDocument } from '../src/types/character.types';
 import type { UserDocument } from '../src/types/user.types';
 
@@ -285,6 +290,38 @@ const press = (label: string) =>
       )
       .props.onPress();
   });
+
+test('an offline finish confirms local storage and retries the same run', async () => {
+  const saved = { run_id: 'saved-run' } as RunDocument;
+  jest.mocked(queueRun).mockResolvedValueOnce('saved-run');
+  jest
+    .mocked(uploadPendingRun)
+    .mockRejectedValueOnce(new Error('offline'))
+    .mockResolvedValueOnce(saved);
+  await render();
+  await act(() => tree.root.findByType(RunStartSheet).props.onSelect('free'));
+  await act(async () => {
+    await tree.root.findByType(RunningScreen).props.onFinish({
+      startedAt: new Date(),
+      distanceKm: 3,
+      durationSec: 1000,
+      calories: 150,
+      avgSpeedKmh: 10.8,
+      route: [],
+    });
+  });
+  expect(texts()).toContain('이 기기에 기록을 보관했어요');
+  expect(texts()).toContain('연결되면 자동으로 동기화를 다시 시도해요.');
+  await act(async () => {
+    await tree.root.findByProps({ label: '동기화 다시 시도' }).props.onPress();
+  });
+  expect(queueRun).toHaveBeenCalledTimes(1);
+  expect(jest.mocked(uploadPendingRun).mock.calls).toEqual([
+    ['u1', 'saved-run'],
+    ['u1', 'saved-run'],
+  ]);
+  expect(tree.root.findByType(CompletedRunScreen).props.run).toBe(saved);
+});
 // 하단 탭은 접근성 라벨 없이 글자만 있어서, 탭 역할의 항목 중 해당 글자를 가진 것을 누른다
 const pressTab = (label: string) =>
   act(async () => {
