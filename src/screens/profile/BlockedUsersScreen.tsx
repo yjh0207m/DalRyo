@@ -4,7 +4,6 @@ import {
   BackHandler,
   Image,
   ScrollView,
-  StyleSheet,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -17,7 +16,7 @@ import {
   watchBlockedUsers,
   type BlockedUser,
 } from '../../services/social.service';
-import { colors, spacing } from '../../theme';
+import { colors, spacing, themedStyles } from '../../theme';
 
 // 설정의 "차단한 사용자". 목록은 실시간이라 해제하면 바로 사라진다
 export function BlockedUsersScreen({ onBack }: { onBack: () => void }) {
@@ -99,7 +98,7 @@ export function BlockedUsersScreen({ onBack }: { onBack: () => void }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   screen: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: 'row',
@@ -128,4 +127,4 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primarySoft,
   },
   avatarImage: { width: '100%', height: '100%' },
-});
+}));

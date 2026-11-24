@@ -27,6 +27,7 @@ import {
   Card,
   IconButton,
   ScreenHeader,
+  TallNumber,
 } from '../../components/ui';
 import { SlideScreen } from '../../navigation/slide';
 import { RunDetailScreen } from './RunDetailScreen';
@@ -38,7 +39,7 @@ import {
   fetchMonthlyRuns,
   getRunStartedAtDate,
 } from '../../services/run.service';
-import { colors, fonts, radius, spacing } from '../../theme';
+import { colors, fonts, radius, spacing, themedStyles } from '../../theme';
 import type { RunDocument } from '../../types/run.types';
 import { formatDuration, formatPace } from '../../utils/pace';
 import {
@@ -57,6 +58,11 @@ type Props = {
   onPosted?: () => void;
 };
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+// 이번 달 누적 거리 큰 숫자의 글자 크기·줄 높이·세로 배율.
+// 성장(기본 1.07배)보다 세로로 조금 더 늘려 그린다
+const MONTH_FONT_SIZE = 50;
+const MONTH_LINE_HEIGHT = 62;
+const MONTH_STRETCH = 1.11;
 const GOAL_LABELS = {
   free: '자유 달리기',
   time: '시간 목표',
@@ -157,22 +163,26 @@ export function RecordScreen({
           />
         </View>
         {status === 'success' && (
-          <Card style={styles.monthHero}>
+          // 카드로 감싸지 않고 화면 양끝까지 채운 띠
+          <View testID="record-month-hero" style={styles.monthHero}>
             <View style={styles.monthHeroHeading}>
               <AppText variant="label" color={colors.primaryInk}>
                 이번 달 누적 거리
               </AppText>
               <Badge label={`${runsByDay.size}일 · ${runs.length}회`} />
             </View>
-            <View style={styles.distance}>
-              <AppText
+            <View style={[styles.distance, styles.monthDistanceRow]}>
+              {/* 세로로 늘린 키 큰 숫자 */}
+              <TallNumber
+                stretch={MONTH_STRETCH}
+                fontSize={MONTH_FONT_SIZE}
+                lineHeight={MONTH_LINE_HEIGHT}
                 style={styles.monthDistance}
                 color={colors.primaryInk}
                 numberOfLines={1}
-                adjustsFontSizeToFit
               >
                 {summary.distanceKm.toFixed(2)}
-              </AppText>
+              </TallNumber>
               <AppText variant="subheading" color={colors.textMuted}>
                 km
               </AppText>
@@ -193,7 +203,7 @@ export function RecordScreen({
                 value={`${summary.calories} kcal`}
               />
             </View>
-          </Card>
+          </View>
         )}
         <View style={styles.viewSwitcher}>
           {(
@@ -328,7 +338,7 @@ export function RecordScreen({
               <Badge
                 label={`${
                   selectedRuns === null ? runs.length : selectedRuns.length
-                }회 달리기`}
+                }회`}
                 tone="neutral"
               />
             </View>
@@ -347,13 +357,16 @@ export function RecordScreen({
                 </AppText>
               </Card>
             ) : (
-              (selectedRuns ?? runs).map(run => (
-                <RunCard
-                  key={run.run_id}
-                  run={run}
-                  onOpen={() => setSelectedRun(run)}
-                />
-              ))
+              // 기록 목록은 화면 양끝까지 쓰고 기록 사이는 가는 선으로 나눈다
+              <View testID="record-journal-list" style={styles.journalList}>
+                {(selectedRuns ?? runs).map(run => (
+                  <RunCard
+                    key={run.run_id}
+                    run={run}
+                    onOpen={() => setSelectedRun(run)}
+                  />
+                ))}
+              </View>
             )}
           </>
         )}
@@ -412,9 +425,10 @@ function RunCard({ run, onOpen }: { run: RunDocument; onOpen: () => void }) {
         date.getMonth() + 1
       }월 ${date.getDate()}일 ${run.distance_km.toFixed(2)}km 기록 보기`}
       onPress={onOpen}
-      style={({ pressed }) => [styles.runCard, pressed && styles.pressed]}
+      style={({ pressed }) => [pressed && styles.pressed]}
     >
-      <Card tone="flat" padded={false} style={styles.journalCard}>
+      {/* 기록 하나를 테두리 있는 카드 한 장으로 묶는다 */}
+      <Card padded={false} style={styles.journalCard}>
         <View style={styles.runHeader}>
           <AppText variant="label" color={colors.textMuted}>
             {date.getMonth() + 1}.{String(date.getDate()).padStart(2, '0')}{' '}
@@ -503,13 +517,16 @@ function RunCard({ run, onOpen }: { run: RunDocument; onOpen: () => void }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   screen: { flex: 1, backgroundColor: colors.surface },
   content: { paddingHorizontal: spacing.xl },
+  // 본문 좌우 여백(spacing.xl)을 상쇄해 화면 양끝까지 닿고, 안쪽 글자는 본문과 같은 선에 맞춘다
+  // 크기는 예전 그대로 두고 위아래와 줄 사이만 넉넉히 띄운다 (위아래 22 → 28, 거리 줄 위아래 8 → 12)
   monthHero: {
     backgroundColor: colors.primarySoft,
-    borderWidth: 0,
-    padding: 22,
+    marginHorizontal: -spacing.xl,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: 28,
     marginTop: 4,
   },
   monthHeroHeading: {
@@ -517,25 +534,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  monthDistanceRow: { marginVertical: spacing.md },
   monthDistance: {
-    flexShrink: 1,
     fontFamily: fonts.extrabold,
-    fontSize: 50,
-    lineHeight: 62,
     letterSpacing: -1.8,
     fontVariant: ['tabular-nums'],
   },
   monthMetrics: {
     flexDirection: 'row',
-    paddingTop: 14,
-    marginTop: 4,
+    paddingTop: spacing.md,
+    marginTop: spacing.xs,
     gap: 12,
   },
-  journalMetric: { flex: 1, gap: 5 },
+  journalMetric: { flex: 1, gap: 6 },
   viewSwitcher: {
     flexDirection: 'row',
     gap: 8,
-    marginTop: 22,
+    marginTop: spacing.xxl,
   },
   viewTab: {
     flex: 1,
@@ -553,8 +568,21 @@ const styles = StyleSheet.create({
     borderRadius: 1,
     backgroundColor: colors.primaryAction,
   },
-  calendarCard: { marginTop: 16 },
-  journalCard: { paddingBottom: spacing.lg },
+  calendarCard: { marginTop: spacing.xl },
+  // 본문 좌우 여백(spacing.xl)을 상쇄해 화면 양끝까지 닿게 한다. 맨 위에도 선을 긋는다
+  journalList: {
+    marginHorizontal: -spacing.xl,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  // 기록 한 줄. 상자 대신 화면 너비 전체를 쓰고 아래 선으로 다음 기록과 나눈다. 글자는 본문 선(좌우 20)에 맞춘다
+  journalCard: {
+    borderRadius: 0,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.lg,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
   journalMain: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -637,8 +665,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: spacing.xxl,
-    marginBottom: spacing.md,
+    marginTop: spacing.section,
+    marginBottom: spacing.lg,
   },
   distance: {
     flexDirection: 'row',
@@ -663,11 +691,6 @@ const styles = StyleSheet.create({
   emptyIcon: {
     padding: spacing.sm,
   },
-  runCard: {
-    marginBottom: spacing.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-  },
   runHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -680,4 +703,4 @@ const styles = StyleSheet.create({
     marginTop: spacing.lg,
   },
   routeEmpty: { marginTop: spacing.lg },
-});
+}));

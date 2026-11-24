@@ -342,3 +342,70 @@ describe('telling the app that home has finished drawing', () => {
     expect(onReady).toHaveBeenCalledTimes(1);
   });
 });
+
+test('the character zone is not boxed and reaches both screen edges', () => {
+  const zone = tree.root.findByProps({ testID: 'home-companion' });
+  const style = StyleSheet.flatten(zone.props.style);
+  // 본문 좌우 여백(20)을 상쇄해 화면 양끝까지 닿는다
+  expect(style.marginHorizontal).toBe(-20);
+  // 둥근 카드 모서리가 없다
+  expect(style.borderRadius ?? 0).toBe(0);
+});
+
+test('the shortcut row has the same empty space above and below it', () => {
+  const tile = tree.root.findAll(
+    node =>
+      typeof node.props.onPress === 'function' &&
+      typeof node.props.style === 'function' &&
+      String(node.props.accessibilityLabel ?? '').startsWith('아이템'),
+  )[0];
+  const tileStyle = StyleSheet.flatten(tile.props.style({ pressed: false }));
+  let row: Renderer.ReactTestInstance | null = tile.parent;
+  while (row && StyleSheet.flatten(row.props.style)?.flexDirection !== 'row')
+    row = row.parent;
+  // "오늘의 러닝" 구역
+  let next: Renderer.ReactTestInstance | null = tree.root
+    .findAllByType(Text)
+    .find(node => joined(node.props.children) === '오늘의 러닝')!;
+  while (next && StyleSheet.flatten(next.props.style)?.marginTop === undefined)
+    next = next.parent;
+  const above =
+    StyleSheet.flatten(row!.props.style).marginTop + tileStyle.paddingVertical;
+  // 아래쪽은 글자 줄 높이의 여유가 더해져 보인다: "준비 중"(label) 아래 2 + "오늘의 러닝"(heading) 위 4
+  const textLeading = 2 + 4;
+  const below =
+    tileStyle.paddingVertical +
+    StyleSheet.flatten(next!.props.style).marginTop +
+    textLeading;
+  expect(above).toBe(below);
+  expect(above).toBe(36);
+});
+
+test('the header has only the footprint mark, without the "달료" text', () => {
+  // "달료" 글자는 없다. 발바닥 표시가 그 이름을 화면 읽기용으로 갖는다.
+  // 표시 크기는 직접 맞춘 값(HomeScreen의 brandMark)을 따르므로 여기서는 보지 않는다
+  const mark = tree.root.findAll(
+    node =>
+      node.props.accessibilityLabel === '달료' &&
+      node.props.accessibilityRole === 'image',
+  )[0];
+  expect(mark).toBeDefined();
+  // 헤더 줄에 글자 "달료"는 없다
+  let header: Renderer.ReactTestInstance | null = mark.parent;
+  while (header && StyleSheet.flatten(header.props.style)?.height !== 48)
+    header = header.parent;
+  expect(
+    header!.findAllByType(Text).map(node => joined(node.props.children)),
+  ).not.toContain('달료');
+});
+
+test('how far you have run is the emphasized number, the distance to the next stage is quieter', () => {
+  const find = (pattern: RegExp) =>
+    tree.root
+      .findAllByType(Text)
+      .find(node => pattern.test(joined(node.props.children)))!;
+  const now = StyleSheet.flatten(find(/^현재 /).props.style);
+  const next = StyleSheet.flatten(find(/까지 .*km$/).props.style);
+  expect(now.fontSize).toBeGreaterThan(next.fontSize);
+  expect(now.color).not.toBe(next.color);
+});

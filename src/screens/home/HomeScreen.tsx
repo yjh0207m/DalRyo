@@ -35,7 +35,7 @@ import {
   fetchThisWeekRuns,
   getRunStartedAtDate,
 } from '../../services/run.service';
-import { colors, fonts, radius, spacing } from '../../theme';
+import { colors, fonts, radius, spacing, themedStyles } from '../../theme';
 import { formatDuration } from '../../utils/pace';
 import {
   CHARACTER_STAGE_ORDER,
@@ -66,6 +66,9 @@ type Props = {
 const WEEK_LABELS = ['월', '화', '수', '목', '금', '토', '일'];
 // 이번 주(월~일) 7일 중 달린 날 수를 보여 준다
 const WEEKLY_GOAL_DAYS = 7;
+// 바로가기 줄 위아래 간격. 아래쪽은 글자 줄 높이의 여유(약 6)만큼 덜 띄워야 눈으로 같아 보인다
+const SHORTCUT_GAP_ABOVE = 28;
+const SHORTCUT_GAP_BELOW = 22;
 
 export function HomeScreen({
   user,
@@ -115,11 +118,18 @@ export function HomeScreen({
         ]}
       >
         <View style={styles.header}>
-          <View style={styles.brand}>
-            <View style={styles.brandMark}>
-              <Footprints color={colors.textOnPrimary} size={19} />
-            </View>
-            <AppText style={styles.wordmark}>달료</AppText>
+          {/* 글자 없이 발바닥 표시만. 알림·설정 버튼보다 살짝 크게 두어 강조한다 */}
+          <View
+            accessible
+            accessibilityRole="image"
+            accessibilityLabel="달료"
+            style={styles.brandMark}
+          >
+            <Footprints
+              color={colors.textOnPrimary}
+              size={26}
+              strokeWidth={2.2}
+            />
           </View>
           <View style={styles.headerActions}>
             <IconButton
@@ -141,7 +151,8 @@ export function HomeScreen({
         </View>
         {character && (
           <>
-            <Card padded={false} style={styles.companion}>
+            {/* 캐릭터 존은 카드로 감싸지 않고 화면 양끝까지 채운다 */}
+            <View testID="home-companion" style={styles.companion}>
               <CompanionScene height={compact ? 218 : undefined}>
                 <LobbyCharacter
                   type={character.character_type}
@@ -176,13 +187,14 @@ export function HomeScreen({
                 </View>
               </View>
               <View style={styles.companionFooter}>
+                {/* 지금까지 달린 거리를 강조하고, 다음 단계까지 남은 거리는 작게 곁들인다 */}
                 <View style={styles.progressRow}>
-                  <AppText variant="label" color={colors.textMuted}>
+                  <AppText variant="heading" color={colors.primaryInk}>
                     현재 {totalKm.toFixed(1)}km
                   </AppText>
                   <AppText
-                    variant="subheading"
-                    color={colors.primaryInk}
+                    variant="label"
+                    color={colors.textMuted}
                     style={styles.progressLabel}
                   >
                     {character.stage === 'egg'
@@ -231,7 +243,7 @@ export function HomeScreen({
                   </View>
                 )}
               </View>
-            </Card>
+            </View>
             <View style={styles.shortcuts}>
               <Shortcut icon={Package} label="아이템" onPress={onItemsPress} />
               <Shortcut
@@ -450,7 +462,7 @@ function Shortcut({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   screen: { flex: 1, backgroundColor: colors.surface },
   content: { paddingHorizontal: spacing.xl, paddingTop: spacing.sm },
   header: {
@@ -459,32 +471,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  brand: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  // 알림·설정 버튼(40, 아이콘 22)보다 살짝 큰 발바닥 표시(44, 아이콘 26)
   brandMark: {
-    width: 31,
-    height: 31,
-    borderRadius: 11,
+    width: 38,
+    height: 38,
+    borderRadius: 14,
     backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  wordmark: {
-    fontFamily: fonts.extrabold,
-    fontSize: 25,
-    lineHeight: 32,
-    letterSpacing: -1.2,
-  },
   headerActions: { flexDirection: 'row', gap: 8 },
+  // 본문 좌우 여백(spacing.xl)을 상쇄해 화면 양끝까지 닿게 한다
   companion: {
     marginTop: spacing.lg,
+    marginHorizontal: -spacing.xl,
     overflow: 'hidden',
-    borderRadius: radius.xl,
-    borderWidth: 0,
   },
   companionHeader: {
     position: 'absolute',
-    left: 18,
-    right: 18,
+    left: spacing.xl,
+    right: spacing.xl,
     top: 17,
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -499,29 +505,36 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   companionFooter: {
-    paddingHorizontal: 18,
-    paddingTop: 14,
-    paddingBottom: 14,
-    gap: 9,
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.lg,
+    paddingBottom: 18,
+    gap: 10,
     backgroundColor: colors.surfaceMuted,
   },
-  shortcuts: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.md },
+  // 바로가기 줄의 위아래 빈 공간이 눈으로 보기에 같도록 맞춘다.
+  // 위: 줄 바깥 28 + 타일 안 8. 아래: 타일 안 8 + 다음 구역 22 + 글자 줄 높이의 여유(아래 "준비 중" 2 + 위 제목 4)
+  shortcuts: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginTop: SHORTCUT_GAP_ABOVE,
+  },
   shortcut: {
     flex: 1,
     minHeight: 76,
     alignItems: 'center',
-    paddingTop: spacing.sm,
+    paddingVertical: spacing.sm,
     gap: 6,
+    borderRadius: radius.md,
   },
   shortcutPressed: { backgroundColor: colors.surfaceMuted },
-  section: { marginTop: 24 },
-  weekSection: { marginTop: spacing.lg },
+  section: { marginTop: SHORTCUT_GAP_BELOW },
+  weekSection: { marginTop: spacing.section },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 12,
+    marginBottom: spacing.lg,
   },
   todayCard: {
     paddingVertical: spacing.sm,
@@ -531,10 +544,11 @@ const styles = StyleSheet.create({
   },
   distanceMetric: { flex: 1.4, gap: 6 },
   valueRow: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
+  // 크기가 다른 두 글자(현재 거리·남은 거리)를 같은 바닥선에 맞춘다
   progressRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'baseline',
     gap: 8,
   },
   progressLabel: { flex: 1, textAlign: 'right' },
@@ -585,4 +599,4 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
   },
   flex: { flex: 1 },
-});
+}));

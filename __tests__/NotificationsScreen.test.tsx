@@ -272,3 +272,22 @@ describe('pressing a notification goes to where it points', () => {
     ]);
   });
 });
+
+test('notifications are full-width rows split by thin lines, not separate boxes', async () => {
+  const { StyleSheet } = require('react-native');
+  await render([note({ id: 'a' }), note({ id: 'b', is_read: true })]);
+  const styleOf = (row: Renderer.ReactTestInstance) =>
+    StyleSheet.flatten(row.props.style({ pressed: false }));
+  const [unread, read] = rows().map(styleOf);
+  for (const style of [unread, read]) {
+    // 상자 모양(테두리·둥근 모서리·바깥 여백)이 없다
+    expect(style.borderWidth).toBeUndefined();
+    expect(style.borderRadius).toBeUndefined();
+    expect(style.marginBottom).toBeUndefined();
+    // 아래 가는 선으로 다음 알림과 나누고, 글자는 본문 선(20)에 맞춘다
+    expect(style.borderBottomWidth).toBe(StyleSheet.hairlineWidth);
+    expect(style.paddingHorizontal).toBe(20);
+  }
+  // 안 읽은 알림은 줄 전체를 칠해 구분한다
+  expect(unread.backgroundColor).not.toBe(read.backgroundColor);
+});

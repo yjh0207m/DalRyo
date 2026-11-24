@@ -9,7 +9,7 @@ import {
   type LucideIcon,
 } from 'lucide-react-native';
 import { AppText, Button } from '../../components/ui';
-import { colors, radius, spacing } from '../../theme';
+import { colors, radius, spacing, themedStyles } from '../../theme';
 import type { RunGoalType } from '../../types/run.types';
 
 type Props = {
@@ -160,19 +160,19 @@ export function RunStartSheet({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   eyebrow: { fontSize: 10, letterSpacing: 1.5, marginBottom: 6 },
   parkButton: { marginTop: spacing.md },
   backdrop: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(10,30,26,0.45)',
+    backgroundColor: colors.scrim,
   },
   sheet: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceRaised,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     paddingHorizontal: spacing.xl,
@@ -209,9 +209,9 @@ const styles = StyleSheet.create({
     height: 40,
     marginBottom: 12,
     borderRadius: radius.md,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceRaised,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  tileIconFeatured: { backgroundColor: colors.surface },
-});
+  tileIconFeatured: { backgroundColor: colors.surfaceRaised },
+}));

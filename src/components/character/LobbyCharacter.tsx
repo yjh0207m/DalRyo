@@ -37,9 +37,10 @@ type Particle = {
   color: string;
 };
 
-const EMOTES: Array<{ icon: LucideIcon; color: string }> = [
-  { icon: Music, color: colors.primary },
-  { icon: Sparkles, color: colors.gold },
+// 색은 띄울 때의 테마 색을 읽는다
+const EMOTES: Array<{ icon: LucideIcon; color: () => string }> = [
+  { icon: Music, color: () => colors.primary },
+  { icon: Sparkles, color: () => colors.gold },
 ];
 
 export function LobbyCharacter({
@@ -111,7 +112,7 @@ export function LobbyCharacter({
       } else {
         const emote = EMOTES[Math.floor(step / 2) % EMOTES.length];
         setJumpKey(key => key + 1);
-        burst(emote.icon, emote.color, size * 0.3 * facingRef.current);
+        burst(emote.icon, emote.color(), size * 0.3 * facingRef.current);
       }
       step += 1;
       timer = setTimeout(act, 8000 + Math.random() * 4000);

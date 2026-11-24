@@ -80,6 +80,25 @@ async function call(user, action, data = {}, name = 'socialAction') {
       await call(b,'follow',{uid:a.uid,following:false});await call(b,'follow',{uid:a.uid,following:false});
       assert.equal((await read(`users/${a.uid}`)).follower_count,0);
     });
+    await test('a post tags only mutual friends as people who ran together', async () => {
+      await call(a,'follow',{uid:c.uid,following:true});await call(c,'follow',{uid:a.uid,following:true});
+      // 같은 사람을 두 번, 나 자신을 넣어도 한 번만 남고 나는 빠진다. 이름은 서버가 채운다
+      await call(a,'createPost',{postId:'tagged-post',text:'together',visibility:'public',withUids:[c.uid,c.uid,a.uid],with_runners:[{uid:b.uid,display_name:'forged'}]});
+      const post=await read('posts/tagged-post');
+      assert.deepEqual(post.with_runners,[{uid:c.uid,display_name:'Bob'}]);assert.equal(post.share_count,0);
+      // 서로 팔로우하지 않는 사람은 태그할 수 없다
+      await assert.rejects(call(a,'createPost',{postId:'tagged-stranger',text:'x',visibility:'public',withUids:[b.uid]}),{code:'PERMISSION_DENIED'});
+      assert.equal(await read('posts/tagged-stranger'),undefined);
+      await assert.rejects(call(a,'createPost',{postId:'tagged-many',text:'x',visibility:'public',withUids:Array.from({length:11},(_,i)=>`u${i}`)}),{code:'INVALID_ARGUMENT'});
+      await call(a,'follow',{uid:c.uid,following:false});await call(c,'follow',{uid:a.uid,following:false});
+    });
+    await test('shares count once per person and only on public posts', async () => {
+      await call(b,'share',{postId:'public-post'});await call(b,'share',{postId:'public-post'});
+      await call(c,'share',{postId:'public-post'});
+      assert.equal((await read('posts/public-post')).share_count,2);
+      await assert.rejects(call(b,'share',{postId:'private-post'}),{code:'PERMISSION_DENIED'});
+      await assert.rejects(call(b,'share',{postId:'followers-post'}),{code:'PERMISSION_DENIED'});
+    });
     await test('profile exposes pet and brief runs without locations or private account fields', async () => {
       await env.withSecurityRulesDisabled(async ctx => {
         await updateDoc(doc(ctx.firestore(),`users/${a.uid}/character/${a.uid}`),{stage:'child',exp:100,private_note:'not-public'});

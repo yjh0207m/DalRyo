@@ -250,6 +250,22 @@ describe('the character side', () => {
 });
 
 describe('the runs', () => {
+  test('the run count is the same size as its "완료한 러닝" label, only bolder', async () => {
+    await render();
+    const row = pressable('최근 러닝 보기');
+    const style = (word: string) =>
+      StyleSheet.flatten(
+        row
+          .findAllByType(Text)
+          .find(
+            node =>
+              ([] as unknown[]).concat(node.props.children).join('') === word,
+          )!.props.style,
+      );
+    expect(style('6회').fontSize).toBe(style('완료한 러닝').fontSize);
+    expect(style('6회').fontFamily).not.toBe(style('완료한 러닝').fontFamily);
+  });
+
   test('the completed-runs line is one pressable row that opens the runs, with its count inside', async () => {
     await render();
     const row = pressable('최근 러닝 보기');

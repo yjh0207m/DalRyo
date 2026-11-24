@@ -51,7 +51,7 @@ import {
   IconButton,
   type ActionSheetItem,
 } from '../../components/ui';
-import { colors, fonts } from '../../theme';
+import { colors, fonts, themedStyles } from '../../theme';
 import {
   myUid,
   socialError,
@@ -581,21 +581,34 @@ function GroupMemberRow({
   );
 }
 
-function GroupSender({ room, uid }: { room: Conversation; uid: string }) {
+// 그룹 채팅에서 연속 메시지 묶음의 첫 말풍선 위에 붙는 보낸 사람 이름. 말풍선과 같은 왼쪽 선에 맞춘다
+function GroupSenderName({
+  room,
+  uid,
+  testID,
+}: {
+  room: Conversation;
+  uid: string;
+  testID?: string;
+}) {
   const profile = usePostAuthor(uid, room) ?? room.profiles[uid];
   return (
-    <View style={s.groupSender}>
-      <Avatar profile={profile} compact />
-      <AppText
-        variant="label"
-        color={colors.textMuted}
-        numberOfLines={1}
-        style={s.grow}
-      >
-        {profile?.display_name ?? '러너'}
-      </AppText>
-    </View>
+    <AppText
+      testID={testID}
+      variant="label"
+      color={colors.textMuted}
+      numberOfLines={1}
+      style={[s.groupSenderName, s.incomingIndent]}
+    >
+      {profile?.display_name ?? '러너'}
+    </AppText>
   );
+}
+
+// 그룹 채팅에서 묶음의 마지막 말풍선 옆에 붙는 보낸 사람 사진
+function GroupSenderAvatar({ room, uid }: { room: Conversation; uid: string }) {
+  const profile = usePostAuthor(uid, room) ?? room.profiles[uid];
+  return <Avatar profile={profile} compact />;
 }
 
 function sameMessageGroup(message: ChatMessage, neighbor?: ChatMessage) {
@@ -1375,14 +1388,17 @@ export function ConversationView({
                 const own = item.sender_uid === uid;
                 const previous = chronological[index - 1];
                 const next = chronological[index + 1];
+                // 같은 사람이 같은 분에 연달아 보낸 메시지는 한 묶음이다.
+                // 이름은 묶음의 첫 말풍선 위에, 프로필 사진과 시간은 마지막 말풍선에 한 번만 붙인다
                 const firstInGroup = !sameMessageGroup(item, previous);
-                const showTime = !sameMessageGroup(item, next);
+                const lastInGroup = !sameMessageGroup(item, next);
+                const showTime = lastInGroup;
                 const date = new Date(item.createdAt);
                 const showDay =
                   !previous ||
                   new Date(previous.createdAt).toDateString() !==
                     date.toDateString();
-                const showDirectAvatar = !own && !groupRoom && firstInGroup;
+                const showAvatar = !own && lastInGroup;
                 const unreadCount =
                   item.createdAt > 0
                     ? (room?.members ?? []).filter(
@@ -1408,15 +1424,40 @@ export function ConversationView({
                       </AppText>
                     )}
                     {!own && groupRoom && firstInGroup && (
-                      <GroupSender room={groupRoom} uid={item.sender_uid} />
+                      <GroupSenderName
+                        testID={`message-sender-${item.id}`}
+                        room={groupRoom}
+                        uid={item.sender_uid}
+                      />
                     )}
                     <View
                       style={[s.messageRow, own ? s.ownRow : s.incomingIndent]}
                     >
-                      {showDirectAvatar && (
-                        <View style={s.directAvatar}>
-                          <Avatar profile={profile} compact />
-                        </View>
+                      {showAvatar && (
+                        // 상대 사진을 누르면 그 사람 프로필로 간다
+                        <Pressable
+                          testID={`message-avatar-${item.id}`}
+                          accessibilityRole="button"
+                          accessibilityLabel={`${
+                            (groupRoom
+                              ? groupRoom.profiles[item.sender_uid]
+                              : profile
+                            )?.display_name ?? '러너'
+                          } 프로필`}
+                          disabled={!onProfile}
+                          onPress={() => onProfile?.(item.sender_uid)}
+                          hitSlop={4}
+                          style={s.senderAvatar}
+                        >
+                          {groupRoom ? (
+                            <GroupSenderAvatar
+                              room={groupRoom}
+                              uid={item.sender_uid}
+                            />
+                          ) : (
+                            <Avatar profile={profile} compact />
+                          )}
+                        </Pressable>
                       )}
                       {own && unreadCount > 0 && (
                         <AppText
@@ -1429,7 +1470,15 @@ export function ConversationView({
                         </AppText>
                       )}
                       <View
-                        style={[s.bubble, own ? s.ownBubble : s.otherBubble]}
+                        style={[
+                          s.bubble,
+                          own ? s.ownBubble : s.otherBubble,
+                          // 묶음 안쪽으로 이어지는 모서리만 작게 해서 한 덩어리로 보이게 한다
+                          !firstInGroup &&
+                            (own ? s.ownJoinTop : s.otherJoinTop),
+                          !lastInGroup &&
+                            (own ? s.ownJoinBottom : s.otherJoinBottom),
+                        ]}
                       >
                         <AppText
                           selectable
@@ -1529,7 +1578,7 @@ export function ConversationView({
               {busy ? (
                 <ActivityIndicator color="white" />
               ) : (
-                <ArrowUp size={24} color="white" />
+                <ArrowUp size={24} color={colors.textOnPrimary} />
               )}
             </Pressable>
           </View>
@@ -1625,7 +1674,7 @@ export function ConversationView({
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   together: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 8 },
   screen: { flex: 1, backgroundColor: colors.surface },
   grow: { flex: 1 },
@@ -1741,17 +1790,14 @@ const s = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   messageRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
-  messageItem: { marginBottom: 4 },
-  messageGroupEnd: { marginBottom: 10 },
+  // 묶음 안의 말풍선끼리는 붙여 두고, 묶음과 묶음 사이는 넉넉히 띄운다
+  messageItem: { marginBottom: 3 },
+  messageGroupEnd: { marginBottom: 16 },
   ownRow: { justifyContent: 'flex-end' },
-  groupSender: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 4,
-  },
+  groupSenderName: { marginBottom: 6 },
   incomingIndent: { marginLeft: 38 },
-  directAvatar: { position: 'absolute', left: -38, top: 0 },
+  // 묶음의 마지막 말풍선 아래쪽에 맞춘 사진
+  senderAvatar: { position: 'absolute', left: -38, bottom: 0 },
   bubble: {
     maxWidth: '78%',
     flexShrink: 1,
@@ -1759,14 +1805,12 @@ const s = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 20,
   },
-  ownBubble: {
-    backgroundColor: colors.primarySoft,
-    borderBottomRightRadius: 6,
-  },
-  otherBubble: {
-    backgroundColor: colors.surfaceMuted,
-    borderBottomLeftRadius: 6,
-  },
+  ownBubble: { backgroundColor: colors.primarySoft },
+  otherBubble: { backgroundColor: colors.surfaceMuted },
+  ownJoinTop: { borderTopRightRadius: 6 },
+  ownJoinBottom: { borderBottomRightRadius: 6 },
+  otherJoinTop: { borderTopLeftRadius: 6 },
+  otherJoinBottom: { borderBottomLeftRadius: 6 },
   messageText: { fontSize: 15, lineHeight: 23 },
   messageMeta: { fontSize: 10, paddingTop: 3 },
   unreadCount: { fontSize: 11, fontFamily: fonts.semibold, paddingBottom: 2 },
@@ -1802,4 +1846,4 @@ const s = StyleSheet.create({
   },
   disabled: { opacity: 0.4 },
   notice: { padding: 12, fontSize: 12 },
-});
+}));

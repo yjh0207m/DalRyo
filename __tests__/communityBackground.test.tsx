@@ -10,6 +10,8 @@ import {
   PostCard,
   ProfilePage,
 } from '../src/screens/community/CommunityScreen';
+import { PhotoSourceSheet } from '../src/components/ui';
+import { choosePhoto } from '../src/services/media.service';
 import {
   resetBackgroundTasks,
   useBackgroundToasts,
@@ -251,25 +253,44 @@ describe('deleting a post', () => {
 });
 
 describe('writing a post', () => {
-  const type = (value: string) =>
-    act(async () => tree.root.findByType(TextInput).props.onChangeText(value));
+  const type = (value: string, label = '게시물 내용') =>
+    act(async () =>
+      tree.root
+        .findAllByType(TextInput)
+        .find(input => input.props.accessibilityLabel === label)!
+        .props.onChangeText(value),
+    );
 
   test('saving leaves the screen immediately and the upload and request continue in the background', async () => {
     const request = pending();
     const onSaved = jest.fn();
     mockAction.mockReturnValue(request.promise);
+    (choosePhoto as jest.Mock).mockResolvedValue({
+      uri: 'file:///photo.jpg',
+      type: 'image/jpeg',
+    });
     await act(async () => {
       tree = Renderer.create(<Composer onBack={jest.fn()} onSaved={onSaved} />);
     });
-    await type('  오늘도 완주! #오운완  ');
+    await act(async () =>
+      tree.root.findByType(PhotoSourceSheet).props.onAlbum(),
+    );
+    await type('  오늘도 완주!  ');
+    await type('오운완', '태그');
     await act(async () => buttonByText('게시물 올리기').props.onPress());
     expect(onSaved).toHaveBeenCalledTimes(1);
+    expect(mockUpload).toHaveBeenCalledWith(
+      { uri: 'file:///photo.jpg', type: 'image/jpeg' },
+      'posts',
+      expect.any(Function),
+    );
     expect(mockAction).toHaveBeenCalledWith('createPost', {
       postId: 'new-post',
-      text: '오늘도 완주! #오운완',
+      text: '오늘도 완주!\n#오운완',
       visibility: 'public',
-      imageUrl: null,
+      imageUrl: 'https://storage.example/p.jpg',
       runId: null,
+      withUids: [],
     });
     expect(toasts).toMatchObject([
       { kind: 'running', message: '게시물 올리는 중' },
@@ -280,17 +301,19 @@ describe('writing a post', () => {
     ]);
   });
 
-  test('an empty post is rejected on the screen without starting anything', async () => {
+  test('a post without a photo or run record cannot be posted, even with text', async () => {
     const onSaved = jest.fn();
     await act(async () => {
       tree = Renderer.create(<Composer onBack={jest.fn()} onSaved={onSaved} />);
     });
+    await type('글만 쓴 게시물');
+    expect(buttonByText('게시물 올리기').props.disabled).toBe(true);
     await act(async () => buttonByText('게시물 올리기').props.onPress());
     expect(onSaved).not.toHaveBeenCalled();
     expect(mockAction).not.toHaveBeenCalled();
     expect(toasts).toEqual([]);
     expect(JSON.stringify(tree.toJSON())).toContain(
-      '내용이나 사진, 달리기 기록을 추가해 주세요.',
+      '사진이나 달리기 기록을 첨부해 주세요.',
     );
   });
 

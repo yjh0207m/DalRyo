@@ -17,6 +17,11 @@ export function documentId(value: unknown): string {
   return value;
 }
 
+// 지역: 시·도 줄임 이름, 또는 그 뒤에 띄어 쓴 시·군·구(광역시는 구·군, 도는 시·군. 예: 서울 강남구, 경기 수원시).
+// 예전에 저장한 시·도만 있는 값도 받는다. Firestore 규칙(validUser)도 같은 모양을 검사한다
+export const REGION_PATTERN =
+  /^(서울|경기|인천|강원|충북|충남|대전|세종|경북|경남|대구|부산|울산|전북|전남|광주|제주)( [가-힣]{1,7}(시|군|구))?$/;
+
 // 아이디: 영문 소문자·숫자·밑줄 4~20자. 앞의 @는 떼고 소문자로 맞춘다. 비어 있으면 null(바꾸지 않음)
 export const USER_ID_PATTERN = /^[a-z0-9_]{4,20}$/;
 export function userIdValue(value: unknown): string | null {
@@ -55,26 +60,7 @@ export function validateAccount(input: Record<string, unknown>) {
     !['std', 'gyeong', 'jeon', 'chung', 'jeju'].includes(String(input.dialect))
   )
     throw new Error('말투를 확인해 주세요.');
-  const regions = [
-    '서울',
-    '경기',
-    '인천',
-    '강원',
-    '충북',
-    '충남',
-    '대전',
-    '세종',
-    '경북',
-    '경남',
-    '대구',
-    '부산',
-    '울산',
-    '전북',
-    '전남',
-    '광주',
-    '제주',
-  ];
-  if (!regions.includes(String(input.region)))
+  if (!REGION_PATTERN.test(String(input.region)))
     throw new Error('지역을 확인해 주세요.');
   if (
     input.gender !== null &&

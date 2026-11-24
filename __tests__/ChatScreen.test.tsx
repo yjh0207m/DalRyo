@@ -1051,3 +1051,145 @@ describe('the back button of the messages list', () => {
     }
   });
 });
+
+describe('a run of messages from the same person', () => {
+  const start = new Date(2026, 10, 11, 12, 0).getTime();
+  const run = [
+    { ...one, id: 'p1', text: '첫 줄', createdAt: start },
+    { ...one, id: 'p2', text: '가운데 줄', createdAt: start + 1000 },
+    { ...one, id: 'p3', text: '마지막 줄', createdAt: start + 2000 },
+    {
+      ...one,
+      id: 'm1',
+      sender_uid: 'me',
+      text: '내 답장',
+      createdAt: start + 3000,
+    },
+  ];
+  const marked = (prefix: string) => [
+    ...new Set(
+      tree.root
+        .findAll(node => String(node.props.testID ?? '').startsWith(prefix))
+        .map(node => node.props.testID as string),
+    ),
+  ];
+  const bubble = (text: string) => {
+    const label = tree.root
+      .findAllByType(AppText)
+      .find(node => node.props.selectable && node.props.children === text)!;
+    return StyleSheet.flatten(label.parent!.props.style);
+  };
+
+  test('shows the photo once, beside the last bubble, and no name in a one-to-one chat', async () => {
+    await render();
+    await act(() => mockMessageNext({ items: run, cursor: null, more: false }));
+    // 처음부터 있던 메시지(one)는 다른 분에 보낸 따로 된 묶음이다
+    expect(marked('message-avatar-')).toEqual([
+      'message-avatar-one',
+      'message-avatar-p3',
+    ]);
+    expect(marked('message-sender-')).toEqual([]);
+  });
+
+  test('in a group chat the name sits above the first bubble and the photo beside the last', async () => {
+    await render();
+    await act(() => {
+      mockRoomNext({
+        ...room,
+        kind: 'group',
+        members: ['me', 'peer', 'other'],
+      });
+      mockMessageNext({
+        items: [
+          ...run.slice(0, 2),
+          {
+            ...one,
+            id: 'o1',
+            sender_uid: 'other',
+            text: '다른 사람',
+            createdAt: start + 1500,
+          },
+        ],
+        cursor: null,
+        more: false,
+      });
+    });
+    expect(marked('message-sender-')).toEqual([
+      'message-sender-one',
+      'message-sender-p1',
+      'message-sender-o1',
+    ]);
+    expect(marked('message-avatar-')).toEqual([
+      'message-avatar-one',
+      'message-avatar-p2',
+      'message-avatar-o1',
+    ]);
+  });
+
+  test("tapping the other person's photo opens their profile", async () => {
+    const onProfile = jest.fn();
+    const avatar = (id: string) =>
+      tree.root.find(
+        node =>
+          typeof node.type === 'function' &&
+          node.type.name === 'Pressable' &&
+          node.props.testID === `message-avatar-${id}`,
+      );
+    await act(async () => {
+      tree = Renderer.create(
+        <ConversationView id="room" onBack={jest.fn()} onProfile={onProfile} />,
+      );
+    });
+    await act(() => mockMessageNext({ items: run, cursor: null, more: false }));
+    expect(avatar('p3').props.accessibilityLabel).toBe('친구 프로필');
+    await act(() => avatar('p3').props.onPress());
+    expect(onProfile).toHaveBeenCalledWith('peer');
+    // 그룹 채팅에서는 그 말풍선을 보낸 사람의 프로필로 간다
+    await act(() => {
+      mockRoomNext({
+        ...room,
+        kind: 'group',
+        members: ['me', 'peer', 'other'],
+        profiles: {
+          ...room.profiles,
+          other: { display_name: '다른 러너', profile_image: null },
+        },
+      });
+      mockMessageNext({
+        items: [
+          {
+            ...one,
+            id: 'o1',
+            sender_uid: 'other',
+            text: '다른 사람',
+            createdAt: start,
+          },
+        ],
+        cursor: null,
+        more: false,
+      });
+    });
+    expect(avatar('o1').props.accessibilityLabel).toBe('다른 러너 프로필');
+    await act(() => avatar('o1').props.onPress());
+    expect(onProfile).toHaveBeenLastCalledWith('other');
+  });
+
+  test('bubbles in a run only narrow the corners where they join', async () => {
+    await render();
+    await act(() => mockMessageNext({ items: run, cursor: null, more: false }));
+    expect(bubble('첫 줄')).toMatchObject({
+      borderRadius: 20,
+      borderBottomLeftRadius: 6,
+    });
+    expect(bubble('첫 줄').borderTopLeftRadius).toBeUndefined();
+    expect(bubble('가운데 줄')).toMatchObject({
+      borderTopLeftRadius: 6,
+      borderBottomLeftRadius: 6,
+    });
+    expect(bubble('마지막 줄')).toMatchObject({ borderTopLeftRadius: 6 });
+    expect(bubble('마지막 줄').borderBottomLeftRadius).toBeUndefined();
+    // 혼자 보낸 메시지는 네 모서리가 모두 둥글다
+    expect(bubble('내 답장').borderBottomRightRadius).toBeUndefined();
+    expect(bubble('내 답장').borderTopRightRadius).toBeUndefined();
+  });
+});

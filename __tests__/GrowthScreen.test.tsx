@@ -81,3 +81,37 @@ test('the summary card sits close under the header now that the tagline is gone'
   const summary = tree.root.findAllByProps({ testID: 'growth-summary' })[0];
   expect(StyleSheet.flatten(summary.props.style).marginTop).toBe(8);
 });
+
+test('the total distance stands alone as the largest number, with the last 7 days and EXP side by side below it', async () => {
+  await act(async () => {
+    tree = Renderer.create(
+      <GrowthScreen
+        user={user}
+        character={character}
+        onNotificationPress={jest.fn()}
+        onSettingsPress={jest.fn()}
+      />,
+    );
+  });
+  const textsIn = (node: Renderer.ReactTestInstance) =>
+    node
+      .findAllByType(Text)
+      .map(item => ([] as unknown[]).concat(item.props.children).join(''));
+  const total = tree.root.findByProps({ testID: 'growth-total' });
+  expect(textsIn(total)).toEqual(['누적 거리', '12.5', 'km']);
+  const secondary = tree.root.findByProps({ testID: 'growth-secondary' });
+  expect(StyleSheet.flatten(secondary.props.style).flexDirection).toBe('row');
+  const labels = textsIn(secondary);
+  expect(labels).toContain('최근 7일');
+  expect(labels).toContain('EXP');
+  // 누적 거리 숫자가 아래 줄 숫자보다 크다
+  const fontSize = (node: Renderer.ReactTestInstance, value: string) =>
+    StyleSheet.flatten(
+      node
+        .findAllByType(Text)
+        .find(
+          item => ([] as unknown[]).concat(item.props.children).join('') === value,
+        )!.props.style,
+    ).fontSize;
+  expect(fontSize(total, '12.5')).toBeGreaterThan(fontSize(secondary, '100'));
+});

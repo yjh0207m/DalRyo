@@ -4,14 +4,13 @@ import {
   Platform,
   ScrollView,
   StatusBar,
-  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {colors, fonts} from '../../theme';
+import {colors, fonts, statusBarStyle, themedStyles} from '../../theme';
 import {usePhoneAuth} from '../../store/useAuthStore';
 import type {AuthResult} from '../../types/auth.types';
 
@@ -20,10 +19,6 @@ type Props = {
   onBack: () => void;
   onVerified: (result: AuthResult) => void;
 };
-
-const MINT = colors.primary;
-const GREEN = colors.primaryStrong;
-const TEXT = colors.text;
 
 export function PhoneLoginScreen({onBack, onVerified}: Props) {
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -47,7 +42,7 @@ export function PhoneLoginScreen({onBack, onVerified}: Props) {
 
   return (
     <SafeAreaView style={styles.screen}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
+      <StatusBar barStyle={statusBarStyle()} backgroundColor={colors.background} />
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.keyboardView}>
         <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
           <TouchableOpacity activeOpacity={0.75} onPress={onBack} style={styles.backButton}>
@@ -62,7 +57,7 @@ export function PhoneLoginScreen({onBack, onVerified}: Props) {
             onChangeText={setPhoneNumber}
             keyboardType="phone-pad"
             placeholder="010 - 1234 - 5678"
-            placeholderTextColor="#B6B6B6"
+            placeholderTextColor={colors.textSubtle}
             style={styles.input}
           />
 
@@ -75,7 +70,7 @@ export function PhoneLoginScreen({onBack, onVerified}: Props) {
               keyboardType="number-pad"
               maxLength={6}
               placeholder="인증번호 6자리를 입력해주세요"
-              placeholderTextColor="#B6B6B6"
+              placeholderTextColor={colors.textSubtle}
               style={[styles.input, styles.otpInput]}
             />
             <TouchableOpacity activeOpacity={0.82} disabled={!canRequestCode} onPress={handleRequestCode} style={[styles.requestButton, !canRequestCode && styles.disabledButton]}>
@@ -107,24 +102,24 @@ export function PhoneLoginScreen({onBack, onVerified}: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   screen: {flex: 1, backgroundColor: colors.background},
   keyboardView: {flex: 1},
   content: {paddingHorizontal: 38, paddingTop: 24, paddingBottom: 340},
   backButton: {width: 42, height: 50, justifyContent: 'center', marginLeft: -12, marginBottom: 50},
-  backText: {color: TEXT, fontSize: 42, lineHeight: 42},
-  title: {color: GREEN, fontSize: 40, fontFamily: fonts.extrabold},
-  subtitle: {color: '#727272', fontSize: 19, fontFamily: fonts.medium, marginTop: 16, marginBottom: 72},
-  inputLabel: {color: '#222222', fontSize: 16, fontFamily: fonts.extrabold, marginBottom: 10},
-  input: {height: 58, borderWidth: 1, borderColor: '#DCDCDC', borderRadius: 12, backgroundColor: '#FFFFFF', color: TEXT, fontSize: 18, fontFamily: fonts.medium, paddingHorizontal: 18, marginBottom: 34},
+  backText: {color: colors.text, fontSize: 42, lineHeight: 42},
+  title: {color: colors.primaryStrong, fontSize: 40, fontFamily: fonts.extrabold},
+  subtitle: {color: colors.textMuted, fontSize: 19, fontFamily: fonts.medium, marginTop: 16, marginBottom: 72},
+  inputLabel: {color: colors.text, fontSize: 16, fontFamily: fonts.extrabold, marginBottom: 10},
+  input: {height: 58, borderWidth: 1, borderColor: colors.border, borderRadius: 12, backgroundColor: colors.surface, color: colors.text, fontSize: 18, fontFamily: fonts.medium, paddingHorizontal: 18, marginBottom: 34},
   otpRow: {flexDirection: 'row', gap: 12},
   otpInput: {flex: 1, marginBottom: 0},
-  requestButton: {width: 108, height: 58, borderWidth: 1, borderColor: '#BFE7D5', borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF'},
+  requestButton: {width: 108, height: 58, borderWidth: 1, borderColor: colors.primaryBorder, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface},
   disabledButton: {opacity: 0.55},
-  requestButtonText: {color: GREEN, fontSize: 16, fontFamily: fonts.extrabold},
-  timerText: {color: '#888888', fontSize: 15, marginTop: 18},
-  errorText: {color: '#C95B5B', fontSize: 14, fontFamily: fonts.bold, lineHeight: 20, marginTop: 12},
-  nextButton: {height: 62, borderRadius: 14, backgroundColor: MINT, alignItems: 'center', justifyContent: 'center', marginTop: 70, shadowColor: MINT, shadowOpacity: 0.06, shadowRadius: 16, shadowOffset: {width: 0, height: 8}, elevation: 0},
+  requestButtonText: {color: colors.primaryStrong, fontSize: 16, fontFamily: fonts.extrabold},
+  timerText: {color: colors.textMuted, fontSize: 15, marginTop: 18},
+  errorText: {color: colors.danger, fontSize: 14, fontFamily: fonts.bold, lineHeight: 20, marginTop: 12},
+  nextButton: {height: 62, borderRadius: 14, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', marginTop: 70, shadowColor: colors.primary, shadowOpacity: 0.06, shadowRadius: 16, shadowOffset: {width: 0, height: 8}, elevation: 0},
   nextButtonDisabled: {opacity: 0.45},
-  nextButtonText: {color: '#FFFFFF', fontSize: 22, fontFamily: fonts.extrabold},
-});
+  nextButtonText: {color: colors.textOnPrimary, fontSize: 22, fontFamily: fonts.extrabold},
+}));

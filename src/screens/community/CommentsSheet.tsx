@@ -25,7 +25,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ArrowUp, Trash2, UserRound, X } from 'lucide-react-native';
 import { AppText, Button, IconButton } from '../../components/ui';
-import { colors, fonts } from '../../theme';
+import { colors, fonts, themedStyles } from '../../theme';
 import { useComments } from '../../hooks/useComments';
 import { commentBranch, threadComments } from '../../utils/commentThreads';
 import {
@@ -535,11 +535,11 @@ export function CommentsSheet({
   );
 }
 
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   overlay: { flex: 1, justifyContent: 'flex-end' },
-  shade: { backgroundColor: 'rgba(17,33,30,0.42)' },
+  shade: { backgroundColor: colors.scrim },
   sheet: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceRaised,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     overflow: 'hidden',
@@ -609,7 +609,7 @@ const s = StyleSheet.create({
     paddingTop: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceRaised,
   },
   inputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 10 },
   input: {
@@ -640,4 +640,4 @@ const s = StyleSheet.create({
     paddingBottom: 6,
   },
   error: { paddingHorizontal: 20, paddingVertical: 8 },
-});
+}));

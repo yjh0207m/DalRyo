@@ -17,6 +17,8 @@ import { PhoneLoginScreen } from './src/screens/auth/LoginScreen';
 import { OnboardingScreen } from './src/screens/auth/OnboardingScreen';
 import { MainAppScreen } from './src/screens/main/MainAppScreen';
 import { DialectProvider } from './src/locales/DialectProvider';
+import { colors, themedStyles, useThemeMode } from './src/theme';
+import { restoreThemePreference } from './src/services/themePreference.service';
 import { fetchCurrentUserDocument } from './src/services/user.service';
 import {
   fetchMyProfile,
@@ -38,9 +40,15 @@ LogBox.ignoreLogs([
 
 // 하단 탭바 등이 기기 홈 인디케이터 영역을 피할 수 있게 safe area 값을 제공한다
 function App() {
+  // 테마(밝게/어둡게)가 바뀌면 여기서부터 다시 그려서, 아래 모든 화면이 새 색으로 그려진다.
+  // key로 다시 만들지 않으므로 열려 있던 화면과 입력 상태는 그대로다
+  const themeMode = useThemeMode();
+  useEffect(() => {
+    restoreThemePreference();
+  }, []);
   return (
     <SafeAreaProvider>
-      <AppRoutes />
+      <AppRoutes themeMode={themeMode} />
       {/* 게시 같은 백그라운드 요청의 진행 상태. 어느 화면에서든 위쪽에 작게 뜬다 */}
       <BackgroundTaskToast />
       {/* iOS 왼쪽 가장자리 스와이프로 뒤로 가기 */}
@@ -49,7 +57,8 @@ function App() {
   );
 }
 
-function AppRoutes() {
+// themeMode는 테마가 바뀔 때 이 아래를 다시 그리게 하려고 받는다(값 자체는 colors가 이미 바뀌어 있다)
+function AppRoutes(_: { themeMode: string }) {
   // 저장된 로그인이 복원되기 전에 시작 화면이 잠깐 비치지 않도록 첫 인증 콜백이 올 때까지 로딩을 보여 준다
   const [route, setRoute] = useState<Route>('loading');
   const [firebaseUser, setFirebaseUser] =
@@ -189,7 +198,7 @@ function AppRoutes() {
     return (
       <SafeAreaView style={styles.loadingScreen}>
         <Text style={styles.loadingText}>계정 정보를 불러오지 못했어요.</Text>
-        <Text>네트워크를 확인하고 다시 시도해 주세요.</Text>
+        <Text style={styles.bodyText}>네트워크를 확인하고 다시 시도해 주세요.</Text>
         <Pressable
           accessibilityRole="button"
           onPress={() => {
@@ -198,7 +207,7 @@ function AppRoutes() {
           }}
           style={styles.retry}
         >
-          <Text>다시 시도</Text>
+          <Text style={styles.retryText}>다시 시도</Text>
         </Pressable>
       </SafeAreaView>
     );
@@ -268,22 +277,24 @@ function AppRoutes() {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   root: { flex: 1 },
   retry: { padding: 20 },
   loadingScreen: {
     flex: 1,
-    backgroundColor: '#F6FEFF',
+    backgroundColor: colors.background,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 28,
   },
   loadingText: {
-    color: '#151515',
+    color: colors.text,
     fontSize: 17,
     fontWeight: '900',
     marginTop: 18,
   },
-});
+  bodyText: { color: colors.textMuted },
+  retryText: { color: colors.primaryInk },
+}));
 
 export default App;

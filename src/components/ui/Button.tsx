@@ -1,12 +1,11 @@
 import React from 'react';
 import {
   Pressable,
-  StyleSheet,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
 import type { LucideIcon } from 'lucide-react-native';
-import { colors, radius, spacing } from '../../theme';
+import { colors, radius, spacing, themedStyles } from '../../theme';
 import { AppText } from './AppText';
 type Props = {
   label: string;
@@ -66,7 +65,7 @@ export function Button({
     </Pressable>
   );
 }
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   base: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -88,4 +87,4 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.83, transform: [{ scale: 0.985 }] },
   mediumLabel: { fontSize: 14, lineHeight: 20 },
   grow: { flex: 1 },
-});
+}));

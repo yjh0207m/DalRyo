@@ -4,7 +4,8 @@ import {colors} from '../../theme';
 
 // 위에서 흩날리며 떨어지는 색종이. 한 번만 뿌리고 사라진다 (부화·성장·해동처럼 큰 순간에만 쓴다)
 
-const PALETTE = [colors.primary, colors.gold, colors.heart, '#7CC8F2', '#FFFFFF'];
+// 뿌릴 때의 테마 색을 쓴다
+const palette = () => [colors.primary, colors.gold, colors.heart, '#7CC8F2', '#FFFFFF'];
 const COUNT = 26;
 
 type Piece = {x: number; drift: number; delay: number; spin: number; color: string; wide: boolean; fall: number};
@@ -19,7 +20,7 @@ export function Confetti({width, height, durationMs = 1900}: {width: number; hei
         drift: (Math.random() - 0.5) * 80,
         delay: Math.random() * 0.25,
         spin: (Math.random() < 0.5 ? -1 : 1) * (240 + Math.random() * 360),
-        color: PALETTE[i % PALETTE.length],
+        color: palette()[i % palette().length],
         wide: i % 3 === 0,
         fall: height * (0.75 + Math.random() * 0.35),
       })),

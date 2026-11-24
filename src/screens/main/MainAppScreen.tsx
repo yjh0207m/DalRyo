@@ -1,5 +1,5 @@
 import React, {useRef, useState} from 'react';
-import {ActivityIndicator, Alert, Pressable, StatusBar, StyleSheet, View} from 'react-native';
+import {ActivityIndicator, Alert, Pressable, StatusBar, View} from 'react-native';
 import {CommunityScreen, type CommunityLink} from '../community/CommunityScreen';
 import {TogetherScreen} from '../together/TogetherScreen';
 import {ParksScreen} from '../parks/ParksScreen';
@@ -27,7 +27,7 @@ import {useRunRecovery} from '../../hooks/useRunRecovery';
 import {RunRecoveryScreen} from '../run/RunRecoveryScreen';
 import {sessionResult} from '../../utils/runSession';
 import type {RunContext, RunSessionSnapshot} from '../../types/runSession';
-import {colors, spacing} from '../../theme';
+import {colors, spacing, themedStyles, statusBarStyle} from '../../theme';
 import type {CharacterDocument, CharacterStage} from '../../types/character.types';
 import type {RunDocument, RunGoalType} from '../../types/run.types';
 import type {UserDocument} from '../../types/user.types';
@@ -287,7 +287,7 @@ export function MainAppScreen({user, character, onHomeReady}: Props) {
   return (
     <View style={styles.screen}>
       <View style={styles.main} accessibilityElementsHidden={overlayOpen} importantForAccessibility={overlayOpen ? 'no-hide-descendants' : 'auto'}>
-        <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
+        <StatusBar barStyle={statusBarStyle()} backgroundColor={colors.background} />
         {recovery.pending > 0 && <View style={styles.pendingBanner}><AppText variant="caption" style={styles.pendingText}>기기에 보관한 기록 {recovery.pending}개 · {recovery.syncing ? '동기화 중' : '연결되면 자동 동기화'}</AppText><Button label="동기화" size="md" variant="ghost" disabled={recovery.syncing} onPress={recovery.sync}/></View>}
         <TabPagerView pager={pager} renderTab={renderTab} />
         {!(activeTab === 'community' && communitySubpage) && !(activeTab === 'records' && recordSubpage) && <BottomTabBar activeTab={activeTab} onChange={tab => (tab === 'run' ? openRunSheet() : pager.goTo(tab))} />}
@@ -301,7 +301,7 @@ export function MainAppScreen({user, character, onHomeReady}: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   screen: {flex: 1, backgroundColor: colors.background},
   main: {flex: 1},
   pendingBanner: {paddingTop: 40, paddingHorizontal: 20, backgroundColor: colors.primarySoft, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'},
@@ -309,5 +309,5 @@ const styles = StyleSheet.create({
   pendingText: {flex: 1},
   saveStatus: {paddingHorizontal: spacing.xxl, gap: spacing.md},
   saveActions: {alignSelf: 'stretch', gap: spacing.xs, marginTop: spacing.md},
-  pushBanner: {position: 'absolute', top: 56, left: 20, right: 20, padding: 16, backgroundColor: colors.surface, borderRadius: 16, borderWidth: 1, borderColor: colors.primary},
-});
+  pushBanner: {position: 'absolute', top: 56, left: 20, right: 20, padding: 16, backgroundColor: colors.surfaceRaised, borderRadius: 16, borderWidth: 1, borderColor: colors.primary},
+}));

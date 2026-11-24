@@ -7,7 +7,7 @@ import {useNotifications} from '../../hooks/useNotifications';
 import {useDialect} from '../../locales/DialectProvider';
 import {runInBackground} from '../../services/backgroundTask.service';
 import {markNotificationRead} from '../../services/notification.service';
-import {colors, radius, spacing} from '../../theme';
+import {colors, spacing, themedStyles, statusBarStyle} from '../../theme';
 import type {AppNotification} from '../../types/notification.types';
 import {describeNotification, notificationTarget, notificationTime, type NotificationTarget} from '../../utils/notifications';
 import {NotificationAvatar} from './NotificationAvatar';
@@ -49,7 +49,7 @@ export function NotificationsScreen({onBack, onNavigate}: {onBack: () => void; o
 
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
+      <StatusBar barStyle={statusBarStyle()} backgroundColor={colors.surface} />
       <View style={styles.header}>
         <IconButton icon={ChevronLeft} variant="plain" accessibilityLabel="알림에서 뒤로" onPress={onBack} />
         <AppText variant="heading">알림</AppText>
@@ -69,7 +69,7 @@ export function NotificationsScreen({onBack, onNavigate}: {onBack: () => void; o
         <FlatList
           data={items}
           keyExtractor={item => item.id}
-          contentContainerStyle={[styles.content, {paddingBottom: insets.bottom + spacing.xxl}]}
+          contentContainerStyle={[items.length > 0 && styles.content, {paddingBottom: insets.bottom + spacing.xxl}]}
           refreshing={false}
           onRefresh={retry}
           ListEmptyComponent={
@@ -98,7 +98,8 @@ export function NotificationsScreen({onBack, onNavigate}: {onBack: () => void; o
                     <AppText variant="subheading" style={styles.title}>
                       {title}
                     </AppText>
-                    {!item.is_read && <Badge label="새 알림" />}
+                    {/* 안 읽은 줄은 연한 민트 바탕이라 흰 표시로 둔다 */}
+                    {!item.is_read && <Badge label="새 알림" tone="onSoft" />}
                   </View>
                   <AppText variant="caption" color={colors.textMuted}>
                     {body}
@@ -132,8 +133,9 @@ export function NotificationsScreen({onBack, onNavigate}: {onBack: () => void; o
   );
 }
 
-const styles = StyleSheet.create({
-  screen: {flex: 1, backgroundColor: colors.background},
+const styles = themedStyles(() => ({
+  // 피드처럼 흰 바탕 위에 알림을 화면 양끝까지 한 줄씩 늘어놓고 가는 선으로 나눈다
+  screen: {flex: 1, backgroundColor: colors.surface},
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -143,24 +145,25 @@ const styles = StyleSheet.create({
   },
   spacer: {width: 44},
   center: {flex: 1, justifyContent: 'center', padding: spacing.xxl, gap: spacing.lg},
-  content: {paddingHorizontal: spacing.xl, paddingTop: spacing.md},
-  empty: {alignItems: 'center', gap: spacing.lg, marginTop: spacing.xxl, paddingVertical: spacing.xxxl},
+  content: {borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border},
+  empty: {alignItems: 'center', gap: spacing.lg, marginTop: spacing.xxl, marginHorizontal: spacing.xl, paddingVertical: spacing.xxxl},
+  // 알림 한 줄. 상자 없이 화면 양끝까지 쓰고 아래 가는 선으로 다음 알림과 나눈다. 글자는 본문과 같은 선(좌우 20)에 맞춘다
   item: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: spacing.lg,
-    marginBottom: spacing.md,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.lg,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
     backgroundColor: colors.surface,
     gap: spacing.md,
   },
   itemBody: {flex: 1, gap: spacing.xs},
-  unread: {borderColor: colors.primaryBorder, backgroundColor: colors.primarySoft},
-  pressed: {opacity: 0.7},
+  // 안 읽은 알림은 줄 전체를 연한 민트로 칠한다
+  unread: {backgroundColor: colors.primarySoft},
+  pressed: {backgroundColor: colors.surfaceMuted},
   itemHeading: {flexDirection: 'row', gap: spacing.sm, alignItems: 'center'},
   title: {flex: 1},
   itemFooter: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'},
-  footer: {marginVertical: spacing.lg},
-});
+  footer: {marginVertical: spacing.lg, marginHorizontal: spacing.xl},
+}));

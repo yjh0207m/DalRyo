@@ -59,9 +59,16 @@ jest.mock('../src/screens/auth/OnboardingScreen', () => ({
   OnboardingScreen: () => <MockText>새 계정 등록</MockText>,
 }));
 let mockHomeReady: (() => void) | undefined;
+// 테마를 바꿀 때 앱이 다시 그려지기만 하고 새로 만들어지지는 않는지 세기 위한 값
+let mockMainRenders = 0;
+let mockMainMounts = 0;
 jest.mock('../src/screens/main/MainAppScreen', () => ({
   MainAppScreen: ({ onHomeReady }: { onHomeReady?: () => void }) => {
     mockHomeReady = onHomeReady;
+    mockMainRenders += 1;
+    require('react').useEffect(() => {
+      mockMainMounts += 1;
+    }, []);
     return <MockText>내 앱</MockText>;
   },
 }));
@@ -256,5 +263,37 @@ describe('the loading screen while the home screen draws', () => {
     expect(renderedText()).toContain('시작하기');
     expect(renderedText()).not.toContain('내 앱');
     expect(renderedText()).not.toContain('달료 준비 중');
+  });
+});
+
+describe('dark mode', () => {
+  const { getThemeMode, setThemeMode } =
+    require('../src/theme') as typeof import('../src/theme');
+  const storageModule = require('@react-native-async-storage/async-storage');
+  const AsyncStorage = (storageModule.default ?? storageModule) as {
+    setItem: (key: string, value: string) => Promise<void>;
+    clear: () => Promise<void>;
+  };
+  afterEach(async () => {
+    await act(async () => setThemeMode('light'));
+    await AsyncStorage.clear();
+  });
+
+  test('switching the theme redraws the open app in place without restarting it', async () => {
+    await renderUser({ uid: 'test' });
+    expect(renderedText()).toContain('내 앱');
+    const renders = mockMainRenders;
+    const mounts = mockMainMounts;
+    await act(async () => setThemeMode('dark'));
+    expect(mockMainRenders).toBeGreaterThan(renders);
+    // 다시 만들지 않으므로 열려 있던 화면과 상태가 그대로 남는다
+    expect(mockMainMounts).toBe(mounts);
+    expect(renderedText()).toContain('내 앱');
+  });
+
+  test('the dark theme saved on this device is applied when the app starts', async () => {
+    await AsyncStorage.setItem('@dalryo/theme-mode/v1', 'dark');
+    await renderUser({ uid: 'test' });
+    expect(getThemeMode()).toBe('dark');
   });
 });

@@ -5,13 +5,12 @@ import {
   FlatList,
   Image,
   Pressable,
-  StyleSheet,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChevronLeft, MessageSquare, UserRound } from 'lucide-react-native';
 import { AppText, Button, IconButton } from '../../components/ui';
-import { colors, spacing } from '../../theme';
+import { colors, spacing, themedStyles } from '../../theme';
 import {
   myUid,
   socialError,
@@ -243,7 +242,7 @@ export function ConnectionsScreen({
     </SafeAreaView>
   );
 }
-const s = StyleSheet.create({
+const s = themedStyles(() => ({
   screen: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: 'row',
@@ -284,4 +283,4 @@ const s = StyleSheet.create({
   loading: { marginTop: 50 },
   empty: { paddingVertical: 50, gap: 14, alignItems: 'center' },
   footer: { gap: 12, paddingVertical: 12 },
-});
+}));

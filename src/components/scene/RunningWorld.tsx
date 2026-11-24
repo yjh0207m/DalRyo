@@ -1,7 +1,7 @@
 import React, {useEffect, useRef} from 'react';
-import {Animated, Easing, StyleSheet, View, useWindowDimensions, type StyleProp, type ViewStyle} from 'react-native';
+import {Animated, Easing, View, useWindowDimensions, type StyleProp, type ViewStyle} from 'react-native';
 import Svg, {Circle, Ellipse, G, Path} from 'react-native-svg';
-import {colors} from '../../theme';
+import {colors, themedStyles} from '../../theme';
 
 // 달리기 화면의 "횡스크롤 월드". 구름·먼 언덕·가까운 땅이 서로 다른 속도로 흘러(패럴랙스)
 // 캐릭터가 실제로 앞으로 달려 나가는 것처럼 보이게 한다. 속도는 실제 달리기 속도(km/h)를 따른다.
@@ -150,7 +150,7 @@ function GroundTile({width}: {width: number}) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   wrap: {overflow: 'hidden', width: '100%'},
   strip: {position: 'absolute', left: 0, flexDirection: 'row'},
   groundTile: {height: '100%', backgroundColor: colors.grassFront},
@@ -161,4 +161,4 @@ const styles = StyleSheet.create({
   // 타일 폭이 소수점이면 이음새에 1px 틈이 보여 1px씩 겹친다
   tileOverlap: {marginRight: -1},
   actor: {position: 'absolute', left: 0, right: 0, alignItems: 'center'},
-});
+}));

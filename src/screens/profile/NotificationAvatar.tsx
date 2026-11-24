@@ -1,5 +1,5 @@
 import React from 'react';
-import { Image, StyleSheet, View } from 'react-native';
+import {Image, View} from 'react-native';
 import {
   Bell,
   Footprints,
@@ -13,7 +13,7 @@ import {
   type LucideIcon,
 } from 'lucide-react-native';
 import { RunningShoeIcon } from '../../components/ui/RunningShoeIcon';
-import { colors } from '../../theme';
+import { colors, themedStyles } from '../../theme';
 import type { AppNotification } from '../../types/notification.types';
 import { PERSON_NOTIFICATION_TYPES } from '../../utils/notifications';
 
@@ -104,7 +104,7 @@ function systemLook(item: AppNotification): {
   };
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   wrap: { width: SIZE, height: SIZE },
   circle: {
     width: SIZE,
@@ -129,4 +129,4 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-});
+}));

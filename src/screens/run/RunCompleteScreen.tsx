@@ -18,7 +18,7 @@ import { useCountUp } from '../../components/celebrate/useCountUp';
 import { RouteMap } from '../../components/maps/RouteMap';
 import { MeadowScene } from '../../components/scene/MeadowScene';
 import { AppText, Button, IconButton, ProgressBar } from '../../components/ui';
-import { colors, fonts, radius, spacing, typography } from '../../theme';
+import { colors, fonts, radius, spacing, typography, themedStyles, statusBarStyle } from '../../theme';
 import type {
   CharacterStage,
   CharacterType,
@@ -106,7 +106,7 @@ export function RunCompleteScreen({
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
+      <StatusBar barStyle={statusBarStyle()} backgroundColor={colors.background} />
       <View style={styles.header}>
         <AppText variant="subheading">
           {revealed ? '달리기 완료' : '달리기 결과'}
@@ -408,7 +408,7 @@ function Stat({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   screen: { flex: 1, backgroundColor: colors.surface },
   header: {
     minHeight: 48,
@@ -472,4 +472,4 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
   },
-});
+}));

@@ -1,5 +1,6 @@
 import type {Dialect, Gender} from '../types/user.types';
 import {normalizeUserId, userIdError} from './userId';
+import {isRegion} from './regions';
 
 export const DIALECT_OPTIONS: Array<{value: Dialect; label: string; example: string}> = [
   {value: 'std', label: '표준어', example: '달료!'},
@@ -65,7 +66,8 @@ export function validateProfile(form: ProfileForm) {
     }
     return number;
   };
-  if (!REGIONS.includes(form.region)) throw new Error('지역을 선택해 주세요.');
+  // "경기 수원시"처럼 시·도와 그 아래 시·군·구. 예전에 저장한 시·도만 있는 값도 받는다
+  if (!isRegion(form.region)) throw new Error('지역을 선택해 주세요.');
   if (!DIALECT_OPTIONS.some(option => option.value === form.dialect)) throw new Error('말투를 선택해 주세요.');
   if (form.gender !== null && form.gender !== 'female' && form.gender !== 'male') throw new Error('성별을 다시 선택해 주세요.');
   return {

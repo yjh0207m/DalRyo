@@ -45,18 +45,19 @@ test('all steps share a scrollable keyboard form and dismiss keyboard before adv
 });
 
 test('current location selects a detected region and saves its dialect', async () => {
-  (detectOnboardingRegion as jest.Mock).mockResolvedValue(REGIONS.find(r=>r.label==='부산'));
+  (detectOnboardingRegion as jest.Mock).mockResolvedValue({region: REGIONS.find(r=>r.label==='부산'), area: '해운대구'});
   (completeOnboarding as jest.Mock).mockResolvedValue(undefined);
   await openRegion();
   await act(async () => label('● 현재 위치로 설정').props.onPress());
   expect(label('부산').props.accessibilityState.selected).toBe(true);
+  expect(label('해운대구').props.accessibilityState.selected).toBe(true);
   await act(async () => label('다음').props.onPress());
   const save = label('달리기 시작하기');
   let resolveSave!: () => void;
   (completeOnboarding as jest.Mock).mockReturnValue(new Promise<void>(resolve=>{resolveSave=resolve;}));
   await act(async () => {save.props.onPress();save.props.onPress();});
   expect(completeOnboarding).toHaveBeenCalledTimes(1);
-  expect(completeOnboarding).toHaveBeenCalledWith(expect.objectContaining({region:'부산',dialect:'gyeong',heightCm:null,weightKg:null,userId:'dalryo_kim'}), 'duck');
+  expect(completeOnboarding).toHaveBeenCalledWith(expect.objectContaining({region:'부산 해운대구',dialect:'gyeong',heightCm:null,weightKg:null,userId:'dalryo_kim'}), 'duck');
   await act(async () => resolveSave());
   expect(onDone).toHaveBeenCalledTimes(1);
 });
@@ -68,16 +69,50 @@ test('permission or network failure is visible and manual region selection remai
   expect(JSON.stringify(tree.toJSON())).toContain('위치 권한을 허용해 주세요.');
   await act(async () => label('제주').props.onPress());
   expect(label('제주').props.accessibilityState.selected).toBe(true);
+  // 도는 시·군까지 골라야 다음으로 넘어간다
+  expect(label('다음').props.disabled).toBe(true);
+  await act(async () => label('서귀포시').props.onPress());
   expect(label('다음').props.disabled).toBe(false);
 });
 
+test('a metropolitan city asks for its 구·군, a province for its 시·군, and 세종 for nothing more', async () => {
+  await openRegion();
+  await act(async () => label('서울').props.onPress());
+  const json = () => JSON.stringify(tree.toJSON());
+  expect(json()).toContain('서울 구·군');
+  expect(label('강남구')).toBeDefined();
+  expect(label('다음').props.disabled).toBe(true);
+  await act(async () => label('경기').props.onPress());
+  expect(json()).toContain('경기 시·군');
+  // 도 아래 시의 구(수원시 영통구 등)는 목록에 없다
+  expect(label('수원시')).toBeDefined();
+  expect(json()).not.toContain('영통구');
+  expect(json()).not.toContain('강남구');
+  await act(async () => label('세종').props.onPress());
+  expect(json()).not.toContain('세종 시·군');
+  expect(label('다음').props.disabled).toBe(false);
+});
+
+test('when the current location only finds the province, the 시·군 still has to be picked', async () => {
+  (detectOnboardingRegion as jest.Mock).mockResolvedValue({region: REGIONS.find(r=>r.label==='경기'), area: null});
+  (completeOnboarding as jest.Mock).mockResolvedValue(undefined);
+  await openRegion();
+  await act(async () => label('● 현재 위치로 설정').props.onPress());
+  expect(JSON.stringify(tree.toJSON())).toContain('아래에서 시·군을 골라 주세요.');
+  expect(label('다음').props.disabled).toBe(true);
+  await act(async () => label('성남시').props.onPress());
+  await act(async () => label('다음').props.onPress());
+  await act(async () => label('달리기 시작하기').props.onPress());
+  expect(completeOnboarding).toHaveBeenCalledWith(expect.objectContaining({region:'경기 성남시',dialect:'gyeonggi'}), 'duck');
+});
+
 test('late GPS result does not overwrite a manual choice', async () => {
-  let resolve!: (region: typeof REGIONS[number]) => void;
+  let resolve!: (detected: {region: typeof REGIONS[number]; area: string | null}) => void;
   (detectOnboardingRegion as jest.Mock).mockReturnValue(new Promise(resolveRegion=>{resolve=resolveRegion;}));
   await openRegion();
   await act(async () => {label('● 현재 위치로 설정').props.onPress();});
   await act(async () => label('제주').props.onPress());
-  await act(async () => resolve(REGIONS[0]));
+  await act(async () => resolve({region: REGIONS[0], area: '강남구'}));
   expect(label('제주').props.accessibilityState.selected).toBe(true);
   expect(label('서울').props.accessibilityState.selected).toBe(false);
 });

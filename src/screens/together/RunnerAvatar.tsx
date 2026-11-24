@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Image, StyleSheet, View } from 'react-native';
+import {Image, View} from 'react-native';
 import { UserRound } from 'lucide-react-native';
-import { colors } from '../../theme';
+import { colors, themedStyles } from '../../theme';
 
 export function RunnerAvatar({
   uri,
@@ -32,7 +32,7 @@ export function RunnerAvatar({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   avatar: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -40,4 +40,4 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primarySoft,
   },
   image: { width: '100%', height: '100%' },
-});
+}));

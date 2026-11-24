@@ -11,7 +11,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import Svg, {Ellipse} from 'react-native-svg';
-import {colors} from '../../theme';
+import {colors, themedStyles} from '../../theme';
 import type {CharacterMotion, CharacterStage, CharacterType, OutfitSlot, EquippedOutfit} from '../../types/character.types';
 import {cleanEquipped} from '../../../functions/src/itemCatalog';
 import {OutfitDecoration} from './OutfitDecoration';
@@ -374,7 +374,7 @@ function useResolvedCharacterSource(type: CharacterType, stage: CharacterStage) 
   return state;
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   layer: {position: 'absolute', top: 0, left: 0},
   flipped: {transform: [{scaleX: -1}]},
   groundShadow: {position: 'absolute'},
@@ -382,4 +382,4 @@ const styles = StyleSheet.create({
   dust: {position: 'absolute', backgroundColor: '#FFFFFF'},
   placeholder: {...StyleSheet.absoluteFill, margin: '20%', backgroundColor: colors.primarySoft},
   stoneOverlay: {tintColor: colors.stoneTint, opacity: 0.7},
-});
+}));

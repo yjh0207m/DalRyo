@@ -8,7 +8,7 @@ import Svg, {
   Path,
   Stop,
 } from 'react-native-svg';
-import { colors } from '../../theme';
+import { colors, themedStyles } from '../../theme';
 
 // Scenery follows the card's width, so a compact character can stay in focus.
 export function CompanionScene({
@@ -85,7 +85,7 @@ export function CompanionScene({
     </View>
   );
 }
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   scene: { overflow: 'hidden', backgroundColor: colors.sceneSky },
   actor: {
     position: 'absolute',
@@ -94,4 +94,4 @@ const styles = StyleSheet.create({
     bottom: 6,
     alignItems: 'center',
   },
-});
+}));

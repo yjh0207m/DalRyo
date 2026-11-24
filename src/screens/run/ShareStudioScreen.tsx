@@ -5,7 +5,6 @@ import {
   Image,
   Pressable,
   ScrollView,
-  StyleSheet,
   Switch,
   TextInput,
   View,
@@ -39,7 +38,15 @@ import {
   MAX_TAG_INPUT_LENGTH,
   buildPostText,
 } from '../../utils/shareCard';
-import { colors, radius, shadow, spacing } from '../../theme';
+import { isDetailedRegion } from '../../utils/regions';
+import {
+  colors,
+  getThemeMode,
+  radius,
+  shadow,
+  spacing,
+  themedStyles,
+} from '../../theme';
 
 type Props = {
   character: CharacterDocument | null;
@@ -105,12 +112,14 @@ export function ShareStudioScreen({ character, run, onBack, onPosted }: Props) {
     let active = true;
     setLocation(null);
     setLocationLoading(true);
-    // 달린 출발 지점을 시·도·구로 바꾸고, 알 수 없으면 프로필에 적어 둔 지역을 쓴다
+    // 달린 출발 지점을 시·구(광역시)·시·군(도)으로 바꾸고, 알 수 없으면 프로필에 적어 둔 지역을 쓴다
     const resolve = async () => {
       const district = run ? await fetchRunDistrict(run) : null;
       if (district) return district;
       const user = await fetchCurrentUserDocument().catch(() => null);
-      return user?.region?.trim() || null;
+      // "경기"처럼 시·도만 있는 예전 프로필 지역은 너무 넓어서 쓰지 않는다
+      const region = user?.region?.trim();
+      return isDetailedRegion(region) ? region! : null;
     };
     resolve()
       .then(label => {
@@ -489,7 +498,27 @@ function DisclosureRow({
     </View>
   );
 }
-const styles = StyleSheet.create({
+// 아이폰 모양 틀의 색. 밝은 테마는 흰 아이폰, 다크 모드는 검은 아이폰
+function phoneColors() {
+  return getThemeMode() === 'dark'
+    ? {
+        // 검은 바탕 위에서 윤곽이 보이는 중립 회색(녹색 기운 없음)
+        body: '#1C1C1E',
+        edge: '#48484A',
+        parts: '#3A3A3C',
+        button: '#2C2C2E',
+        buttonEdge: '#545458',
+      }
+    : {
+        body: '#F9FBFB',
+        edge: '#C3D3D3',
+        parts: '#D3DEDE',
+        button: '#FCFEFE',
+        buttonEdge: '#DCE5E5',
+      };
+}
+
+const styles = themedStyles(() => ({
   screen: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: 'row',
@@ -501,11 +530,12 @@ const styles = StyleSheet.create({
   content: { padding: spacing.lg, gap: spacing.md, paddingBottom: 48 },
   // 배경(연한 하늘색)과 대비되도록 거의 흰색 몸체에 옅은 회청색 테두리와 그림자를 둔다.
   // 홈 버튼은 몸체보다 밝은 흰색에 그림자를 줘서 눌린 것이 아니라 앞으로 튀어나온 느낌을 낸다
+  // 아이폰 모양 틀. 다크 모드에서는 검은 아이폰처럼 어두운 몸체로 바꾼다(틀 안의 카드는 저장되는 이미지라 그대로다)
   phone: {
-    backgroundColor: '#F9FBFB',
+    backgroundColor: phoneColors().body,
     borderRadius: 44,
     borderWidth: 1.5,
-    borderColor: '#C3D3D3',
+    borderColor: phoneColors().edge,
     paddingHorizontal: 12,
     ...shadow.floating,
   },
@@ -520,13 +550,13 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#D3DEDE',
+    backgroundColor: phoneColors().parts,
   },
   speaker: {
     width: 48,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#D3DEDE',
+    backgroundColor: phoneColors().parts,
   },
   // 모서리를 둥글게 하면 jpg로 저장할 때 모서리가 검게 찍혀서 옛 아이폰 화면처럼 각지게 둔다
   card: {
@@ -565,8 +595,8 @@ const styles = StyleSheet.create({
     height: 58,
     borderRadius: 29,
     borderWidth: 1,
-    borderColor: '#DCE5E5',
-    backgroundColor: '#FCFEFE',
+    borderColor: phoneColors().buttonEdge,
+    backgroundColor: phoneColors().button,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#0F2A28',
@@ -606,4 +636,4 @@ const styles = StyleSheet.create({
   },
   disclosureText: { flex: 1, gap: 2 },
   homeDisabled: { opacity: 0.5 },
-});
+}));

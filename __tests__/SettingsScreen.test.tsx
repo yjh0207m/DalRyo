@@ -40,7 +40,7 @@ const user = {
   height_cm: 170,
   weight_kg: 60,
   gender: 'female',
-  region: '서울',
+  region: '서울 마포구',
   dialect: 'std',
   notification_settings: {
     push: false,
@@ -98,6 +98,11 @@ const type = (label: string, value: string) =>
     input(label).props.onChangeText(value);
   });
 const inputs = () => tree.root.findAllByType(TextInput).length;
+// 알림 항목의 스위치(이름표가 붙어 있다). 목록의 다크 모드 스위치는 이름표가 바깥 줄에 있어 빠진다
+const notificationSwitches = () =>
+  tree.root
+    .findAllByType(Switch)
+    .filter(node => !!node.props.accessibilityLabel);
 // 마지막으로 뜬 확인 창에서 이름이 같은 버튼을 누른다
 const choose = (title: string) =>
   act(async () => {
@@ -125,10 +130,10 @@ describe('the list', () => {
     await render();
     expect(byLabel('내 프로필, 조현 · 달료')).toBeDefined();
     expect(byLabel('푸시 알림, 꺼짐')).toBeDefined();
-    expect(byLabel('내 지역, 서울')).toBeDefined();
+    expect(byLabel('내 지역, 서울 마포구')).toBeDefined();
     expect(byLabel('달료 말투, 표준어')).toBeDefined();
     expect(inputs()).toBe(0);
-    expect(tree.root.findAllByType(Switch)).toHaveLength(0);
+    expect(notificationSwitches()).toHaveLength(0);
     expect(texts()).toContain('로그아웃');
   });
 
@@ -156,17 +161,17 @@ describe('opening one setting', () => {
     expect(inDetail('내 프로필')).toBe(true);
     expect(input('닉네임').props.value).toBe('조현');
     expect(input('캐릭터 이름').props.value).toBe('달료');
-    expect(tree.root.findAllByType(Switch)).toHaveLength(0);
+    expect(notificationSwitches()).toHaveLength(0);
     expect(byLabel('부산')).toBeUndefined();
   });
 
   test('going back without changes returns to the list with no question', async () => {
     await render();
-    await press('내 지역, 서울');
+    await press('내 지역, 서울 마포구');
     expect(inDetail('내 지역')).toBe(true);
     await press('내 지역에서 뒤로');
     expect(inDetail('내 지역')).toBe(false);
-    expect(byLabel('내 지역, 서울')).toBeDefined();
+    expect(byLabel('내 지역, 서울 마포구')).toBeDefined();
     expect(alert).not.toHaveBeenCalled();
   });
 
@@ -223,7 +228,7 @@ describe('saving', () => {
     const [form, petName, image, notifications] = mockSave.mock.calls[0];
     expect(form).toMatchObject({
       displayName: '새닉네임',
-      region: '서울',
+      region: '서울 마포구',
       dialect: 'std',
       height: '170',
       weight: '60',
@@ -271,14 +276,51 @@ describe('saving', () => {
     await type('닉네임', '버릴이름');
     await press('내 프로필에서 뒤로');
     await choose('나가기');
-    await press('내 지역, 서울');
+    await press('내 지역, 서울 마포구');
     await act(async () => byLabel('부산').props.onPress());
+    await act(async () => byLabel('해운대구').props.onPress());
     await pressText('저장');
     expect(mockSave.mock.calls[0][0]).toMatchObject({
       displayName: '조현',
-      region: '부산',
+      region: '부산 해운대구',
     });
-    expect(byLabel('내 지역, 부산')).toBeDefined();
+    expect(byLabel('내 지역, 부산 해운대구')).toBeDefined();
+  });
+
+  test('the region is picked down to the 구·군 of a metropolitan city or the 시·군 of a province', async () => {
+    await render();
+    await press('내 지역, 서울 마포구');
+    expect(byLabel('서울').props.accessibilityState.selected).toBe(true);
+    expect(byLabel('마포구').props.accessibilityState.selected).toBe(true);
+    expect(texts()).toContain('서울 구·군');
+    await act(async () => byLabel('경기').props.onPress());
+    expect(texts()).toContain('경기 시·군');
+    expect(byLabel('마포구')).toBeUndefined();
+    // 시·군을 고르기 전에는 저장하지 않고 이유를 알린다
+    await pressText('저장');
+    expect(mockSave).not.toHaveBeenCalled();
+    expect(texts()).toContain('시·군까지 골라 주세요.');
+    await act(async () => byLabel('수원시').props.onPress());
+    await pressText('저장');
+    expect(mockSave.mock.calls[0][0]).toMatchObject({ region: '경기 수원시' });
+  });
+
+  test('세종 has nothing below it and saves as it is', async () => {
+    await render();
+    await press('내 지역, 서울 마포구');
+    await act(async () => byLabel('세종').props.onPress());
+    expect(texts().join('|')).not.toContain('세종 시·군');
+    await pressText('저장');
+    expect(mockSave.mock.calls[0][0]).toMatchObject({ region: '세종' });
+  });
+
+  test('a region saved as a province only asks for the 시·군 in the list', async () => {
+    await act(async () => {
+      tree = Renderer.create(
+        <SettingsScreen user={{ ...user, region: '경기' }} onBack={onBack} />,
+      );
+    });
+    expect(byLabel('내 지역, 경기 · 시·군을 골라 주세요')).toBeDefined();
   });
 
   test('a new photo is uploaded first and its address is saved', async () => {
@@ -303,7 +345,7 @@ describe('saving', () => {
 });
 
 describe('push notifications', () => {
-  const sub = () => tree.root.findAllByType(Switch);
+  const sub = notificationSwitches;
 
   test('the detail shows the four switches, and the others are locked while push is off', async () => {
     await render();
@@ -514,4 +556,65 @@ describe('opening straight on the profile item', () => {
     });
     expect(onBack).toHaveBeenCalledTimes(1);
   });
+});
+
+describe('dark mode', () => {
+  const { colors, getThemeMode, setThemeMode } =
+    require('../src/theme') as typeof import('../src/theme');
+  // jest.setup.js의 메모리 구현. default 없이 모듈 자체로 내보낸다
+  const storageModule = require('@react-native-async-storage/async-storage');
+  const AsyncStorage = (storageModule.default ?? storageModule) as {
+    getItem: (key: string) => Promise<string | null>;
+  };
+  const row = () =>
+    tree.root.findAll(
+      node =>
+        node.props.accessibilityLabel === '다크 모드' &&
+        node.props.accessibilityRole === 'switch' &&
+        typeof node.props.onPress === 'function',
+    )[0];
+  afterEach(() => setThemeMode('light'));
+
+  test('the app settings group has a dark mode switch that starts off', async () => {
+    await render();
+    expect(row()).toBeDefined();
+    expect(row().props.accessibilityState).toEqual({ checked: false });
+    expect(texts()).toContain('다크 모드');
+  });
+
+  test('turning it on switches the whole app to dark colors at once and remembers it on this device', async () => {
+    await render();
+    const lightBackground = colors.background;
+    await act(async () => row().props.onPress());
+    expect(getThemeMode()).toBe('dark');
+    expect(colors.background).not.toBe(lightBackground);
+    expect(row().props.accessibilityState).toEqual({ checked: true });
+    // 계정 설정 저장과는 따로, 이 기기에만 저장한다
+    expect(mockSave).not.toHaveBeenCalled();
+    expect(await AsyncStorage.getItem('@dalryo/theme-mode/v1')).toBe('dark');
+
+    await act(async () => row().props.onPress());
+    expect(getThemeMode()).toBe('light');
+    expect(colors.background).toBe(lightBackground);
+    expect(await AsyncStorage.getItem('@dalryo/theme-mode/v1')).toBe('light');
+  });
+
+  test('the switch itself flips it too', async () => {
+    await render();
+    const toggle = tree.root
+      .findAllByType(Switch)
+      .find(node => !node.props.accessibilityLabel)!;
+    await act(async () => toggle.props.onValueChange(true));
+    expect(getThemeMode()).toBe('dark');
+  });
+});
+
+test('my profile area spans the full screen width instead of a rounded box', async () => {
+  const { StyleSheet } = require('react-native');
+  await render();
+  const entry = byLabel('내 프로필, 조현 · 달료');
+  const style = StyleSheet.flatten(entry.props.style({ pressed: false }));
+  expect(style.marginHorizontal).toBe(-20);
+  expect(style.paddingHorizontal).toBe(20);
+  expect(style.borderRadius).toBeUndefined();
 });

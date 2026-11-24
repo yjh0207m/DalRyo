@@ -5,7 +5,6 @@ import {
   Linking,
   ScrollView,
   StatusBar,
-  StyleSheet,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -20,7 +19,7 @@ import {
   type ParkRunner,
 } from '../../services/park.service';
 import { socialError } from '../../services/social.service';
-import { colors, spacing } from '../../theme';
+import { colors, spacing, themedStyles, statusBarStyle } from '../../theme';
 type Status = 'idle' | 'loading' | 'success' | 'error';
 export function ParksScreen({
   onBack,
@@ -139,7 +138,7 @@ export function ParksScreen({
   };
   return (
     <SafeAreaView style={styles.screen}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
+      <StatusBar barStyle={statusBarStyle()} backgroundColor={colors.background} />
       <View style={styles.header}>
         <IconButton
           icon={ChevronLeft}
@@ -360,7 +359,7 @@ export function ParksScreen({
     </SafeAreaView>
   );
 }
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   screen: { flex: 1, backgroundColor: colors.background },
   header: {
     padding: spacing.sm,
@@ -372,4 +371,4 @@ const styles = StyleSheet.create({
   gap: { gap: 12 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   grow: { flex: 1 },
-});
+}));

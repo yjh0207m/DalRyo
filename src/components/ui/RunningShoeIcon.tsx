@@ -1,5 +1,6 @@
 import React from 'react';
 import Svg, { Path } from 'react-native-svg';
+import { colors } from '../../theme';
 
 // 달료의 러닝화 응원. 같은 윤곽을 채워 선택 상태를 표시한다.
 export function RunningShoeIcon({
@@ -22,7 +23,8 @@ export function RunningShoeIcon({
       />
       <Path
         d="M3 21h22.5M4.5 10.5 8 12M11 14l2-2M14.5 15.5l1.5-2"
-        stroke={active ? 'white' : color}
+        // 채운 신발 위의 안쪽 선. 민트 위 글자색과 같다(밝은 테마 흰색, 다크 모드 어두운 녹색)
+        stroke={active ? colors.textOnPrimary : color}
         strokeWidth={1.5}
         strokeLinecap="round"
         strokeLinejoin="round"

@@ -4,9 +4,19 @@ jest.mock('../src/hooks/usePostAuthor', () => ({ usePostAuthor: jest.fn() }));
 jest.mock('../src/components/character/CharacterView', () => ({
   CharacterView: () => null,
 }));
-import { Alert, Image, Modal, Text, View as MockView } from 'react-native';
+import {
+  Alert,
+  Image,
+  Modal,
+  Share,
+  Text,
+  View as MockView,
+} from 'react-native';
 import Renderer, { act } from 'react-test-renderer';
-import { PostCard } from '../src/screens/community/CommunityScreen';
+import {
+  compactCount,
+  PostCard,
+} from '../src/screens/community/CommunityScreen';
 import type { SocialPost } from '../src/services/social.service';
 const mockAction = jest.fn(),
   mockOpen = jest.fn(),
@@ -322,19 +332,135 @@ describe('a card keeps itself up to date', () => {
       .findAllByType(Text)
       .map(node => ([] as unknown[]).concat(node.props.children).join(''));
 
+  const count = (id: string) => {
+    const found = tree.root.findAll(
+      node => node.props.testID === id && node.type === Text,
+    );
+    return found.length ? String(found[0].props.children) : null;
+  };
+
   test('counts follow the post even though the feed list is not live', async () => {
     await render();
-    expect(texts()).toContain('댓글 2개 모두 보기');
+    expect(count('post-like-count')).toBe('3');
+    expect(count('post-comment-count')).toBe('2');
     await act(async () =>
-      mockLivePost({ ...post, like_count: 9, comment_count: 1 }),
+      mockLivePost({
+        ...post,
+        like_count: 9,
+        comment_count: 1,
+        share_count: 4,
+      }),
     );
-    expect(texts()).toContain('응원 9개');
-    expect(texts()).toContain('댓글 1개 모두 보기');
+    expect(count('post-like-count')).toBe('9');
+    expect(count('post-comment-count')).toBe('1');
+    expect(count('post-share-count')).toBe('4');
+  });
+
+  test('counts sit beside their icons, zero hides the number, and there is no "see all comments" line', async () => {
+    await render({ ...post, like_count: 0, comment_count: 0 });
+    expect(count('post-like-count')).toBeNull();
+    expect(count('post-comment-count')).toBeNull();
+    expect(count('post-share-count')).toBeNull();
+    await act(async () => mockLivePost({ ...post, comment_count: 5 }));
+    // 숫자는 아이콘과 같은 버튼 안에 있어서 숫자를 눌러도 댓글이 열린다
+    const commentButton = tree.root.find(
+      node =>
+        typeof node.type === 'function' &&
+        node.type.name === 'Pressable' &&
+        node.props.accessibilityLabel === '댓글 보기',
+    );
+    expect(
+      commentButton.findAll(node => node.props.testID === 'post-comment-count'),
+    ).not.toHaveLength(0);
+    expect(texts().join('|')).not.toContain('모두 보기');
+    expect(texts().join('|')).not.toMatch(/응원 \d+개/);
+  });
+
+  test('cheering raises the number beside the shoe right away', async () => {
+    await render();
+    await press('응원');
+    expect(count('post-like-count')).toBe('4');
+    expect(mockAction).toHaveBeenCalledWith('like', {
+      postId: 'one',
+      active: true,
+    });
+  });
+
+  test('big counts are shortened', () => {
+    expect(compactCount(9_999)).toBe('9,999');
+    expect(compactCount(12_000)).toBe('1.2만');
+    expect(compactCount(30_000)).toBe('3만');
   });
 
   test('a post deleted elsewhere disappears from the list', async () => {
     await render();
     await act(async () => mockLivePost(null));
     expect(tree.toJSON()).toBeNull();
+  });
+});
+
+describe('caption and the people who ran together', () => {
+  const caption = () =>
+    tree.root.findAll(node => node.props.testID === 'post-caption')[0];
+  test('the caption starts with the author nickname, which opens their profile', async () => {
+    await render();
+    const [outer] = caption().findAllByType(Text);
+    const parts = ([] as unknown[]).concat(outer.props.children);
+    const name = parts[0] as React.ReactElement<{
+      children: string;
+      onPress: () => void;
+    }>;
+    expect(name.props.children).toBe('러너');
+    expect(parts[1]).toBe(' 오늘도 달렸어요');
+    await act(async () => name.props.onPress());
+    expect(mockProfile).toHaveBeenCalledWith('other');
+  });
+
+  test('tagged runners are listed and each name opens that runner', async () => {
+    await render({
+      ...post,
+      with_runners: [
+        { uid: 'friend-a', display_name: '가람' },
+        { uid: 'friend-b', display_name: '나래' },
+      ],
+    });
+    const row = tree.root.findAll(
+      node => node.props.testID === 'post-with-runners',
+    )[0];
+    const words = row
+      .findAllByType(Text)
+      .map(node => ([] as unknown[]).concat(node.props.children).join(''));
+    expect(words[0]).toContain('님과 함께 달렸어요');
+    const link = row.find(
+      node =>
+        node.type === Text && node.props.accessibilityLabel === '나래 프로필',
+    );
+    await act(async () => link.props.onPress());
+    expect(mockProfile).toHaveBeenCalledWith('friend-b');
+  });
+
+  test('a post without tags has no runners line', async () => {
+    await render();
+    expect(
+      tree.root.findAll(node => node.props.testID === 'post-with-runners'),
+    ).toHaveLength(0);
+  });
+});
+
+describe('sharing', () => {
+  test('a finished share is counted on the server, a closed share sheet is not', async () => {
+    const share = jest
+      .spyOn(Share, 'share')
+      .mockResolvedValueOnce({ action: Share.dismissedAction })
+      .mockResolvedValueOnce({ action: Share.sharedAction });
+    try {
+      await render();
+      await press('게시물 공유');
+      expect(mockAction).not.toHaveBeenCalledWith('share', expect.anything());
+      await press('게시물 공유');
+      expect(mockAction).toHaveBeenCalledWith('share', { postId: 'one' });
+    } finally {
+      share.mockRestore();
+    }
   });
 });

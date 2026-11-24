@@ -1,7 +1,7 @@
 import React, {useEffect, useState} from 'react';
 import {ActivityIndicator, ImageBackground, StatusBar, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {colors, fonts} from '../../theme';
+import {fonts} from '../../theme';
 import {getIsDusk, getIsDuskSync} from '../../utils/skyBackground';
 
 const images = {
@@ -15,7 +15,10 @@ type Props = {
   loading?: boolean;
 };
 
-const MINT = colors.primary;
+// 시작 화면은 낮·저녁 배경 그림 위에 그리므로 다크 모드와 상관없이 같은 색을 쓴다 (밝은 테마의 민트·흰색·짙은 민트)
+const MINT = '#22B48F';
+const WHITE = '#FFFFFF';
+const INK = '#10775E';
 
 export function AuthStartScreen({onStart, loading = false}: Props) {
   const [isDusk, setIsDusk] = useState(() => getIsDuskSync());
@@ -24,7 +27,7 @@ export function AuthStartScreen({onStart, loading = false}: Props) {
     getIsDusk().then(setIsDusk);
   }, []);
 
-  const accent = isDusk ? colors.surface : colors.primaryInk;
+  const accent = isDusk ? WHITE : INK;
 
   return (
     <ImageBackground source={isDusk ? images.bgDusk : images.bgDay} resizeMode="cover" style={styles.screen}>

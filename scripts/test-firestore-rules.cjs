@@ -34,6 +34,12 @@ setLogLevel('silent');
       await assertSucceeds(updateDoc(doc(alice,'users/alice'),{display_name:'새 이름'}));
       for (const value of [{total_km:100},{display_name:deleteField()},{height_cm:'170'},{admin:true},{pet_name:'다른 이름'}]) await assertFails(updateDoc(doc(alice,'users/alice'),value));
     });
+    await test('region is a province, or a province with its 구·군/시·군, and nothing looser', async () => {
+      // 광역시는 구·군, 도는 시·군까지. 예전에 저장한 시·도만 있는 값도 그대로 둘 수 있다
+      for (const region of ['서울 강남구','경기 수원시','인천 제물포구','세종','경기']) await assertSucceeds(updateDoc(doc(alice,'users/alice'),{region}));
+      for (const region of ['경기도 수원시','경기 수원시 영통구','서울 ','서울 강남','도쿄 신주쿠구','','서울 '+'가'.repeat(8)+'구']) await assertFails(updateDoc(doc(alice,'users/alice'),{region}));
+      await assertFails(updateDoc(doc(alice,'users/alice'),{region:7}));
+    });
     await test('valid egg initialization works and growth cannot be self-awarded', async () => {
       const character = {uid:'alice',stage:'egg',character_type:'rabbit',pet_name:'달료',exp:0,stat_stamina:0,stat_speed:0,stat_endurance:0,last_active_at:serverTimestamp(),created_at:serverTimestamp(),updated_at:serverTimestamp()};
       await assertSucceeds(setDoc(doc(alice,'users/alice/character/alice'),character));

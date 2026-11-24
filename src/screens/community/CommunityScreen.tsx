@@ -13,6 +13,7 @@ import {
   Share,
   StatusBar,
   StyleSheet,
+  Switch,
   TextInput,
   View,
 } from 'react-native';
@@ -29,6 +30,7 @@ import {
   Settings as SettingsIcon,
   EyeOff,
   Footprints as FootprintsIcon,
+  ImagePlus,
   MapPin,
   MessageCircle,
   MessageSquare,
@@ -37,6 +39,7 @@ import {
   Share2,
   Trash2,
   Trophy,
+  UserPlus,
   UserRound,
   Users,
   X,
@@ -51,6 +54,7 @@ import {
   Card,
   FullPhoto,
   IconButton,
+  PhotoSourceSheet,
   ScreenHeader,
 } from '../../components/ui';
 import { SCREEN_HEADER_HEIGHT } from '../../components/ui/ScreenHeader';
@@ -59,6 +63,8 @@ import { SlideScreen } from '../../navigation/slide';
 import { ChatScreen } from './ChatScreen';
 import { CommentsSheet } from './CommentsSheet';
 import { RunnerStatsCard } from './RunnerStatsCard';
+import { RunPickerSheet, runDay, runTime } from './RunPickerSheet';
+import { RunnerTagSheet } from './RunnerTagSheet';
 import { ConnectionsScreen, type ConnectionKind } from './ConnectionsScreen';
 import { CommunitySubNav, ROW_HEIGHT, type SubNavKey } from './CommunitySubNav';
 import { hasUnread, watchConversations } from '../../services/chat.service';
@@ -66,14 +72,28 @@ import {
   TAB_BAR_BODY_HEIGHT,
   tabBarBottom,
 } from '../../navigation/BottomTabBar';
-import { colors, fonts, radius, spacing } from '../../theme';
+import {
+  colors,
+  fonts,
+  radius,
+  spacing,
+  themedStyles,
+  statusBarStyle,
+} from '../../theme';
 import { useHiddenContent } from '../../hooks/useHiddenContent';
 import { useServerFeed } from '../../hooks/useServerFeed';
 import { usePostAuthor } from '../../hooks/usePostAuthor';
 import { choosePhoto, uploadPhoto } from '../../services/media.service';
 import { runInBackground } from '../../services/backgroundTask.service';
-import { fetchRecentRuns } from '../../services/run.service';
+import { fetchRunDistrict } from '../../services/runLocation.service';
 import {
+  buildPostText,
+  MAX_CONTENT_LENGTH,
+  MAX_TAG_INPUT_LENGTH,
+} from '../../utils/shareCard';
+import { isDetailedRegion } from '../../utils/regions';
+import {
+  myRegion,
   myUid,
   newSocialId,
   savedPosts,
@@ -81,6 +101,7 @@ import {
   socialRequest,
   watchPost,
   watchPostFlags,
+  type Friend,
   type PublicProfile,
   type SocialPost,
   type RunSummary,
@@ -304,6 +325,7 @@ function CommunityContent(
           onConnections={kind =>
             push({ page: 'connections', uid: route.uid, kind })
           }
+          onProfile={showProfile}
         />
       );
     if (route.page === 'search' || route.page === 'rankings')
@@ -373,6 +395,7 @@ function CommunityContent(
           onConnections={kind =>
             push({ page: 'connections', uid: myUid(), kind })
           }
+          onProfile={showProfile}
         />
       );
     return null;
@@ -436,7 +459,7 @@ function CommunityContent(
               post={post}
               onComments={() => showComments(post.post_id)}
               onOpen={() => showPost(post.post_id)}
-              onProfile={() => showProfile(post.uid)}
+              onProfile={showProfile}
               onEdit={() => editPost(post)}
             />
           ))
@@ -661,7 +684,7 @@ function Page({
   }, [onBack]);
   return (
     <SafeAreaView testID={testID} style={styles.screen} edges={['top']}>
-      <StatusBar barStyle="dark-content" />
+      <StatusBar barStyle={statusBarStyle()} />
       {onBack && !hideHeader && (
         <View style={[styles.header, hideBack && styles.headerNoBack]}>
           {!hideBack && (
@@ -707,31 +730,6 @@ function Avatar({ uri, size = 44 }: { uri: string | null; size?: number }) {
     >
       <UserRound size={size * 0.48} color={colors.primaryInk} />
     </View>
-  );
-}
-function Tab({
-  label,
-  selected,
-  onPress,
-}: {
-  label: string;
-  selected: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="tab"
-      accessibilityState={{ selected }}
-      onPress={onPress}
-      style={[styles.tab, selected && styles.selectedTab]}
-    >
-      <AppText
-        variant="caption"
-        color={selected ? colors.primaryInk : colors.textMuted}
-      >
-        {label}
-      </AppText>
-    </Pressable>
   );
 }
 function Loading() {
@@ -781,7 +779,8 @@ export function PostCard({
   post: SocialPost;
   onOpen: () => void;
   onComments: () => void;
-  onProfile: () => void;
+  // 글쓴이나 함께 달린 사람의 프로필을 연다
+  onProfile: (uid: string) => void;
   onEdit?: () => void;
   // 삭제·보지 않음·차단으로 이 글이 사라졌을 때
   onDeleted?: () => void;
@@ -808,6 +807,10 @@ export function PostCard({
     );
   }, [initialPost.post_id, detail]);
   const [flags, setFlags] = useState({ liked: false, saved: false });
+  // 응원을 누르면 서버 숫자가 오기 전에 아이콘 옆 숫자부터 바꾼다. 서버 숫자가 바뀌면 그 값을 따른다
+  const [likeDelta, setLikeDelta] = useState(0);
+  useEffect(() => setLikeDelta(0), [post.like_count]);
+  const likeCount = Math.max(0, post.like_count + likeDelta);
   const author = usePostAuthor(post.uid, post);
   const authorName = author?.display_name ?? post.author_name;
   const authorImage = author ? author.profile_image : post.author_image;
@@ -827,6 +830,8 @@ export function PostCard({
     inFlight.current[kind] = true;
     // 서버 응답을 기다리지 않고 바로 반영하고, 실패하면 되돌린다
     setFlags(old => ({ ...old, [key]: active }));
+    const step = kind === 'like' ? (active ? 1 : -1) : 0;
+    setLikeDelta(old => old + step);
     runInBackground({
       label: '',
       failureLabel:
@@ -843,6 +848,7 @@ export function PostCard({
       onFailure: () => {
         inFlight.current[kind] = false;
         setFlags(old => ({ ...old, [key]: !active }));
+        setLikeDelta(old => old - step);
       },
     });
   };
@@ -871,7 +877,20 @@ export function PostCard({
       message: `달료 · ${authorName}\n${post.text}${
         post.run_id ? `\n${post.distance_km?.toFixed(2)}km` : ''
       }`,
-    }).catch(errorAlert);
+    })
+      .then(result => {
+        // 공유 창을 닫기만 했을 때는 세지 않는다. 숫자는 서버가 올린 뒤 글을 지켜보는 쪽에서 바뀐다
+        if (result.action !== Share.sharedAction) return;
+        runInBackground({
+          label: '',
+          failureLabel: '공유 수를 반영하지 못했어요',
+          silent: true,
+          retryable: false,
+          describeError: socialError,
+          task: () => socialRequest('share', { postId: post.post_id }),
+        });
+      })
+      .catch(errorAlert);
   const hide = () => {
     setGone(true);
     onDeleted?.();
@@ -954,6 +973,9 @@ export function PostCard({
     .filter(Boolean)
     .join(' · ');
   const hasMedia = !!post.image_url || !!post.run_id;
+  // 사진·기록 아래에 붙는 본문. 글만 있는 예전 글은 본문이 위쪽 큰 칸에 나온다
+  const hasCaption = hasMedia && !!post.text;
+  const withRunners = post.with_runners ?? [];
   return (
     <View
       testID={`community-post-${post.post_id}`}
@@ -963,7 +985,7 @@ export function PostCard({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`${authorName} 프로필`}
-          onPress={onProfile}
+          onPress={() => onProfile(post.uid)}
           style={styles.author}
         >
           <Avatar uri={authorImage} size={36} />
@@ -1063,35 +1085,47 @@ export function PostCard({
           </View>
         )}
       </Pressable>
+      {/* 응원·댓글·공유 수는 각 아이콘 오른쪽에 둔다. 0이면 숫자를 감춘다 */}
       <View style={styles.postActions}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="응원"
           accessibilityState={{ selected: flags.liked }}
+          accessibilityValue={countValue(likeCount)}
           onPress={() => toggle('like')}
-          style={styles.socialIcon}
+          style={styles.socialAction}
         >
           <RunningShoeIcon
             size={28}
             color={flags.liked ? colors.primary : colors.text}
             active={flags.liked}
           />
+          <SocialCount testID="post-like-count" value={likeCount} />
         </Pressable>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="댓글 보기"
+          accessibilityValue={countValue(post.comment_count)}
           onPress={onComments}
-          style={styles.socialIcon}
+          style={styles.socialAction}
         >
           <MessageCircle size={25} color={colors.text} strokeWidth={1.8} />
+          <SocialCount testID="post-comment-count" value={post.comment_count} />
         </Pressable>
         {post.visibility === 'public' && (
-          <IconButton
-            icon={Share2}
-            variant="plain"
+          <Pressable
+            accessibilityRole="button"
             accessibilityLabel="게시물 공유"
+            accessibilityValue={countValue(post.share_count ?? 0)}
             onPress={sharePost}
-          />
+            style={styles.socialAction}
+          >
+            <Share2 size={24} color={colors.text} strokeWidth={1.8} />
+            <SocialCount
+              testID="post-share-count"
+              value={post.share_count ?? 0}
+            />
+          </Pressable>
         )}
         <View style={styles.grow} />
         <Pressable
@@ -1109,47 +1143,81 @@ export function PostCard({
           />
         </Pressable>
       </View>
-      {((hasMedia && !!post.text) ||
-        post.like_count > 0 ||
-        post.comment_count > 0) && (
+      {(hasCaption || withRunners.length > 0) && (
         <View style={styles.postCaption}>
-          {hasMedia && !!post.text && (
+          {hasCaption && (
             <Pressable
+              testID="post-caption"
               accessibilityRole={detail ? undefined : 'button'}
               disabled={detail}
               onPress={onOpen}
             >
+              {/* 본문 앞에 글쓴이 닉네임을 굵게 붙인다. 닉네임을 누르면 프로필로 간다 */}
               <AppText
                 style={styles.captionText}
                 numberOfLines={detail ? undefined : 3}
                 selectable={detail}
               >
-                {post.text}
+                <AppText
+                  style={[styles.captionText, styles.captionAuthor]}
+                  onPress={() => onProfile(post.uid)}
+                >
+                  {authorName}
+                </AppText>
+                {` ${post.text}`}
               </AppText>
             </Pressable>
           )}
-          {(post.like_count > 0 || post.comment_count > 0) && (
-            <View style={styles.postCounts}>
-              {post.like_count > 0 && (
-                <AppText variant="label">{`응원 ${post.like_count}개`}</AppText>
-              )}
-              {post.comment_count > 0 && (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="댓글 모두 보기"
-                  onPress={onComments}
-                >
-                  <AppText variant="caption" color={colors.textMuted}>
-                    {`댓글 ${post.comment_count}개 모두 보기`}
-                  </AppText>
-                </Pressable>
-              )}
+          {withRunners.length > 0 && (
+            <View testID="post-with-runners" style={styles.withRunners}>
+              <Users size={15} color={colors.textMuted} />
+              <AppText
+                variant="caption"
+                color={colors.textMuted}
+                style={styles.grow}
+              >
+                {withRunners.map((runner, index) => (
+                  <React.Fragment key={runner.uid}>
+                    {index > 0 && ', '}
+                    <AppText
+                      variant="caption"
+                      accessibilityRole="link"
+                      accessibilityLabel={`${runner.display_name} 프로필`}
+                      style={styles.withRunnerName}
+                      onPress={() => onProfile(runner.uid)}
+                    >
+                      {runner.display_name}
+                    </AppText>
+                  </React.Fragment>
+                ))}
+                님과 함께 달렸어요
+              </AppText>
             </View>
           )}
         </View>
       )}
     </View>
   );
+}
+
+// 아이콘 옆 숫자. 0이면 숫자 없이 아이콘만 남긴다
+function SocialCount({ value, testID }: { value: number; testID: string }) {
+  if (value <= 0) return null;
+  return (
+    <AppText testID={testID} variant="subheading" style={styles.socialCount}>
+      {compactCount(value)}
+    </AppText>
+  );
+}
+// 1만이 넘으면 "1.2만"처럼 줄인다
+export function compactCount(value: number) {
+  if (value < 10_000) return value.toLocaleString('ko-KR');
+  const man = Math.floor(value / 1_000) / 10;
+  return `${man % 1 === 0 ? man.toFixed(0) : man.toFixed(1)}만`;
+}
+// 화면 읽기에서 아이콘 이름 뒤에 읽을 숫자
+function countValue(value: number) {
+  return value > 0 ? { text: `${value}개` } : undefined;
 }
 
 export function Composer({
@@ -1164,46 +1232,59 @@ export function Composer({
   onPosted?: () => void;
   onSaved: (visibility: SocialPost['visibility']) => void;
 }) {
+  // 새 글은 "내용"만, 고치는 글은 본문 전체(태그·위치 줄 포함)를 담는다
   const [body, setBody] = useState(post?.text ?? '');
+  const [tags, setTags] = useState('');
   const [visibility, setVisibility] = useState<SocialPost['visibility']>(
     post?.visibility ?? 'public',
   );
+  // 새 글에는 사진이나 달리기 기록 중 하나가 꼭 있어야 한다
   const [photo, setPhoto] = useState<Asset | null>(null);
-  const [runs, setRuns] = useState<RunDocument[]>([]);
-  const [runsStatus, setRunsStatus] = useState<'loading' | 'success' | 'error'>(
-    'loading',
-  );
-  const [runId, setRunId] = useState<string | null>(post?.run_id ?? null);
+  const [run, setRun] = useState<RunDocument | null>(null);
+  const [withRunners, setWithRunners] = useState<Friend[]>([]);
+  const [shareLocation, setShareLocation] = useState(false);
+  const [location, setLocation] = useState<string | null>(null);
+  const [locationLoading, setLocationLoading] = useState(!post);
+  // 프로필 지역이 시·도뿐이라(예전 값) 위치로 쓰지 못할 때 안내한다
+  const [regionTooBroad, setRegionTooBroad] = useState(false);
+  const [sheet, setSheet] = useState<'photo' | 'run' | 'runners' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [postId] = useState(() => post?.post_id ?? newSocialId());
-  const mounted = useRef(true);
-  useEffect(
-    () => () => {
-      mounted.current = false;
-    },
-    [],
-  );
-  const loadRuns = useCallback(() => {
-    setRunsStatus('loading');
-    fetchRecentRuns()
-      .then(items => {
-        if (mounted.current) {
-          setRuns(items);
-          setRunsStatus('success');
-        }
-      })
-      .catch(() => {
-        if (mounted.current) setRunsStatus('error');
-      });
-  }, []);
+  // 공개할 위치: 첨부한 달리기의 출발 지점(광역시는 구·군, 도는 시·군). 알 수 없으면 프로필에 적어 둔 지역.
+  // 프로필 지역이 "경기"처럼 시·도뿐이면 너무 넓어서 쓰지 않는다
   useEffect(() => {
-    if (!post) loadRuns();
-  }, [post, loadRuns]);
-  const dirty =
-    body !== (post?.text ?? '') ||
-    visibility !== (post?.visibility ?? 'public') ||
-    !!photo ||
-    runId !== (post?.run_id ?? null);
+    if (post) return undefined;
+    let active = true;
+    setLocationLoading(true);
+    const resolve = async () => {
+      const district = run ? await fetchRunDistrict(run) : null;
+      if (district) return { label: district, tooBroad: false };
+      const region = await myRegion().catch(() => null);
+      return isDetailedRegion(region)
+        ? { label: region, tooBroad: false }
+        : { label: null, tooBroad: !!region };
+    };
+    resolve()
+      .catch(() => ({ label: null, tooBroad: false }))
+      .then(({ label, tooBroad }) => {
+        if (!active) return;
+        setLocation(label);
+        setRegionTooBroad(tooBroad);
+        setLocationLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [post, run]);
+  const dirty = post
+    ? body !== post.text || visibility !== post.visibility
+    : !!body.trim() ||
+      !!tags.trim() ||
+      visibility !== 'public' ||
+      !!photo ||
+      !!run ||
+      withRunners.length > 0 ||
+      shareLocation;
   const leave = () => {
     if (!dirty) {
       onBack();
@@ -1214,21 +1295,46 @@ export function Composer({
       { text: '나가기', style: 'destructive', onPress: onBack },
     ]);
   };
+  // 사진과 달리기 기록은 둘 중 하나만 붙인다
   const selectPhoto = async (camera: boolean) => {
     try {
       const selected = await choosePhoto(camera);
-      if (selected) setPhoto(selected);
+      if (selected) {
+        setPhoto(selected);
+        setRun(null);
+        setError(null);
+      }
     } catch (failure) {
       setError(socialError(failure));
     }
   };
+  const pickRun = (picked: RunDocument) => {
+    setRun(picked);
+    setPhoto(null);
+    setError(null);
+  };
+  const detach = () => {
+    setPhoto(null);
+    setRun(null);
+  };
   const submit = () => {
-    if (!body.trim() && !photo && !runId && !post?.image_url) {
-      setError('내용이나 사진, 달리기 기록을 추가해 주세요.');
+    if (post) {
+      if (!body.trim() && !post.image_url && !post.run_id) {
+        setError('내용을 입력해 주세요.');
+        return;
+      }
+    } else if (!photo && !run) {
+      setError('사진이나 달리기 기록을 첨부해 주세요.');
       return;
     }
     setError(null);
-    const text = body.trim();
+    const text = post
+      ? body.trim()
+      : buildPostText({
+          content: body,
+          tags,
+          location: shareLocation ? location : null,
+        });
     // 사진 업로드와 저장은 서버가 하는 일이라 기다리지 않고 피드로 돌아간다. 진행과 실패는 작은 팝업으로 알린다
     runInBackground({
       label: post ? '게시물 수정 중' : '게시물 올리는 중',
@@ -1251,120 +1357,353 @@ export function Composer({
           text,
           visibility,
           imageUrl: uploaded?.url ?? null,
-          runId,
+          runId: run?.run_id ?? null,
+          withUids: withRunners.map(runner => runner.uid),
         });
       },
     });
     onSaved(visibility);
   };
+  const visibilityChoices = (
+    <View style={styles.choices} accessibilityRole="radiogroup">
+      {(
+        Object.entries(VISIBILITY) as Array<[SocialPost['visibility'], string]>
+      ).map(([value, label]) => {
+        const selected = visibility === value;
+        return (
+          <Pressable
+            key={value}
+            accessibilityRole="radio"
+            accessibilityLabel={label}
+            accessibilityState={{ selected }}
+            onPress={() => setVisibility(value)}
+            style={[styles.choice, selected && styles.choiceOn]}
+          >
+            <AppText
+              variant="label"
+              color={selected ? colors.primaryInk : colors.textMuted}
+            >
+              {label}
+            </AppText>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+  if (post)
+    return (
+      <Page title="게시물 수정" onBack={leave}>
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={styles.content}
+        >
+          <Field
+            accessibilityLabel="게시물 내용"
+            placeholder="오늘 달리기는 어땠나요? #오운완"
+            value={body}
+            onChangeText={setBody}
+            multiline
+            maxLength={2000}
+            style={styles.composer}
+          />
+          <AppText variant="label" color={colors.textSubtle} align="right">
+            {body.length}/2000
+          </AppText>
+          {!!post.image_url && (
+            <FullPhoto uri={post.image_url} style={styles.postImage} />
+          )}
+          <AppText variant="subheading">공개 범위</AppText>
+          {visibilityChoices}
+          {error && (
+            <AppText color={colors.danger} accessibilityRole="alert">
+              {error}
+            </AppText>
+          )}
+          <Button label="수정 저장" onPress={submit} />
+        </ScrollView>
+      </Page>
+    );
+  const attached = !!photo || !!run;
   return (
-    <Page title={post ? '게시물 수정' : '오늘의 달리기'} onBack={leave}>
+    <Page title="오늘의 달리기" onBack={leave}>
       <ScrollView
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={styles.content}
+        contentContainerStyle={styles.composeContent}
       >
-        <Field
-          accessibilityLabel="게시물 내용"
-          placeholder="오늘 달리기는 어땠나요? #오운완"
-          value={body}
-          onChangeText={setBody}
-          multiline
-          maxLength={2000}
-          style={styles.composer}
-        />
-        <AppText variant="label" color={colors.textSubtle} align="right">
-          {body.length}/2000
-        </AppText>
-        {(photo?.uri || post?.image_url) && (
-          <FullPhoto
-            uri={photo?.uri ?? post!.image_url!}
-            style={styles.postImage}
-          />
-        )}
-        {!post && (
-          <>
-            <View style={styles.tabs}>
-              <Button
-                label="사진 선택"
-                size="md"
-                variant="secondary"
-                onPress={() => selectPhoto(false)}
-                style={styles.grow}
+        {/* 1. 첨부: 사진이나 달리기 기록 중 하나를 꼭 고른다 */}
+        <ComposeSection
+          title="사진 또는 달리기 기록"
+          hint={attached ? undefined : '둘 중 하나를 꼭 첨부해 주세요.'}
+        >
+          {photo ? (
+            <>
+              <FullPhoto uri={photo.uri!} style={styles.attachedPhoto} />
+              <AttachmentActions
+                changeLabel="다른 사진"
+                onChange={() => setSheet('photo')}
+                onRemove={detach}
               />
-              <Button
-                label="사진 촬영"
-                size="md"
-                variant="secondary"
-                onPress={() => selectPhoto(true)}
-                style={styles.grow}
+            </>
+          ) : run ? (
+            <>
+              <AttachedRun run={run} />
+              <AttachmentActions
+                changeLabel="다른 기록"
+                onChange={() => setSheet('run')}
+                onRemove={detach}
               />
-              {photo && (
-                <IconButton
-                  icon={X}
-                  accessibilityLabel="첨부 사진 제거"
-                  onPress={() => setPhoto(null)}
-                />
-              )}
+            </>
+          ) : (
+            <View style={styles.attachChoices}>
+              <AttachChoice
+                icon={ImagePlus}
+                title="사진 첨부"
+                detail="앨범이나 카메라"
+                onPress={() => setSheet('photo')}
+              />
+              <AttachChoice
+                icon={Footprints}
+                title="달리기 기록 첨부"
+                detail="캘린더에서 고르기"
+                onPress={() => setSheet('run')}
+              />
             </View>
-            <AppText variant="subheading">달리기 기록 첨부</AppText>
-            {runsStatus === 'loading' ? (
-              <Loading />
-            ) : runsStatus === 'error' ? (
-              <Failure retry={loadRuns} />
-            ) : runs.length === 0 ? (
-              <AppText color={colors.textMuted}>
-                저장한 달리기 기록이 없어요.
+          )}
+        </ComposeSection>
+        {/* 2. 내용과 태그는 따로 쓴다. 올릴 때 본문 아래에 태그 줄로 붙는다 */}
+        <ComposeSection title="내용">
+          <Field
+            accessibilityLabel="게시물 내용"
+            placeholder="오늘 달리기는 어땠나요?"
+            value={body}
+            onChangeText={setBody}
+            multiline
+            maxLength={MAX_CONTENT_LENGTH}
+            style={styles.composer}
+          />
+          <AppText variant="label" color={colors.textSubtle} align="right">
+            {body.length}/{MAX_CONTENT_LENGTH}
+          </AppText>
+        </ComposeSection>
+        <ComposeSection title="태그">
+          <Field
+            accessibilityLabel="태그"
+            placeholder="#오운완 #달료런"
+            value={tags}
+            onChangeText={setTags}
+            autoCapitalize="none"
+            maxLength={MAX_TAG_INPUT_LENGTH}
+          />
+        </ComposeSection>
+        {/* 3. 공개 범위와 위치 공유 */}
+        <ComposeSection title="공개 범위">
+          {visibilityChoices}
+          <View style={styles.toggleRow}>
+            <View style={styles.grow}>
+              <AppText variant="body">위치 공유</AppText>
+              <AppText
+                variant="caption"
+                color={colors.textMuted}
+                numberOfLines={2}
+              >
+                {locationLoading
+                  ? '위치를 확인하는 중이에요'
+                  : location
+                  ? location
+                  : regionTooBroad
+                  ? '설정 > 내 지역을 시·구까지 고르면 공유할 수 있어요'
+                  : '공유할 위치 정보가 없어요'}
               </AppText>
-            ) : (
-              runs.map(run => (
-                <Pressable
-                  key={run.run_id}
-                  accessibilityRole="radio"
-                  accessibilityState={{
-                    selected: runId === run.run_id,
-                  }}
-                  onPress={() =>
-                    setRunId(old => (old === run.run_id ? null : run.run_id))
-                  }
-                  style={[
-                    styles.runChoice,
-                    runId === run.run_id && styles.selectedTab,
-                  ]}
-                >
-                  <AppText>
-                    {run.distance_km.toFixed(2)}km ·{' '}
-                    {formatDuration(run.duration_sec)}
-                  </AppText>
-                </Pressable>
-              ))
-            )}
-          </>
-        )}
-        <AppText variant="subheading">공개 범위</AppText>
-        <View style={styles.tabs}>
-          {(
-            Object.entries(VISIBILITY) as Array<
-              [SocialPost['visibility'], string]
-            >
-          ).map(([value, label]) => (
-            <Tab
-              key={value}
-              label={label}
-              selected={visibility === value}
-              onPress={() => {
-                setVisibility(value);
-              }}
+            </View>
+            <Switch
+              accessibilityLabel="위치 공유"
+              value={shareLocation && !!location}
+              disabled={!location}
+              onValueChange={setShareLocation}
+              trackColor={{ false: colors.border, true: colors.primary }}
             />
-          ))}
-        </View>
+          </View>
+        </ComposeSection>
+        {/* 4. 함께 달린 사람 */}
+        <ComposeSection title="함께 달린 사람">
+          <View style={styles.runnerChips}>
+            {withRunners.map(runner => (
+              <View key={runner.uid} style={styles.runnerChip}>
+                <AppText variant="label" color={colors.primaryInk}>
+                  {runner.display_name}
+                </AppText>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`${runner.display_name} 태그 빼기`}
+                  hitSlop={8}
+                  onPress={() =>
+                    setWithRunners(old =>
+                      old.filter(item => item.uid !== runner.uid),
+                    )
+                  }
+                >
+                  <X size={14} color={colors.primaryInk} />
+                </Pressable>
+              </View>
+            ))}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="함께 달린 사람 태그"
+              onPress={() => setSheet('runners')}
+              style={({ pressed }) => [
+                styles.addRunner,
+                pressed && styles.pressedChoice,
+              ]}
+            >
+              <UserPlus size={15} color={colors.textMuted} />
+              <AppText variant="label" color={colors.textMuted}>
+                {withRunners.length > 0 ? '더 태그하기' : '친구 태그하기'}
+              </AppText>
+            </Pressable>
+          </View>
+        </ComposeSection>
         {error && (
           <AppText color={colors.danger} accessibilityRole="alert">
             {error}
           </AppText>
         )}
-        <Button label={post ? '수정 저장' : '게시물 올리기'} onPress={submit} />
+        <Button label="게시물 올리기" disabled={!attached} onPress={submit} />
       </ScrollView>
+      <PhotoSourceSheet
+        visible={sheet === 'photo'}
+        onClose={() => setSheet(null)}
+        onCamera={() => selectPhoto(true)}
+        onAlbum={() => selectPhoto(false)}
+      />
+      {sheet === 'run' && (
+        <RunPickerSheet
+          selectedId={run?.run_id}
+          onPick={pickRun}
+          onClose={() => setSheet(null)}
+        />
+      )}
+      {sheet === 'runners' && (
+        <RunnerTagSheet
+          selected={withRunners}
+          onDone={setWithRunners}
+          onClose={() => setSheet(null)}
+        />
+      )}
     </Page>
+  );
+}
+function ComposeSection({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={styles.composeSection}>
+      <View style={styles.composeHeading}>
+        <AppText variant="subheading" accessibilityRole="header">
+          {title}
+        </AppText>
+        {hint && (
+          <AppText variant="caption" color={colors.textMuted}>
+            {hint}
+          </AppText>
+        )}
+      </View>
+      {children}
+    </View>
+  );
+}
+function AttachChoice({
+  icon: Icon,
+  title,
+  detail,
+  onPress,
+}: {
+  icon: typeof Footprints;
+  title: string;
+  detail: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.attachChoice,
+        pressed && styles.pressedChoice,
+      ]}
+    >
+      <View style={styles.attachIcon}>
+        <Icon size={24} color={colors.primaryInk} />
+      </View>
+      <AppText variant="subheading">{title}</AppText>
+      <AppText variant="caption" color={colors.textMuted}>
+        {detail}
+      </AppText>
+    </Pressable>
+  );
+}
+function AttachmentActions({
+  changeLabel,
+  onChange,
+  onRemove,
+}: {
+  changeLabel: string;
+  onChange: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <View style={styles.attachmentActions}>
+      <Button
+        label={changeLabel}
+        size="md"
+        variant="secondary"
+        onPress={onChange}
+        style={styles.grow}
+      />
+      <Button
+        label="첨부 빼기"
+        size="md"
+        variant="ghost"
+        onPress={onRemove}
+        style={styles.grow}
+      />
+    </View>
+  );
+}
+// 첨부한 달리기 기록 미리보기. 피드에서는 같은 기록이 "공유한 러닝 기록" 칸으로 보인다
+function AttachedRun({ run }: { run: RunDocument }) {
+  return (
+    <View testID="composer-attached-run" style={styles.composerRun}>
+      <View style={styles.runTileTop}>
+        <Footprints size={18} color={colors.primaryInk} />
+        <AppText variant="label" color={colors.primaryInk}>
+          {`${runDay(run)} · ${runTime(run)}`}
+        </AppText>
+      </View>
+      <View style={styles.runTileDistance}>
+        <AppText style={styles.attachedRunNumber}>
+          {run.distance_km.toFixed(2)}
+        </AppText>
+        <AppText variant="subheading" color={colors.primaryInk}>
+          km
+        </AppText>
+      </View>
+      <AppText variant="caption" color={colors.textMuted}>
+        {[
+          formatDuration(run.duration_sec),
+          run.avg_pace_sec > 0 ? `${formatPace(run.avg_pace_sec)} /km` : '',
+          `${run.calories} kcal`,
+        ]
+          .filter(Boolean)
+          .join(' · ')}
+      </AppText>
+    </View>
   );
 }
 
@@ -1417,7 +1756,7 @@ function PostDetail({
             detail
             onOpen={() => {}}
             onComments={onComments}
-            onProfile={() => onProfile(post.uid)}
+            onProfile={onProfile}
             onEdit={() => onEdit(post)}
             onDeleted={onDeleted}
           />
@@ -1488,7 +1827,7 @@ function ExplorePage({
               post={post}
               onComments={() => onComments(post.post_id)}
               onOpen={() => onOpen(post.post_id)}
-              onProfile={() => onProfile(post.uid)}
+              onProfile={onProfile}
             />
           ))
         )}
@@ -1661,6 +2000,7 @@ export function ProfilePage({
   onComments,
   onMessage,
   onConnections,
+  onProfile,
 }: {
   uid: string;
   // 화면 아래에 떠 있는 바에 끝이 가려지지 않도록 비워 둘 높이
@@ -1678,6 +2018,8 @@ export function ProfilePage({
   onMessage: (uid: string) => void;
   onComments: (id: string) => void;
   onConnections?: (kind: ConnectionKind) => void;
+  // 게시물에 함께 달린 사람으로 태그된 다른 러너의 프로필을 연다
+  onProfile?: (uid: string) => void;
 }) {
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [runner, setRunner] = useState<RunnerProfile | null>(null);
@@ -1968,12 +2310,15 @@ export function ProfilePage({
                 )}
               </Card>
               {!blocked && runner && (
-                <RunnerStatsCard
-                  runner={runner}
-                  runsOpen={runsOpen}
-                  onToggleRuns={setRunsOpen}
-                  onOpenRuns={onRuns}
-                />
+                // 캐릭터 구역은 홈처럼 화면 양끝까지 채운다
+                <View testID="profile-stats-bleed" style={styles.profileBleed}>
+                  <RunnerStatsCard
+                    runner={runner}
+                    runsOpen={runsOpen}
+                    onToggleRuns={setRunsOpen}
+                    onOpenRuns={onRuns}
+                  />
+                </View>
               )}
               {!blocked && (
                 <View style={styles.profileSectionHeader}>
@@ -1991,7 +2336,11 @@ export function ProfilePage({
                   detail="볼 수 있는 최근 게시물이 없습니다."
                 />
               ) : postView === 'grid' ? (
-                <View testID="profile-posts-grid" style={styles.profileGrid}>
+                // 최근 게시물도 화면 양끝까지. 두 칸 사이만 가늘게 띄운다
+                <View
+                  testID="profile-posts-grid"
+                  style={[styles.profileBleed, styles.profileGrid]}
+                >
                   {posts.map(post => (
                     <Pressable
                       key={post.post_id}
@@ -2031,16 +2380,22 @@ export function ProfilePage({
                   ))}
                 </View>
               ) : (
-                posts.map(post => (
-                  <PostCard
-                    key={post.post_id}
-                    post={post}
-                    onComments={() => onComments(post.post_id)}
-                    onOpen={() => onPost(post.post_id)}
-                    onProfile={() => {}}
-                    onEdit={onEdit && (() => onEdit(post))}
-                  />
-                ))
+                // 목록 보기는 피드와 같은 모양으로 화면 양끝까지 쓴다
+                <View testID="profile-posts-list" style={styles.profileBleed}>
+                  {posts.map(post => (
+                    <PostCard
+                      key={post.post_id}
+                      post={post}
+                      onComments={() => onComments(post.post_id)}
+                      onOpen={() => onPost(post.post_id)}
+                      // 지금 보고 있는 프로필의 주인은 다시 열지 않는다
+                      onProfile={other => {
+                        if (other !== uid) onProfile?.(other);
+                      }}
+                      onEdit={onEdit && (() => onEdit(post))}
+                    />
+                  ))}
+                </View>
               )}
             </>
           )
@@ -2212,7 +2567,7 @@ function SavedPage({
               post={post}
               onComments={() => onComments(post.post_id)}
               onOpen={() => onPost(post.post_id)}
-              onProfile={() => onProfile(post.uid)}
+              onProfile={onProfile}
               onEdit={() => onEdit(post)}
             />
           ))
@@ -2222,7 +2577,7 @@ function SavedPage({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   // 아래쪽 여백은 위보다 좁게 둔다. 세 칸 줄이 카드 바닥에서 떠 보이지 않게 한다
   runnerHero: { gap: spacing.md, paddingBottom: spacing.md },
   runnerIdentity: { flexDirection: 'row', alignItems: 'center', gap: 16 },
@@ -2262,14 +2617,17 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   // 두 칸을 양 끝에 붙여 위 구역들과 좌우 끝을 맞춘다
+  // 본문 좌우 여백(spacing.xl)을 상쇄해 화면 양끝까지 닿게 한다
+  profileBleed: { marginHorizontal: -spacing.xl },
   profileGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    rowGap: 10,
+    rowGap: spacing.lg,
   },
+  // 두 칸 사이는 2px 정도만 남긴다
   profilePostTile: {
-    width: '48%',
+    width: '49.7%',
     overflow: 'hidden',
   },
   // 오운완 카드(4:5)의 위아래 글자가 잘리지 않는 규격. 다른 비율의 사진은 잘릴 수 있다
@@ -2282,9 +2640,13 @@ const styles = StyleSheet.create({
     gap: 8,
     backgroundColor: colors.primarySoft,
   },
-  profilePostCaption: { padding: 10, gap: 6 },
-  // 카드와 카드, 카드와 "최근 게시물" 머리글 사이를 같은 간격으로 맞춘다
-  profileContent: { gap: spacing.lg },
+  profilePostCaption: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    gap: 6,
+  },
+  // 구역과 구역(프로필 카드, 캐릭터 구역, "최근 게시물" 머리글, 게시물) 사이를 같은 간격으로 넉넉히 띄운다
+  profileContent: { gap: spacing.xxl },
   runRow: { gap: 4, paddingVertical: spacing.sm },
   runValues: {
     flexDirection: 'row',
@@ -2345,24 +2707,6 @@ const styles = StyleSheet.create({
   },
   dim: { opacity: 0.75 },
   section: { marginVertical: spacing.md },
-  tabs: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    gap: 20,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-  },
-  tab: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 16,
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
-  },
-  selectedTab: { borderBottomColor: colors.primary },
   loading: { marginVertical: 40 },
   empty: {
     alignItems: 'center',
@@ -2442,14 +2786,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  postCaption: { paddingHorizontal: spacing.lg, gap: 7 },
-  postCounts: {
+  // 아이콘과 그 오른쪽 숫자를 한 번에 누를 수 있게 묶는다. 숫자가 없으면 아이콘 칸(44)만 남는다
+  socialAction: {
+    minWidth: 44,
+    height: 44,
     flexDirection: 'row',
-    flexWrap: 'wrap',
     alignItems: 'center',
-    gap: spacing.md,
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    gap: 5,
   },
+  socialCount: { fontSize: 15, lineHeight: 20 },
+  postCaption: { paddingHorizontal: spacing.lg, gap: 7 },
   captionText: { fontSize: 14, lineHeight: 21 },
+  captionAuthor: { fontFamily: fonts.bold },
+  withRunners: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  withRunnerName: { fontFamily: fonts.semibold, color: colors.text },
   postAuthorName: { fontSize: 15, lineHeight: 21 },
   postMeta: { fontSize: 12, lineHeight: 16 },
   runTile: {
@@ -2535,11 +2887,91 @@ const styles = StyleSheet.create({
     minHeight: 48,
   },
   composer: { minHeight: 160, textAlignVertical: 'top' },
-  runChoice: {
-    padding: spacing.md,
+  // 글쓰기: 첨부 → 내용 → 태그 → 공개 범위 → 함께 달린 사람
+  composeContent: {
+    padding: spacing.xl,
+    paddingBottom: 60,
+    gap: spacing.xxl,
+  },
+  composeSection: { gap: spacing.md },
+  composeHeading: { gap: 2 },
+  attachChoices: { flexDirection: 'row', gap: spacing.md },
+  attachChoice: {
+    flex: 1,
+    alignItems: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: colors.primaryBorder,
+    backgroundColor: colors.surface,
+  },
+  attachIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.xs,
+  },
+  pressedChoice: { opacity: 0.7 },
+  attachedPhoto: { borderRadius: radius.md },
+  attachmentActions: { flexDirection: 'row', gap: spacing.sm },
+  composerRun: {
+    gap: spacing.sm,
+    padding: spacing.lg,
+    borderRadius: radius.md,
+    backgroundColor: colors.primarySoft,
+  },
+  attachedRunNumber: {
+    fontFamily: fonts.extrabold,
+    fontSize: 40,
+    lineHeight: 46,
+    color: colors.primaryInk,
+    letterSpacing: -1.2,
+  },
+  choices: { flexDirection: 'row', gap: spacing.sm },
+  choice: {
+    flex: 1,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: radius.md,
+  },
+  choiceOn: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primarySoft,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingTop: spacing.xs,
+  },
+  runnerChips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  runnerChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minHeight: 36,
+    paddingHorizontal: spacing.md,
+    borderRadius: 18,
+    backgroundColor: colors.primarySoft,
+  },
+  addRunner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minHeight: 36,
+    paddingHorizontal: spacing.md,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   comment: {
     borderBottomWidth: StyleSheet.hairlineWidth,
@@ -2558,4 +2990,4 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
-});
+}));

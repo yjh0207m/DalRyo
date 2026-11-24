@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { LucideIcon } from 'lucide-react-native';
-import { colors, radius, spacing } from '../../theme';
+import { colors, radius, spacing, themedStyles } from '../../theme';
 import { AppText } from './AppText';
 import { Button } from './Button';
 
@@ -144,17 +144,17 @@ function Option({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   backdrop: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(10,30,26,0.45)',
+    backgroundColor: colors.scrim,
   },
   sheet: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceRaised,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     paddingHorizontal: spacing.xl,
@@ -187,4 +187,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   cancel: { marginTop: spacing.sm },
-});
+}));

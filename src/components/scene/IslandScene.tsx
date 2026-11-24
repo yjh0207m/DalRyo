@@ -1,7 +1,7 @@
 import React from 'react';
-import {StyleSheet, View, type StyleProp, type ViewStyle} from 'react-native';
+import {View, type StyleProp, type ViewStyle} from 'react-native';
 import Svg, {Circle, Ellipse, G, Path} from 'react-native-svg';
-import {colors, radius, shadow, spacing} from '../../theme';
+import {colors, radius, shadow, spacing, themedStyles} from '../../theme';
 import {AppText} from '../ui';
 
 // 홈 화면의 "풀밭 섬". 캐릭터(children)가 섬 윗면에 서고, 옆에 말풍선을 띄운다.
@@ -56,7 +56,7 @@ export function IslandScene({width = 300, characterSize, speech, children, style
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   wrap: {alignSelf: 'center'},
   island: {position: 'absolute', left: 0, bottom: 0},
   character: {position: 'absolute', left: 0, right: 0, alignItems: 'center'},
@@ -78,4 +78,4 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     transform: [{rotate: '45deg'}],
   },
-});
+}));

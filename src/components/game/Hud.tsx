@@ -1,7 +1,7 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import {View} from 'react-native';
 import { Flame } from 'lucide-react-native';
-import { colors, fonts, radius, spacing } from '../../theme';
+import { colors, fonts, radius, spacing, themedStyles } from '../../theme';
 import { AppText } from '../ui';
 
 // 게임식 상태 표시(HUD) 조각들: 레벨 배지, 두꺼운 경험치 바, 연속 기록 칩
@@ -50,13 +50,22 @@ export function LevelBadge({
 export function ExpBar({
   value,
   height = 14,
+  trackColor,
 }: {
   value: number;
   height?: number;
+  // 바탕이 회색 띠일 때처럼 기본 바탕색과 겹치면 다른 색을 준다
+  trackColor?: string;
 }) {
   const ratio = Math.min(1, Math.max(0, value));
   return (
-    <View style={[styles.expTrack, { height, borderRadius: height / 2 }]}>
+    <View
+      style={[
+        styles.expTrack,
+        { height, borderRadius: height / 2 },
+        trackColor ? { backgroundColor: trackColor } : null,
+      ]}
+    >
       <View
         style={[
           styles.expFill,
@@ -93,7 +102,7 @@ export function StreakChip({ days }: { days: number }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   badgeRing: {
     backgroundColor: colors.surface,
     alignItems: 'center',
@@ -131,4 +140,4 @@ const styles = StyleSheet.create({
   },
   chipActive: { backgroundColor: colors.accentSoft },
   chipIdle: { backgroundColor: colors.surface },
-});
+}));

@@ -28,6 +28,7 @@ import {
   LogOut,
   MapPin,
   MessageCircle,
+  Moon,
   UserRound,
   type LucideIcon,
 } from 'lucide-react-native';
@@ -39,7 +40,18 @@ import { saveAccount } from '../../services/account.service';
 import { signOut } from '../../services/auth.service';
 import { choosePhoto, uploadPhoto } from '../../services/media.service';
 import { requestPushPermission } from '../../services/notification.service';
-import { colors, fonts, radius, spacing } from '../../theme';
+import { runInBackground } from '../../services/backgroundTask.service';
+import { saveThemePreference } from '../../services/themePreference.service';
+import {
+  colors,
+  fonts,
+  radius,
+  setThemeMode,
+  spacing,
+  statusBarStyle,
+  themedStyles,
+  useThemeMode,
+} from '../../theme';
 import {
   DEFAULT_NOTIFICATION_PREFERENCES,
   type NotificationPreferences,
@@ -52,6 +64,13 @@ import {
   validateProfile,
   type ProfileForm,
 } from '../../utils/profile';
+import {
+  areaKind,
+  isDetailedRegion,
+  REGION_AREAS,
+  regionLabel,
+  splitRegion,
+} from '../../utils/regions';
 import { normalizeUserId } from '../../utils/userId';
 
 type Props = {
@@ -181,6 +200,11 @@ export function SettingsScreen({
     if (busy) return false;
     try {
       validateProfile(form);
+      // 지역을 바꿀 때는 시·도 아래(광역시는 구·군, 도는 시·군)까지 골라야 한다
+      if (form.region !== initial.region && !isDetailedRegion(form.region))
+        throw new Error(
+          `${areaKind(splitRegion(form.region).province)}까지 골라 주세요.`,
+        );
       if (initial.userId && !normalizeUserId(form.userId ?? ''))
         throw new Error('아이디는 비울 수 없어요. 다른 아이디로 바꿔 주세요.');
       if (!petName.trim() || petName.trim().length > 20)
@@ -437,20 +461,52 @@ export function SettingsScreen({
           </AppText>
         </>
       );
-    if (target === 'region')
+    if (target === 'region') {
+      // 시·도를 고르면 그 아래 시·군·구가 나온다. 세종은 아래 단위가 없다
+      const { province, area } = splitRegion(form.region);
+      const areas = REGION_AREAS[province] ?? [];
       return (
-        <View style={styles.options}>
-          {REGIONS.map(region => (
-            <Choice
-              key={region}
-              label={region}
-              selected={form.region === region}
-              disabled={!!busy}
-              onPress={() => change('region', region)}
-            />
-          ))}
-        </View>
+        <>
+          <View style={styles.options}>
+            {REGIONS.map(region => (
+              <Choice
+                key={region}
+                label={region}
+                selected={province === region}
+                disabled={!!busy}
+                onPress={() =>
+                  change('region', region === province ? form.region : region)
+                }
+              />
+            ))}
+          </View>
+          {areas.length > 0 && (
+            <>
+              <AppText
+                variant="subheading"
+                accessibilityRole="header"
+                style={styles.areaHeading}
+              >
+                {`${province} ${areaKind(province)}`}
+              </AppText>
+              <View style={styles.options}>
+                {areas.map(item => (
+                  <Choice
+                    key={item}
+                    label={item}
+                    selected={area === item}
+                    disabled={!!busy}
+                    onPress={() =>
+                      change('region', regionLabel(province, item))
+                    }
+                  />
+                ))}
+              </View>
+            </>
+          )}
+        </>
       );
+    }
     return (
       <>
         <View style={styles.options}>
@@ -479,7 +535,12 @@ export function SettingsScreen({
   const summary: Record<Section, string> = {
     profile: `${initial.displayName} · ${initialPetName}`,
     notifications: initialNotifications.push ? '켜짐' : '꺼짐',
-    region: initial.region,
+    // 예전에 시·도만 저장한 지역은 아래 단위를 고르도록 알린다
+    region: isDetailedRegion(initial.region)
+      ? initial.region
+      : `${initial.region} · ${areaKind(
+          splitRegion(initial.region).province,
+        )}을 골라 주세요`,
     dialect:
       DIALECT_OPTIONS.find(option => option.value === initial.dialect)?.label ??
       '',
@@ -579,7 +640,10 @@ function List({
   }, [onBack]);
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
+      <StatusBar
+        barStyle={statusBarStyle()}
+        backgroundColor={colors.background}
+      />
       <View style={styles.header}>
         <IconButton
           icon={ChevronLeft}
@@ -663,6 +727,7 @@ function List({
               onPress={() => onOpen(item)}
             />
           ))}
+          <DarkModeRow />
         </View>
         {(onOpenSaved || onOpenBlocked) && (
           <View style={styles.listGroup}>
@@ -732,6 +797,46 @@ function List({
         )}
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+// 다크 모드 켜고 끄기. 누르는 즉시 앱 전체 색이 바뀌고, 이 기기에 저장한다(계정 설정과 따로 저장 버튼이 없다)
+function DarkModeRow() {
+  const dark = useThemeMode() === 'dark';
+  const toggle = () => {
+    const next = dark ? 'light' : 'dark';
+    setThemeMode(next);
+    runInBackground({
+      label: '다크 모드 저장 중',
+      failureLabel: '다크 모드 설정을 저장하지 못했어요',
+      describeError: () =>
+        '지금은 바뀐 테마로 쓰고, 다음에 앱을 열면 이전 테마로 시작해요.',
+      silent: true,
+      retryable: false,
+      task: () => saveThemePreference(next),
+    });
+  };
+  return (
+    <Pressable
+      accessibilityRole="switch"
+      accessibilityLabel="다크 모드"
+      accessibilityState={{ checked: dark }}
+      onPress={toggle}
+      style={({ pressed }) => [styles.listRow, pressed && styles.listPressed]}
+    >
+      <Moon color={colors.primaryInk} size={20} strokeWidth={1.8} />
+      <AppText variant="subheading" color={colors.text} style={styles.flex}>
+        다크 모드
+      </AppText>
+      <Switch
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        value={dark}
+        onValueChange={toggle}
+        trackColor={{ false: colors.border, true: colors.primary }}
+        ios_backgroundColor={colors.border}
+      />
+    </Pressable>
   );
 }
 
@@ -942,7 +1047,7 @@ function Choice({
     </Pressable>
   );
 }
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   screen: { flex: 1, backgroundColor: colors.surface },
   header: {
     flexDirection: 'row',
@@ -953,11 +1058,13 @@ const styles = StyleSheet.create({
   },
   spacer: { width: 44 },
   content: { paddingHorizontal: spacing.xl },
+  // 내 프로필 영역. 둥근 상자 대신 본문 좌우 여백(spacing.xl)을 상쇄해 화면 양끝까지 채운 띠로 둔다
   profileEntry: {
     marginTop: spacing.lg,
-    borderRadius: radius.lg,
+    marginHorizontal: -spacing.xl,
     backgroundColor: colors.primarySoft,
-    padding: spacing.lg,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.xl,
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
@@ -1010,6 +1117,7 @@ const styles = StyleSheet.create({
   },
   row: { flexDirection: 'row', gap: spacing.md },
   flex: { flex: 1 },
+  areaHeading: { marginTop: spacing.xl },
   options: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1054,4 +1162,4 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     marginBottom: spacing.sm,
   },
-});
+}));

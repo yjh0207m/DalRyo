@@ -1,5 +1,5 @@
 import React, {useEffect, useState} from 'react';
-import {BackHandler, ScrollView, StatusBar, StyleSheet, View} from 'react-native';
+import {BackHandler, ScrollView, StatusBar, View} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {ChevronLeft} from 'lucide-react-native';
 import {CharacterView} from '../../components/character/CharacterView';
@@ -7,7 +7,7 @@ import type {RevealMode} from '../../components/character/CharacterReveal';
 import {CompletedRunScreen} from '../run/CompletedRunScreen';
 import {Timestamp} from '@react-native-firebase/firestore';
 import {AppText, Button, Card, IconButton} from '../../components/ui';
-import {colors, spacing} from '../../theme';
+import {colors, spacing, themedStyles, statusBarStyle} from '../../theme';
 import type {CharacterMotion, CharacterStage} from '../../types/character.types';
 
 const MOTIONS: Array<{value: CharacterMotion; label: string}> = [
@@ -62,7 +62,7 @@ export function CharacterPreviewScreen({onBack}: {onBack: () => void}) {
   }
 
   return <SafeAreaView style={styles.screen}>
-    <StatusBar barStyle="dark-content" />
+    <StatusBar barStyle={statusBarStyle()} />
     <View style={styles.header}>
       <IconButton icon={ChevronLeft} accessibilityLabel="뒤로" variant="plain" onPress={onBack} />
       <AppText variant="heading">캐릭터 미리보기</AppText>
@@ -86,7 +86,7 @@ export function CharacterPreviewScreen({onBack}: {onBack: () => void}) {
   </SafeAreaView>;
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   screen: {flex: 1, backgroundColor: colors.background},
   header: {flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md},
   content: {padding: spacing.xl, gap: spacing.md},
@@ -94,4 +94,4 @@ const styles = StyleSheet.create({
   row: {flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm},
   half: {width: '48%'},
   third: {flex: 1},
-});
+}));

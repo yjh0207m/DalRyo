@@ -1,33 +1,16 @@
 import type { RunDocument } from '../types/run.types';
+import { regionFromAddressDetail } from '../utils/regions';
 
 const ENDPOINT = 'https://nominatim.openstreetmap.org/reverse';
 const TIMEOUT_MS = 8000;
 
-// 시·도 → 시·군 → 구·군 순서로 이름을 이어 붙인다 (예: 서울특별시 강남구, 경기도 수원시 영통구).
-// 동·리·도로명 같은 더 세부적인 단위는 일부러 쓰지 않는다
+// 특별시·광역시는 구·군까지, 도는 시·군까지만 쓴다(예: 서울 강남구, 경기 수원시).
+// 동·리·도로명이나 도 아래 시의 구 같은 더 세부적인 단위는 일부러 쓰지 않는다
 export function districtLabel(address: unknown): string | null {
-  if (!address || typeof address !== 'object') return null;
-  const fields = address as Record<string, unknown>;
-  if (fields.country_code !== 'kr') return null;
-  const parts: string[] = [];
-  for (const key of [
-    'state',
-    'province',
-    'city',
-    'county',
-    'municipality',
-    'city_district',
-    'borough',
-  ]) {
-    const name = fields[key];
-    if (typeof name !== 'string') continue;
-    const trimmed = name.trim();
-    if (trimmed && !parts.includes(trimmed)) parts.push(trimmed);
-  }
-  return parts.length > 0 ? parts.join(' ') : null;
+  return regionFromAddressDetail(address);
 }
 
-// 달리기 출발 지점이 어느 시·도·구인지 알아낸다. 알 수 없으면 null
+// 달리기 출발 지점이 어느 시·구(광역시)·시·군(도)인지 알아낸다. 알 수 없으면 null
 export async function fetchRunDistrict(
   run: RunDocument,
 ): Promise<string | null> {

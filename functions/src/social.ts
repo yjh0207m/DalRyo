@@ -117,6 +117,17 @@ function runSummary(run: DocumentSnapshot) {
     startedAtMs: started?.toMillis?.() ?? 0,
   };
 }
+// 게시물에 "함께 달린 사람"으로 태그할 수 있는 인원
+const MAX_RUNNER_TAGS = 10;
+// 함께 달린 사람으로 태그할 uid 목록. 자기 자신과 중복은 뺀다
+function runnerTags(value: unknown, uid: string) {
+  if (value == null) return [];
+  if (!Array.isArray(value) || value.length > MAX_RUNNER_TAGS)
+    throw new Error(
+      `함께 달린 사람은 ${MAX_RUNNER_TAGS}명까지 태그할 수 있어요.`,
+    );
+  return [...new Set(value.map(documentId))].filter(id => id !== uid);
+}
 async function readable(uid: string, post: DocumentData, tx?: Transaction) {
   if (post.deleted) return false;
   if (post.uid === uid || post.visibility === 'public') return true;
@@ -726,6 +737,7 @@ export const socialAction = onCall(
           throw new Error('내용이나 사진, 달리기 기록을 추가해 주세요.');
         if (!['public', 'followers', 'private'].includes(input.visibility))
           throw new Error('공개 범위를 확인해 주세요.');
+        const withUids = runnerTags(input.withUids, uid);
         const ref = db().collection('posts').doc(id);
         await db().runTransaction(async tx => {
           const existing = await tx.get(ref);
@@ -749,6 +761,26 @@ export const socialAction = onCall(
               );
             run = snap.data();
           }
+          // 함께 달린 사람은 서로 팔로우하는 친구만 태그할 수 있다(차단하면 팔로우가 끊기므로 차단한 사이도 빠진다).
+          // 이름은 지금 이름을 사본으로 남긴다
+          const withRunners = await Promise.all(
+            withUids.map(async other => {
+              const [mineEdge, theirEdge, profile] = await Promise.all([
+                tx.get(db().collection('follows').doc(`${uid}_${other}`)),
+                tx.get(db().collection('follows').doc(`${other}_${uid}`)),
+                tx.get(db().collection('users').doc(other)),
+              ]);
+              if (!mineEdge.exists || !theirEdge.exists || !profile.exists)
+                throw new HttpsError(
+                  'permission-denied',
+                  '함께 달린 사람은 서로 팔로우하는 친구만 태그할 수 있어요.',
+                );
+              return {
+                uid: other,
+                display_name: publicUser(other, profile.data()!).display_name,
+              };
+            }),
+          );
           tx.set(ref, {
             post_id: id,
             uid,
@@ -770,8 +802,10 @@ export const socialAction = onCall(
                 ),
               ),
             ].slice(0, 10),
+            with_runners: withRunners,
             like_count: 0,
             comment_count: 0,
+            share_count: 0,
             deleted: false,
             dialect: mine.dialect ?? 'std',
             created_at: now(),
@@ -875,6 +909,30 @@ export const socialAction = onCall(
         if (changed && input.active && input.action === 'like')
           await push(receiver, actor, 'like', postId);
         return { active: input.active };
+      }
+      // 공유 창에서 실제로 공유했을 때. 같은 사람이 여러 번 공유해도 한 번만 센다
+      if (input.action === 'share') {
+        const shareRef = postRef.collection('shares').doc(uid);
+        await db().runTransaction(async tx => {
+          const [post, share] = await Promise.all([
+            tx.get(postRef),
+            tx.get(shareRef),
+          ]);
+          // 공유 버튼은 전체 공개 글에만 있다
+          if (
+            !post.exists ||
+            post.get('deleted') ||
+            post.get('visibility') !== 'public' ||
+            (await blockedBetween(uid, post.get('uid'), tx))
+          )
+            throw new HttpsError('permission-denied', '게시물을 볼 수 없어요.');
+          if (share.exists) return;
+          tx.set(shareRef, { uid, post_id: postId, created_at: now() });
+          tx.update(postRef, {
+            share_count: count(post.get('share_count')) + 1,
+          });
+        });
+        return { shared: true };
       }
       if (input.action === 'comment') {
         const commentId = documentId(input.commentId);

@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Linking, StyleSheet, View } from 'react-native';
+import {Linking, View} from 'react-native';
 import { WebView } from 'react-native-webview';
 import type { GpsPoint } from '../../types/run.types';
 import { routeMapHtml } from '../../utils/routeMap';
 import { AppText, Button } from '../ui';
-import { colors } from '../../theme';
+import { colors, themedStyles } from '../../theme';
 
 // compact: 완료 화면용 작은 미리보기 (움직이지 않고 설명 문구 없음)
 export function RouteMap({
@@ -90,7 +90,7 @@ export function RouteMap({
     </View>
   );
 }
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   wrapper: { gap: 10 },
   map: {
     height: 300,
@@ -107,4 +107,4 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     backgroundColor: colors.primarySoft,
   },
-});
+}));

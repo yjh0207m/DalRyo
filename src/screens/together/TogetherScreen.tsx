@@ -52,7 +52,7 @@ import {
   formatDuration,
   formatPace,
 } from '../../utils/pace';
-import { colors, fonts, spacing } from '../../theme';
+import { colors, fonts, spacing, themedStyles, statusBarStyle } from '../../theme';
 type Props = {
   user: UserDocument;
   character: CharacterDocument;
@@ -286,7 +286,7 @@ export function TogetherScreen({
       const average = calculateAveragePace(result.durationSec, result.distanceKm);
       return (
         <SafeAreaView style={styles.spectator}>
-          <StatusBar barStyle="dark-content" backgroundColor={colors.sky} />
+          <StatusBar barStyle={statusBarStyle()} backgroundColor={colors.sky} />
           <View style={styles.spectatorHeader}>
             <IconButton icon={ChevronLeft} variant="plain" accessibilityLabel="뒤로" disabled={busy} onPress={back} />
             <AppText variant="subheading">같이 달리기</AppText>
@@ -328,7 +328,7 @@ export function TogetherScreen({
     return (
       <SafeAreaView style={styles.center}>
         <StatusBar
-          barStyle="dark-content"
+          barStyle={statusBarStyle()}
           backgroundColor={colors.background}
         />
         {busy && <ActivityIndicator color={colors.primary} />}
@@ -446,7 +446,7 @@ export function TogetherScreen({
 
   return (
     <SafeAreaView style={styles.screen}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
+      <StatusBar barStyle={statusBarStyle()} backgroundColor={colors.surface} />
       <View style={styles.header}>
         <IconButton
           icon={ChevronLeft}
@@ -1030,7 +1030,7 @@ function FriendPicker({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   screen: { flex: 1, backgroundColor: colors.surface },
   header: {
     paddingHorizontal: spacing.sm,
@@ -1211,4 +1211,4 @@ const styles = StyleSheet.create({
     gap: 20,
     justifyContent: 'center',
   },
-});
+}));

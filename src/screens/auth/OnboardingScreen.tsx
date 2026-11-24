@@ -9,7 +9,6 @@ import {
   Platform,
   ScrollView,
   StatusBar,
-  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
@@ -17,12 +16,13 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {colors, fonts} from '../../theme';
+import {colors, fonts, statusBarStyle, themedStyles} from '../../theme';
 import {completeOnboarding, isUserIdTaken} from '../../services/user.service';
 import {pickStarterCharacter} from '../../services/character.service';
 import type {CharacterType} from '../../types/character.types';
 import type {Gender, OnboardingProfileInput} from '../../types/user.types';
 import {REGIONS as regions, bodyInputError, type Region} from '../../utils/onboarding';
+import {areaKind, REGION_AREAS, regionLabel} from '../../utils/regions';
 import {userIdError} from '../../utils/userId';
 import {detectOnboardingRegion} from '../../services/onboardingLocation.service';
 
@@ -37,9 +37,6 @@ type Props = {
 
 type Step = 1 | 2 | 3 | 4;
 
-const MINT = colors.primary;
-const TEXT = colors.text;
-const MUTED = '#808080';
 
 
 export function OnboardingScreen({onBack, onDone}: Props) {
@@ -52,6 +49,10 @@ export function OnboardingScreen({onBack, onDone}: Props) {
   const [heightCm, setHeightCm] = useState('');
   const [weightKg, setWeightKg] = useState('');
   const [selectedRegion, setSelectedRegion] = useState<Region | null>(null);
+  // 특별시·광역시는 구·군, 도는 시·군까지 고른다. 세종은 아래 단위가 없다
+  const [selectedArea, setSelectedArea] = useState<string | null>(null);
+  const areas = selectedRegion ? REGION_AREAS[selectedRegion.label] ?? [] : [];
+  const regionReady = !!selectedRegion && (areas.length === 0 || !!selectedArea);
   const [locating, setLocating] = useState(false);
   const [locationMessage, setLocationMessage] = useState('');
   const mounted = useRef(true);
@@ -140,7 +141,19 @@ export function OnboardingScreen({onBack, onDone}: Props) {
     locationRequest.current++;
     setLocating(false);
     setSelectedRegion(region);
-    setLocationMessage(`${region.label} 지역을 선택했어요.`);
+    setSelectedArea(null);
+    setLocationMessage(
+      REGION_AREAS[region.label]?.length
+        ? `${region.label} 지역을 선택했어요. 아래에서 ${areaKind(region.label)}을 골라 주세요.`
+        : `${region.label} 지역을 선택했어요.`,
+    );
+  };
+  const selectArea = (area: string) => {
+    if (!selectedRegion) return;
+    locationRequest.current++;
+    setLocating(false);
+    setSelectedArea(area);
+    setLocationMessage(`${regionLabel(selectedRegion.label, area)} 지역을 선택했어요.`);
   };
   const useCurrentLocation = async () => {
     if (locating) return;
@@ -149,10 +162,16 @@ export function OnboardingScreen({onBack, onDone}: Props) {
     setLocating(true);
     setLocationMessage('현재 위치로 지역을 찾고 있어요…');
     try {
-      const region = await detectOnboardingRegion();
+      const {region, area} = await detectOnboardingRegion();
       if (!mounted.current || request !== locationRequest.current) return;
       setSelectedRegion(region);
-      setLocationMessage(`현재 위치 기준 ${region.label} 지역을 선택했어요.`);
+      setSelectedArea(area);
+      const missing = !area && !!REGION_AREAS[region.label]?.length;
+      setLocationMessage(
+        `현재 위치 기준 ${regionLabel(region.label, area)} 지역을 선택했어요.${
+          missing ? ` 아래에서 ${areaKind(region.label)}을 골라 주세요.` : ''
+        }`,
+      );
     } catch (error) {
       if (mounted.current && request === locationRequest.current) {
         setLocationMessage(error instanceof Error ? error.message : '지역을 직접 선택해 주세요.');
@@ -183,7 +202,7 @@ export function OnboardingScreen({onBack, onDone}: Props) {
   };
 
   const openEggGiftStep = () => {
-    if (!selectedRegion || locating) return;
+    if (!regionReady || locating) return;
     Keyboard.dismiss();
     setErrorMessage(null);
     setCharacterType(pickStarterCharacter());
@@ -192,7 +211,7 @@ export function OnboardingScreen({onBack, onDone}: Props) {
   };
 
   const saveOnboarding = async () => {
-    if (saving.current || !eggReceived || !selectedRegion) return;
+    if (saving.current || !eggReceived || !selectedRegion || !regionReady) return;
     saving.current = true;
     const profile: OnboardingProfileInput = {
       displayName,
@@ -202,7 +221,7 @@ export function OnboardingScreen({onBack, onDone}: Props) {
       website,
       heightCm: parseOptionalNumber(heightCm),
       weightKg: parseOptionalNumber(weightKg),
-      region: selectedRegion.label,
+      region: regionLabel(selectedRegion.label, selectedArea),
       dialect: selectedRegion.dialect,
     };
 
@@ -222,7 +241,7 @@ export function OnboardingScreen({onBack, onDone}: Props) {
 
   return (
     <SafeAreaView style={styles.screen}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
+      <StatusBar barStyle={statusBarStyle()} backgroundColor={colors.background} />
       <View style={styles.softGlowTop} />
       <View style={styles.softGlowBottom} />
       <View style={styles.header}>
@@ -294,8 +313,27 @@ export function OnboardingScreen({onBack, onDone}: Props) {
               </TouchableOpacity>
             ))}
           </View>
+          {areas.length > 0 && selectedRegion && (
+            <>
+              <Text style={styles.areaTitle}>{`${selectedRegion.label} ${areaKind(selectedRegion.label)}`}</Text>
+              <View style={styles.regionGrid}>
+                {areas.map(area => (
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    key={area}
+                    accessibilityRole="button"
+                    accessibilityLabel={regionLabel(selectedRegion.label, area)}
+                    accessibilityState={{selected: selectedArea === area}}
+                    onPress={() => selectArea(area)}
+                    style={[styles.areaChip, selectedArea === area && styles.regionChipActive]}>
+                    <Text style={[styles.areaText, selectedArea === area && styles.regionTextActive]}>{area}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          )}
           <View style={styles.stepSpacer} />
-          <PrimaryButton label="다음" onPress={openEggGiftStep} disabled={!selectedRegion || locating} />
+          <PrimaryButton label="다음" onPress={openEggGiftStep} disabled={!regionReady || locating} />
         </View>
       )}
       {step === 4 && (
@@ -353,7 +391,7 @@ function LabeledInput({
     <View style={styles.inputGroup}>
       <Text style={styles.inputLabel}>{label}</Text>
       <View style={styles.inputWrap}>
-        <TextInput accessibilityLabel={label} value={value} onChangeText={onChangeText} onFocus={onFocus} maxLength={maxLength} keyboardType={keyboardType} autoCapitalize={label === '아이디' ? 'none' : undefined} autoCorrect={label === '아이디' ? false : undefined} placeholder={placeholder} placeholderTextColor="#B6B6B6" style={styles.input} />
+        <TextInput accessibilityLabel={label} value={value} onChangeText={onChangeText} onFocus={onFocus} maxLength={maxLength} keyboardType={keyboardType} autoCapitalize={label === '아이디' ? 'none' : undefined} autoCorrect={label === '아이디' ? false : undefined} placeholder={placeholder} placeholderTextColor={colors.textSubtle} style={styles.input} />
         {!!suffix && <Text style={styles.inputSuffix}>{suffix}</Text>}
       </View>
     </View>
@@ -384,55 +422,58 @@ function parseOptionalNumber(value: string) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   screen: {flex: 1, backgroundColor: colors.background},
-  softGlowTop: {position: 'absolute', left: -80, top: -80, width: 260, height: 260, borderRadius: 130, backgroundColor: 'rgba(174,232,225,0.35)'},
-  softGlowBottom: {position: 'absolute', right: -100, bottom: -110, width: 280, height: 280, borderRadius: 140, backgroundColor: 'rgba(191,237,214,0.45)'},
+  softGlowTop: {position: 'absolute', left: -80, top: -80, width: 260, height: 260, borderRadius: 130, backgroundColor: colors.primarySoft, opacity: 0.7},
+  softGlowBottom: {position: 'absolute', right: -100, bottom: -110, width: 280, height: 280, borderRadius: 140, backgroundColor: colors.primarySoft, opacity: 0.8},
   header: {flexDirection: 'row', alignItems: 'center', paddingHorizontal: 22, paddingTop: 12, minHeight: 62},
   backButton: {width: 36, height: 44, justifyContent: 'center'},
-  backText: {color: TEXT, fontSize: 42, lineHeight: 42},
+  backText: {color: colors.text, fontSize: 42, lineHeight: 42},
   progressWrap: {flex: 1},
-  progressTitle: {color: '#777777', fontSize: 13, fontFamily: fonts.bold, marginBottom: 8},
+  progressTitle: {color: colors.textMuted, fontSize: 13, fontFamily: fonts.bold, marginBottom: 8},
   progressRow: {flexDirection: 'row', gap: 6},
-  progressSegment: {flex: 1, height: 5, borderRadius: 3, backgroundColor: '#D8D8D8'},
-  progressSegmentActive: {backgroundColor: MINT},
+  progressSegment: {flex: 1, height: 5, borderRadius: 3, backgroundColor: colors.border},
+  progressSegmentActive: {backgroundColor: colors.primary},
   keyboardView: {flex: 1},
   stepScroll: {flexGrow: 1, paddingHorizontal: 26, paddingTop: 28, paddingBottom: 34},
   stepPanel: {flexGrow: 1},
-  locationHint: {color: MUTED, fontSize: 14, lineHeight: 21, marginBottom: 8},
-  attribution: {color: MUTED, fontSize: 11, marginBottom: 16},
+  locationHint: {color: colors.textMuted, fontSize: 14, lineHeight: 21, marginBottom: 8},
+  attribution: {color: colors.textMuted, fontSize: 11, marginBottom: 16},
   stepContent: {flex: 1, paddingHorizontal: 32, paddingTop: 46, paddingBottom: 34},
-  stepTitle: {color: TEXT, fontSize: 28, fontFamily: fonts.extrabold, lineHeight: 38, marginBottom: 24},
-  profileCircle: {alignSelf: 'center', width: 156, height: 156, borderRadius: 78, borderWidth: 1, borderColor: '#9BE2C6', backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center', marginBottom: 24},
+  stepTitle: {color: colors.text, fontSize: 28, fontFamily: fonts.extrabold, lineHeight: 38, marginBottom: 24},
+  profileCircle: {alignSelf: 'center', width: 156, height: 156, borderRadius: 78, borderWidth: 1, borderColor: colors.primaryBorder, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 24},
   profileCharacter: {width: 146, height: 146},
-  cameraBadge: {position: 'absolute', right: -5, bottom: 8, width: 42, height: 42, borderRadius: 21, borderWidth: 2, borderColor: '#8CDBBF', backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center'},
-  cameraText: {color: MINT, fontSize: 18, fontFamily: fonts.extrabold},
+  cameraBadge: {position: 'absolute', right: -5, bottom: 8, width: 42, height: 42, borderRadius: 21, borderWidth: 2, borderColor: colors.primaryBorder, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center'},
+  cameraText: {color: colors.primaryInk, fontSize: 18, fontFamily: fonts.extrabold},
   inputGroup: {marginBottom: 16},
-  inputLabel: {color: '#222222', fontSize: 15, fontFamily: fonts.extrabold, marginBottom: 8},
-  inputWrap: {height: 50, borderWidth: 1, borderColor: '#DCDCDC', borderRadius: 9, backgroundColor: '#FFFFFF', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16},
-  input: {flex: 1, color: TEXT, fontSize: 16, fontFamily: fonts.medium, paddingVertical: 0},
-  inputSuffix: {color: '#666666', fontSize: 14, fontFamily: fonts.extrabold},
+  inputLabel: {color: colors.text, fontSize: 15, fontFamily: fonts.extrabold, marginBottom: 8},
+  inputWrap: {height: 50, borderWidth: 1, borderColor: colors.border, borderRadius: 9, backgroundColor: colors.surface, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16},
+  input: {flex: 1, color: colors.text, fontSize: 16, fontFamily: fonts.medium, paddingVertical: 0},
+  inputSuffix: {color: colors.textMuted, fontSize: 14, fontFamily: fonts.extrabold},
   segmentRow: {flexDirection: 'row', gap: 12, marginBottom: 18},
-  segment: {flex: 1, height: 46, borderWidth: 1, borderColor: '#D8D8D8', borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF'},
-  segmentActive: {borderColor: MINT, backgroundColor: colors.primarySoft},
-  segmentText: {color: '#4B4B4B', fontSize: 15, fontFamily: fonts.bold},
+  segment: {flex: 1, height: 46, borderWidth: 1, borderColor: colors.border, borderRadius: 9, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface},
+  segmentActive: {borderColor: colors.primary, backgroundColor: colors.primarySoft},
+  segmentText: {color: colors.text, fontSize: 15, fontFamily: fonts.bold},
   segmentActiveText: {color: colors.primaryInk, fontSize: 15, fontFamily: fonts.extrabold},
   eggImage: {alignSelf: 'center', marginBottom: 26},
   stepSpacer: {flex: 1},
-  skipButton: {height: 58, borderRadius: 10, backgroundColor: 'rgba(88,207,166,0.12)', alignItems: 'center', justifyContent: 'center', marginTop: 14},
+  areaTitle: {color: colors.text, fontSize: 15, fontFamily: fonts.bold, marginTop: 22, marginBottom: 10},
+  areaChip: {minWidth: 64, height: 44, paddingHorizontal: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 10, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center'},
+  areaText: {color: colors.text, fontSize: 14, fontFamily: fonts.semibold},
+  skipButton: {height: 58, borderRadius: 10, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center', marginTop: 14},
   skipButtonText: {color: colors.primaryInk, fontSize: 18, fontFamily: fonts.extrabold},
-  locationButton: {height: 56, borderWidth: 1, borderColor: MINT, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.68)', marginBottom: 20},
+  locationButton: {height: 56, borderWidth: 1, borderColor: colors.primary, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface, marginBottom: 20},
   locationButtonText: {color: colors.primaryInk, fontSize: 17, fontFamily: fonts.extrabold},
   regionGrid: {flexDirection: 'row', flexWrap: 'wrap', gap: 10},
-  regionChip: {width: '18%', minWidth: 58, height: 52, borderWidth: 1, borderColor: '#DFDFDF', borderRadius: 10, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center'},
-  regionChipActive: {backgroundColor: MINT, borderColor: MINT},
-  regionText: {color: '#333333', fontSize: 15, fontFamily: fonts.bold},
-  regionTextActive: {color: '#FFFFFF', fontFamily: fonts.extrabold},
+  regionChip: {width: '18%', minWidth: 58, height: 52, borderWidth: 1, borderColor: colors.border, borderRadius: 10, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center'},
+  regionChipActive: {backgroundColor: colors.primary, borderColor: colors.primary},
+  regionText: {color: colors.text, fontSize: 15, fontFamily: fonts.bold},
+  regionTextActive: {color: colors.textOnPrimary, fontFamily: fonts.extrabold},
   hatchContent: {flex: 1, paddingHorizontal: 32, paddingTop: 50, paddingBottom: 34},
-  hatchSubtitle: {color: MUTED, fontSize: 16, fontFamily: fonts.semibold, marginTop: -12, marginBottom: 36},
+  hatchSubtitle: {color: colors.textMuted, fontSize: 16, fontFamily: fonts.semibold, marginTop: -12, marginBottom: 36},
   hatchStage: {flex: 1, alignItems: 'center', justifyContent: 'center'},
-  errorText: {color: '#C95B5B', fontSize: 14, fontFamily: fonts.bold, lineHeight: 20, textAlign: 'center', marginBottom: 12},
-  wideButton: {height: 58, borderRadius: 18, backgroundColor: MINT, alignItems: 'center', justifyContent: 'center', shadowColor: MINT, shadowOpacity: 0.06, shadowRadius: 16, shadowOffset: {width: 0, height: 8}, elevation: 0},
+  errorText: {color: colors.danger, fontSize: 14, fontFamily: fonts.bold, lineHeight: 20, textAlign: 'center', marginBottom: 12},
+  wideButton: {height: 58, borderRadius: 18, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', shadowColor: colors.primary, shadowOpacity: 0.06, shadowRadius: 16, shadowOffset: {width: 0, height: 8}, elevation: 0},
   wideButtonDisabled: {opacity: 0.45},
-  wideButtonText: {color: '#FFFFFF', fontSize: 16, fontFamily: fonts.semibold},
-});
+  wideButtonText: {color: colors.textOnPrimary, fontSize: 16, fontFamily: fonts.semibold},
+}));

@@ -1,10 +1,10 @@
 import {useDialect} from '../../locales/DialectProvider';
 import React, {useState} from 'react';
-import {Pressable, StatusBar, StyleSheet, View} from 'react-native';
+import {Pressable, StatusBar, View} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {ChevronLeft, Footprints, Minus, Plus} from 'lucide-react-native';
 import {AppText, Button, IconButton} from '../../components/ui';
-import {colors, fonts, radius, shadow, spacing} from '../../theme';
+import {colors, fonts, radius, shadow, spacing, themedStyles, statusBarStyle} from '../../theme';
 import type {RunGoalType} from '../../types/run.types';
 
 type GoalSetting = Exclude<RunGoalType, 'free'>;
@@ -75,7 +75,7 @@ export function GoalValueScreen({goalType, onBack, onStart}: Props) {
 
   return (
     <View style={[styles.screen, {paddingTop: insets.top + spacing.sm, paddingBottom: insets.bottom + spacing.xl}]}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
+      <StatusBar barStyle={statusBarStyle()} backgroundColor={colors.background} />
       <View style={styles.header}>
         <IconButton icon={ChevronLeft} variant="plain" accessibilityLabel="뒤로" onPress={onBack} />
       </View>
@@ -143,7 +143,7 @@ function formatValue(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   screen: {flex: 1, backgroundColor: colors.background, paddingHorizontal: spacing.xl},
   header: {height: 48, justifyContent: 'center', marginLeft: -spacing.sm, marginBottom: spacing.sm},
   valueBlock: {flex: 1, justifyContent: 'center', gap: spacing.lg},
@@ -175,4 +175,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   presetActive: {backgroundColor: colors.primary, borderColor: colors.primary},
-});
+}));

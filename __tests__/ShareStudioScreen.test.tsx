@@ -150,8 +150,8 @@ beforeEach(async () => {
     discard: jest.fn(),
   });
   mockSocialRequest.mockResolvedValue({ postId: 'post-1' });
-  mockDistrict.mockResolvedValue('서울특별시 강남구');
-  mockUserDoc.mockResolvedValue({ region: '서울' });
+  mockDistrict.mockResolvedValue('서울 강남구');
+  mockUserDoc.mockResolvedValue({ region: '서울 마포구' });
   mockNativeShare.mockResolvedValue({});
   await act(async () => {
     probe = Renderer.create(<Probe />);
@@ -340,21 +340,29 @@ test('typed text that is cleared again is not posted', async () => {
 test('turning the location on adds the city and district only, between the content and the tags', async () => {
   await render();
   expect(mockDistrict).toHaveBeenCalledWith(run);
-  expect(labels()).toContain('서울특별시 강남구');
+  expect(labels()).toContain('서울 강남구');
   await act(async () => locationSwitch().props.onValueChange(true));
   await write('게시물 내용', '완주!');
   await write('태그', '#오운완');
   await press('피드에 게시');
-  expect(createPostInput().text).toBe('완주!\n📍 서울특별시 강남구\n#오운완');
+  expect(createPostInput().text).toBe('완주!\n📍 서울 강남구\n#오운완');
 });
 
 test('when the run location is unknown it falls back to the region on the profile', async () => {
   mockDistrict.mockResolvedValue(null);
   await render();
-  expect(labels()).toContain('서울');
+  expect(labels()).toContain('서울 마포구');
   await act(async () => locationSwitch().props.onValueChange(true));
   await press('피드에 게시');
-  expect(createPostInput().text).toBe('📍 서울');
+  expect(createPostInput().text).toBe('📍 서울 마포구');
+});
+
+test('a profile region saved as a province only is too broad to be used as the location', async () => {
+  mockDistrict.mockResolvedValue(null);
+  mockUserDoc.mockResolvedValue({ region: '서울' });
+  await render();
+  expect(locationSwitch().props.disabled).toBe(true);
+  expect(labels()).toContain('공개할 위치 정보가 없어요');
 });
 
 test('without any location information the switch is unavailable and nothing is written', async () => {
@@ -476,4 +484,46 @@ test('if the share image cannot be made, the screen says so and stays usable', a
   );
   expect(shareButton().props.disabled).toBeFalsy();
   expect(mockRelease).toHaveBeenCalledWith('/tmp/card.jpg');
+});
+
+describe('the phone frame around the card', () => {
+  const { setThemeMode } =
+    require('../src/theme') as typeof import('../src/theme');
+  afterEach(async () => {
+    await act(async () => setThemeMode('light'));
+  });
+  // 아이폰 모양 틀: 모서리 44의 몸체
+  const phoneBody = () =>
+    StyleSheet.flatten(
+      tree.root.findAll(
+        node =>
+          node.type === View &&
+          StyleSheet.flatten(node.props.style)?.borderRadius === 44,
+      )[0].props.style,
+    );
+
+  test('is a white phone in the light theme and a dark phone in dark mode', async () => {
+    await render();
+    expect(phoneBody().backgroundColor).toBe('#F9FBFB');
+    await act(async () => setThemeMode('dark'));
+    await act(async () =>
+      tree.update(
+        <ShareStudioScreen character={null} run={run} onBack={jest.fn()} />,
+      ),
+    );
+    expect(phoneBody().backgroundColor).toBe('#1C1C1E');
+  });
+
+  test('the shared card inside keeps the same colors in dark mode', async () => {
+    await act(async () => setThemeMode('dark'));
+    await render();
+    const card = tree.root.findAll(
+      node =>
+        node.type === View &&
+        StyleSheet.flatten(node.props.style)?.aspectRatio === 4 / 5,
+    )[0];
+    expect(StyleSheet.flatten(card.props.style).backgroundColor).toBe(
+      '#178d7c',
+    );
+  });
 });

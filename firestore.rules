@@ -31,7 +31,9 @@ service cloud.firestore {
         && (d.get('height_cm',null) == null || (d.height_cm is number && d.height_cm >= 50 && d.height_cm <= 250))
         && (d.get('weight_kg',null) == null || (d.weight_kg is number && d.weight_kg >= 10 && d.weight_kg <= 400))
         && d.get('gender',null) in [null,'female','male']
-        && d.region in ['서울','경기','인천','강원','충북','충남','대전','세종','경북','경남','대구','부산','울산','전북','전남','광주','제주']
+        // 시·도, 또는 "경기 수원시"·"서울 강남구"처럼 그 아래 시·군·구까지. functions/src/validation.ts의 REGION_PATTERN과 같다
+        && d.region is string && d.region.size() <= 20
+        && d.region.matches('^(서울|경기|인천|강원|충북|충남|대전|세종|경북|경남|대구|부산|울산|전북|전남|광주|제주)( [가-힣]{1,7}(시|군|구))?$')
         && d.dialect in ['std','seoul','gyeonggi','gangwon','chung','jeon','gyeong','jeju']
         && d.total_km is number && d.total_km >= 0 && d.total_km <= 10000000
         && d.total_exp is int && d.total_exp >= 0 && d.is_frozen is bool

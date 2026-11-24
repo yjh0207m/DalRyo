@@ -11,6 +11,7 @@ import {
   Card,
   ProgressBar,
   ScreenHeader,
+  TallNumber,
 } from '../../components/ui';
 import { RunRecordsStatus } from '../../components/ui/RunRecordsStatus';
 import { useRunRecords } from '../../hooks/useRunRecords';
@@ -19,7 +20,7 @@ import {
   fetchRunsBetween,
   getRunStartedAtDate,
 } from '../../services/run.service';
-import { colors, fonts, radius, spacing } from '../../theme';
+import { colors, fonts, radius, spacing, themedStyles } from '../../theme';
 import type { CharacterDocument } from '../../types/character.types';
 import type { RunDocument } from '../../types/run.types';
 import type { UserDocument } from '../../types/user.types';
@@ -35,6 +36,9 @@ type Props = {
 
 const DAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
 const CHART_HEIGHT = 120;
+// 누적 거리 큰 숫자의 글자 크기·줄 높이 (세로로 살짝 늘려 그린다)
+const TOTAL_FONT_SIZE = 64;
+const TOTAL_LINE_HEIGHT = 74;
 
 // 성장 리포트 (Figma: "성장 리포트 - AI 코치, 성장 그래프"). AI 코치는 2단계 기능이라 미리보기 카드만 둔다
 export function GrowthScreen({
@@ -78,23 +82,41 @@ export function GrowthScreen({
           onSettingsPress={onSettingsPress}
         />
 
-        <View testID="growth-summary" style={styles.summaryRow}>
-          <Summary
-            label="누적 거리"
-            value={(user?.total_km ?? 0).toFixed(1)}
-            unit="km"
-            featured
-          />
-          <Summary
-            label="최근 7일"
-            value={status === 'success' ? weekKm.toFixed(1) : '—'}
-            unit="km"
-          />
-          <Summary
-            label="EXP"
-            value={(user?.total_exp ?? 0).toLocaleString()}
-            unit=""
-          />
+        {/* 누적 거리를 가장 크게 두고, 그 아래 한 줄에 최근 7일과 EXP를 나란히 둔다 */}
+        <View testID="growth-summary" style={styles.summary}>
+          <View testID="growth-total">
+            <AppText variant="label" color={colors.textMuted}>
+              누적 거리
+            </AppText>
+            <View style={styles.totalValue}>
+              {/* 세로로 살짝 늘린 키 큰 숫자 */}
+              <TallNumber
+                fontSize={TOTAL_FONT_SIZE}
+                lineHeight={TOTAL_LINE_HEIGHT}
+                style={styles.totalNumber}
+                color={colors.primaryInk}
+                numberOfLines={1}
+              >
+                {(user?.total_km ?? 0).toFixed(1)}
+              </TallNumber>
+              <AppText variant="subheading" color={colors.textMuted}>
+                km
+              </AppText>
+            </View>
+          </View>
+          <View testID="growth-secondary" style={styles.secondaryRow}>
+            <Summary
+              label="최근 7일"
+              value={status === 'success' ? weekKm.toFixed(1) : '—'}
+              unit="km"
+            />
+            <View style={styles.secondaryDivider} />
+            <Summary
+              label="EXP"
+              value={(user?.total_exp ?? 0).toLocaleString()}
+              unit=""
+            />
+          </View>
         </View>
 
         <Card tone="flat" padded={false} style={styles.section}>
@@ -198,30 +220,23 @@ function buildLast7Days(runs: RunDocument[]) {
   });
 }
 
+// 누적 거리 아래 한 줄에 나란히 놓이는 보조 수치
 function Summary({
   label,
   value,
   unit,
-  featured = false,
 }: {
   label: string;
   value: string;
   unit: string;
-  featured?: boolean;
 }) {
   return (
-    <View style={[styles.summary, featured && styles.featuredSummary]}>
+    <View style={styles.secondaryItem}>
       <AppText variant="label" color={colors.textMuted}>
         {label}
       </AppText>
       <View style={styles.summaryValue}>
-        <AppText
-          variant="number"
-          numberOfLines={1}
-          adjustsFontSizeToFit
-          color={featured ? colors.primaryInk : colors.text}
-          style={featured && styles.featuredNumber}
-        >
+        <AppText variant="number" numberOfLines={1} adjustsFontSizeToFit>
           {value}
         </AppText>
         {!!unit && (
@@ -254,32 +269,49 @@ function StatRow({ label, value }: { label: string; value: number }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   screen: { flex: 1, backgroundColor: colors.surface },
   content: { paddingHorizontal: spacing.xl },
-  summaryRow: {
-    flexDirection: 'row',
-    gap: spacing.md,
+  // 누적 거리 구역. 큰 숫자와 아래 보조 수치 줄이 붙어 보이지 않도록 위아래와 사이를 넉넉히 띄운다
+  summary: {
     // 헤더 아래 첫 요소. 부제목이 있던 때의 여백(xl)을 줄여 다른 탭과 간격을 맞춘다
     marginTop: spacing.sm,
-    paddingVertical: spacing.md,
-    alignItems: 'center',
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xxl,
+    gap: spacing.xxl,
   },
-  summary: { flex: 1, gap: spacing.sm },
-  featuredSummary: { flex: 1.25 },
-  featuredNumber: {
-    fontFamily: fonts.bold,
-    fontSize: 34,
-    lineHeight: 42,
-    letterSpacing: -1.2,
+  totalValue: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  totalNumber: {
+    fontFamily: fonts.extrabold,
+    letterSpacing: -2.2,
+    fontVariant: ['tabular-nums'],
+  },
+  secondaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingTop: spacing.xl,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  secondaryItem: { flex: 1, gap: spacing.sm },
+  secondaryDivider: {
+    width: StyleSheet.hairlineWidth,
+    alignSelf: 'stretch',
+    backgroundColor: colors.border,
+    marginRight: spacing.lg,
   },
   summaryValue: { flexDirection: 'row', alignItems: 'baseline', gap: 2 },
-  section: { marginTop: spacing.xl },
+  section: { marginTop: spacing.section },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: spacing.sm,
+    marginBottom: spacing.md,
   },
   chart: {
     flexDirection: 'row',
@@ -323,4 +355,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   coachText: { flex: 1, gap: 2 },
-});
+}));

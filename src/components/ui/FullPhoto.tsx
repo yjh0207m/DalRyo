@@ -1,11 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import {
   Image,
-  StyleSheet,
   type ImageStyle,
   type StyleProp,
 } from 'react-native';
-import { colors } from '../../theme';
+import { colors, themedStyles } from '../../theme';
 
 // 사진 원본 비율대로 높이를 잡아 잘리지 않고 전체가 보이게 하는 이미지.
 // 너무 길거나 넓은 사진은 비율을 제한하고 contain으로 그려 여백이 생기더라도 잘리지 않게 한다
@@ -58,6 +57,6 @@ export function FullPhoto({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   photo: { width: '100%', backgroundColor: colors.surfaceMuted },
-});
+}));

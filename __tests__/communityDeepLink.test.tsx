@@ -853,16 +853,25 @@ describe('the profile page', () => {
     expect(all[all.indexOf('게시물') + 1]).toBe('2');
   });
 
-  test('posts are as wide as the sections above them', async () => {
+  test('the character zone and the posts reach both screen edges, like the home screen', async () => {
     const mine = { ...post, uid: 'peer' };
     mockAction.mockImplementation((action: string) =>
       Promise.resolve(action === 'profile' ? fullProfile : { posts: [mine] }),
     );
     await render({ page: 'profile', uid: 'peer' });
+    const bleed = (testID: string) =>
+      StyleSheet.flatten(tree.root.findByProps({ testID }).props.style)
+        .marginHorizontal;
+    // 본문 좌우 여백(20)을 상쇄한다
+    expect(bleed('profile-stats-bleed')).toBe(-20);
+    expect(bleed('profile-posts-list')).toBe(-20);
+    // 카드 자체에는 따로 여백이 없다
     const card = tree.root.findByProps({ testID: 'community-post-post-9' });
     expect(
       StyleSheet.flatten(card.props.style).marginHorizontal,
     ).toBeUndefined();
+    await press('게시물 그리드 보기');
+    expect(bleed('profile-posts-grid')).toBe(-20);
   });
 
   test('the two-column view keeps the 4:5 workout card whole, top to bottom', async () => {

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, type ReactNode } from 'react';
 import { Animated, StyleSheet, useWindowDimensions } from 'react-native';
-import { colors } from '../theme';
+import { colors, themedStyles } from '../theme';
 import { dispatchBack } from './backGesture';
 import { animateTo, DURATION } from './motion';
 import { registerSlide } from './slideRegistry';
@@ -70,7 +70,7 @@ export function SlideScreen({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   screen: {
     ...StyleSheet.absoluteFill,
     backgroundColor: colors.background,
@@ -80,4 +80,4 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     shadowOffset: { width: -4, height: 0 },
   },
-});
+}));

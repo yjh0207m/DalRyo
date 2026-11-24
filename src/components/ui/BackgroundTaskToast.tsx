@@ -1,5 +1,5 @@
 import React from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import {ActivityIndicator, Pressable, View} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   dismissBackgroundTask,
@@ -7,7 +7,7 @@ import {
   useBackgroundToasts,
   type BackgroundToast,
 } from '../../services/backgroundTask.service';
-import { colors, radius, shadow, spacing } from '../../theme';
+import { colors, radius, shadow, spacing, themedStyles } from '../../theme';
 import { AppText } from './AppText';
 
 // 백그라운드로 처리하는 요청의 진행·완료·실패를 화면 위쪽에 작게 띄운다
@@ -38,7 +38,7 @@ function Toast({ toast }: { toast: BackgroundToast }) {
         <ActivityIndicator size="small" color={colors.primary} />
       )}
       {toast.kind === 'done' && (
-        <AppText variant="subheading" color={colors.primary}>
+        <AppText variant="subheading" color={colors.primaryInk}>
           ✓
         </AppText>
       )}
@@ -87,7 +87,7 @@ function Toast({ toast }: { toast: BackgroundToast }) {
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   host: {
     position: 'absolute',
     left: spacing.lg,
@@ -103,11 +103,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm + 2,
     borderRadius: radius.pill,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceRaised,
     borderWidth: 1,
     borderColor: colors.primaryBorder,
     ...shadow.floating,
   },
   failed: { borderRadius: radius.lg, borderColor: colors.danger },
   text: { flexShrink: 1 },
-});
+}));

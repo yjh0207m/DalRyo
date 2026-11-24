@@ -148,3 +148,57 @@ test('the record detail slides in over the list instead of replacing it, and goi
   await act(async () => {});
   expect(mockDetail.mock.calls.length).toBe(before);
 });
+test('the monthly total is a full-width band, not a boxed card', async () => {
+  await render();
+  const hero = tree.root.findByProps({ testID: 'record-month-hero' });
+  const style = StyleSheet.flatten(hero.props.style);
+  expect(style.marginHorizontal).toBe(-20);
+  expect(style.paddingHorizontal).toBe(20);
+  expect(style.borderRadius ?? 0).toBe(0);
+});
+test('the journal runs use the full screen width and are split by thin lines', async () => {
+  await render();
+  const list = tree.root.findByProps({ testID: 'record-journal-list' });
+  // 본문 좌우 여백(20)을 상쇄해 화면 양끝까지 닿는다
+  expect(StyleSheet.flatten(list.props.style).marginHorizontal).toBe(-20);
+  for (const entry of entries()) {
+    const card = entry.findAll(
+      node =>
+        node.type === MockView &&
+        StyleSheet.flatten(node.props.style)?.borderBottomWidth !== undefined,
+    )[0];
+    expect(card).toBeDefined();
+    const style = StyleSheet.flatten(card.props.style);
+    // 상자(테두리·둥근 모서리) 대신 아래 가는 선, 글자는 본문 선(20)에 맞춘다
+    expect(style.borderWidth).toBeUndefined();
+    expect(style.borderRadius).toBe(0);
+    expect(style.borderBottomWidth).toBe(StyleSheet.hairlineWidth);
+    expect(style.paddingHorizontal).toBe(20);
+  }
+});
+test('the monthly total band keeps its own height and only gets roomier padding', async () => {
+  await render();
+  const hero = tree.root.findByProps({ testID: 'record-month-hero' });
+  const style = StyleSheet.flatten(hero.props.style);
+  expect(style.minHeight).toBeUndefined();
+  expect(style.paddingVertical).toBe(28);
+});
+test('the monthly distance number uses its own stretch (MONTH_STRETCH, 1.11)', async () => {
+  await render();
+  const hero = tree.root.findByProps({ testID: 'record-month-hero' });
+  const stretched = hero
+    .findAllByType(Text)
+    .map(node => StyleSheet.flatten(node.props.style))
+    .filter(style => style.transform);
+  expect(stretched).toHaveLength(1);
+  expect(stretched[0].transform).toEqual([{ scaleY: 1.11 }]);
+});
+test('the count next to the monthly list just says how many runs, like "2회"', async () => {
+  await render();
+  const all = tree.root
+    .findAllByType(Text)
+    .map(node => ([] as unknown[]).concat(node.props.children).join(''));
+  expect(all).toContain('이번 달 모아보기');
+  expect(all).toContain('2회');
+  expect(all.join('|')).not.toContain('회 달리기');
+});

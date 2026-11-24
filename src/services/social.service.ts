@@ -90,6 +90,10 @@ export type SocialPost = {
   hashtags: string[];
   like_count: number;
   comment_count: number;
+  // 공유한 사람 수. 이 값이 생기기 전에 쓴 글에는 없다
+  share_count?: number;
+  // 함께 달린 사람으로 태그한 친구(이름은 글을 쓸 때의 사본). 이 값이 생기기 전에 쓴 글에는 없다
+  with_runners?: Array<{ uid: string; display_name: string }>;
   createdAtMs: number;
   deleted?: boolean;
 };
@@ -325,6 +329,29 @@ export async function savedPosts() {
     }),
   );
   return results.filter((post): post is SocialPost => post !== null);
+}
+// 서로 팔로우하는 친구. 같이 달리기에서 쓰는 목록과 같고, 게시물의 "함께 달린 사람" 태그 후보가 된다
+export type Friend = {
+  uid: string;
+  display_name: string;
+  profile_image: string | null;
+};
+export async function fetchFriends() {
+  myUid();
+  const response = await httpsCallable<
+    Record<string, unknown>,
+    { friends: Friend[] }
+  >(
+    getFunctions(getApp(), 'asia-northeast3'),
+    'roomAction',
+  )({ action: 'friends' });
+  return response.data.friends;
+}
+// 내 프로필에 적어 둔 지역. 비어 있으면 null
+export async function myRegion() {
+  const snap = await firestore().collection('users').doc(myUid()).get();
+  const region = snap.data()?.region;
+  return typeof region === 'string' && region.trim() ? region.trim() : null;
 }
 export function socialError(error: unknown) {
   if (error instanceof Error)

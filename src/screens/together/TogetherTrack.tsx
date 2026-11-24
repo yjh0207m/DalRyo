@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, ScrollView, StyleSheet, View } from 'react-native';
+import {Animated, ScrollView, View} from 'react-native';
 import { Flag } from 'lucide-react-native';
 import { CharacterView } from '../../components/character/CharacterView';
 import { AppText } from '../../components/ui';
@@ -9,7 +9,7 @@ import {
   socialRequest,
   type RunnerProfile,
 } from '../../services/social.service';
-import { colors, fonts } from '../../theme';
+import { colors, fonts, themedStyles } from '../../theme';
 import {
   CHARACTER_STAGE_ORDER,
   CHARACTER_TYPES,
@@ -217,7 +217,7 @@ function TrackLane({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   track: {
     flex: 1,
     minHeight: 0,
@@ -286,4 +286,4 @@ const styles = StyleSheet.create({
   name: { flex: 1 },
   numbers: { flexShrink: 0 },
   distance: { fontFamily: fonts.bold, fontVariant: ['tabular-nums'] },
-});
+}));

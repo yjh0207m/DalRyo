@@ -9,7 +9,7 @@ import type { RunDocument } from '../../types/run.types';
 import type { CharacterDocument } from '../../types/character.types';
 import { getRunStartedAtDate } from '../../services/run.service';
 import { formatDuration, formatPace } from '../../utils/pace';
-import { colors, fonts, radius } from '../../theme';
+import { colors, fonts, radius, themedStyles } from '../../theme';
 import { fetchParkLabel } from '../../services/park.service';
 
 export function RunDetailScreen({
@@ -166,7 +166,7 @@ function DetailMetric({ label, value }: { label: string; value: string }) {
     </View>
   );
 }
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   screen: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: 'row',
@@ -222,4 +222,4 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   mapCard: { overflow: 'hidden', borderRadius: radius.xl, padding: 12 },
-});
+}));

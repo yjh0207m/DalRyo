@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import type { LucideIcon } from 'lucide-react-native';
-import { colors } from '../../theme';
+import { colors, themedStyles } from '../../theme';
 
 type Props = {
   icon: LucideIcon;
@@ -45,7 +45,7 @@ export function IconButton({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   base: { alignItems: 'center', justifyContent: 'center' },
   surface: {
     backgroundColor: colors.surface,
@@ -63,4 +63,4 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: colors.danger,
   },
-});
+}));

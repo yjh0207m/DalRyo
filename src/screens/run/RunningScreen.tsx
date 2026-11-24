@@ -22,7 +22,14 @@ import {
   ProgressBar,
 } from '../../components/ui';
 import { useRunSession, type RunResult } from '../../hooks/useRunSession';
-import { colors, fonts, typography } from '../../theme';
+import {
+  colors,
+  fonts,
+  statusBarOnPrimary,
+  statusBarStyle,
+  typography,
+  themedStyles,
+} from '../../theme';
 import type {
   CharacterStage,
   CharacterType,
@@ -196,7 +203,7 @@ export function RunningScreen({
   return (
     <View style={styles.screen}>
       <StatusBar
-        barStyle={countdown > 0 ? 'light-content' : 'dark-content'}
+        barStyle={countdown > 0 ? statusBarOnPrimary() : statusBarStyle()}
         backgroundColor={countdown > 0 ? colors.primary : colors.surface}
       />
       <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
@@ -508,7 +515,7 @@ function getGoalProgress(
   return calories / goalValue;
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   contextTitle: { flex: 1, textAlign: 'right' },
   screen: { flex: 1, backgroundColor: colors.sky },
   header: {
@@ -615,4 +622,4 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   countdownText: { ...typography.display, fontSize: 160, lineHeight: 176 },
-});
+}));

@@ -10,7 +10,7 @@ import {
   type LucideIcon,
 } from 'lucide-react-native';
 import { AppText } from '../components/ui';
-import { colors } from '../theme';
+import { colors, themedStyles } from '../theme';
 export type MainTab = 'home' | 'growth' | 'run' | 'community' | 'records';
 const TABS: Array<{
   key: Exclude<MainTab, 'run'>;
@@ -115,7 +115,7 @@ function TabItem({
     </Pressable>
   );
 }
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   bar: {
     position: 'absolute',
     left: 0,
@@ -159,4 +159,4 @@ const styles = StyleSheet.create({
   runLabel: { fontSize: 11, lineHeight: 14 },
   runPressed: { backgroundColor: colors.primaryInk },
   pressed: { opacity: 0.65 },
-});
+}));

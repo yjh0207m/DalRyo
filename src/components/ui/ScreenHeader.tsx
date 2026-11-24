@@ -37,7 +37,7 @@ export function ScreenHeader({
             : 'MY DALRYO'}
         </AppText>
       ) : (
-        <AppText style={styles.logo} color={colors.primary}>
+        <AppText style={styles.logo} color={colors.primaryInk}>
           달료
         </AppText>
       )}

@@ -6,7 +6,7 @@ import { LobbyCharacter } from '../../components/character/LobbyCharacter';
 import { ExpBar } from '../../components/game/Hud';
 import { CompanionScene } from '../../components/scene/CompanionScene';
 import type { RunnerProfile } from '../../services/social.service';
-import { colors, radius, spacing } from '../../theme';
+import { colors, fonts, radius, spacing, themedStyles } from '../../theme';
 import {
   CHARACTER_STAGE_ORDER,
   CHARACTER_TYPES,
@@ -78,7 +78,10 @@ export function RunnerStatsCard({
         <AppText variant="caption" color={colors.textMuted}>
           완료한 러닝
         </AppText>
-        <AppText variant="subheading">{runner.run_count ?? '—'}회</AppText>
+        {/* 옆의 "완료한 러닝"과 같은 크기로, 글자 굵기와 색으로만 구분한다 */}
+        <AppText variant="caption" style={styles.runCountValue}>
+          {runner.run_count ?? '—'}회
+        </AppText>
       </View>
       <View style={styles.grow} />
       <View style={runsOpen ? undefined : styles.chevronClosed}>
@@ -205,8 +208,10 @@ export function RunnerStatsCard({
                 : `${totalKm.toFixed(1)} / ${goalKm}km`}
             </AppText>
           </View>
+          {/* 회색 띠 위라 막대 바탕은 홈의 진행 막대처럼 연한 민트로 둔다 */}
           <ExpBar
             height={6}
+            trackColor={colors.primaryBorder}
             value={pet.stage === 'egg' ? 0 : next ? next.progress : 1}
           />
           {pet.stage === 'egg' && (
@@ -227,7 +232,11 @@ export function RunnerStatsCard({
                 {label}
               </AppText>
               <AppText variant="heading">{pet[key] ?? 0}</AppText>
-              <ProgressBar height={5} value={(pet[key] ?? 0) / STAT_MAX} />
+              <ProgressBar
+                height={5}
+                trackColor={colors.border}
+                value={(pet[key] ?? 0) / STAT_MAX}
+              />
             </View>
           ))}
         </View>
@@ -240,21 +249,19 @@ export function RunnerStatsCard({
 
 const TAIL = 12;
 const ROW = 44;
-const SIDE = 18;
-const styles = StyleSheet.create({
-  // 홈의 러닝 메이트 카드와 같은 모서리. 말풍선이 카드 밖으로 나가도 가려지지 않게 zIndex를 둔다
+// 화면 양끝까지 넓힌 구역 안에서 글자를 본문과 같은 선(좌우 20)에 맞춘다
+const SIDE = spacing.xl;
+const styles = themedStyles(() => ({
+  // 홈의 캐릭터 존처럼 모서리 없이 화면 양끝까지 채운 띠(좌우는 프로필 화면이 넓혀 준다).
+  // 말풍선이 구역 밖으로 나가도 가려지지 않게 zIndex를 둔다
   card: {
     overflow: 'visible',
-    borderRadius: radius.xl,
+    borderRadius: 0,
     borderWidth: 0,
     zIndex: 2,
   },
-  scene: {
-    overflow: 'hidden',
-    borderTopLeftRadius: radius.xl,
-    borderTopRightRadius: radius.xl,
-  },
-  plain: { zIndex: 2 },
+  scene: { overflow: 'hidden' },
+  plain: { zIndex: 2, paddingHorizontal: SIDE },
   dismiss: { zIndex: 1 },
   header: {
     position: 'absolute',
@@ -273,14 +280,13 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 10,
   },
+  // 홈의 캐릭터 존 아래 띠와 같은 바탕색
   footer: {
     paddingHorizontal: SIDE,
-    paddingTop: spacing.md,
+    paddingTop: spacing.lg,
     paddingBottom: spacing.sm,
     gap: spacing.lg,
-    backgroundColor: colors.surface,
-    borderBottomLeftRadius: radius.xl,
-    borderBottomRightRadius: radius.xl,
+    backgroundColor: colors.surfaceMuted,
   },
   exp: { gap: 6 },
   expHeader: { flexDirection: 'row', justifyContent: 'space-between' },
@@ -302,6 +308,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   runsCount: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
+  runCountValue: { fontFamily: fonts.bold },
   chevronClosed: { transform: [{ rotate: '180deg' }] },
   // 완료한 러닝 줄 바로 위에 뜨는 말풍선
   bubble: {
@@ -345,4 +352,4 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     transform: [{ rotate: '45deg' }],
   },
-});
+}));

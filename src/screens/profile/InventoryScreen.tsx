@@ -5,7 +5,6 @@ import {
   Pressable,
   ScrollView,
   StatusBar,
-  StyleSheet,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -20,7 +19,7 @@ import { CompanionScene } from '../../components/scene/CompanionScene';
 import { CharacterView } from '../../components/character/CharacterView';
 import { AppText, Button, Card, IconButton } from '../../components/ui';
 import { inventoryRequest } from '../../services/inventory.service';
-import { colors, radius, spacing } from '../../theme';
+import { colors, radius, spacing, themedStyles, statusBarStyle } from '../../theme';
 import type { CharacterDocument } from '../../types/character.types';
 
 type Props = {
@@ -99,7 +98,7 @@ export function InventoryScreen({
     : equipped;
   return (
     <SafeAreaView style={styles.screen}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
+      <StatusBar barStyle={statusBarStyle()} backgroundColor={colors.background} />
       <View style={styles.header}>
         <IconButton
           icon={ChevronLeft}
@@ -271,7 +270,7 @@ export function InventoryScreen({
     </SafeAreaView>
   );
 }
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   screen: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: 'row',
@@ -299,4 +298,4 @@ const styles = StyleSheet.create({
   },
   selected: { borderColor: colors.primary },
   swatch: { width: 32, height: 32, borderRadius: 16 },
-});
+}));

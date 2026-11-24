@@ -1,12 +1,11 @@
 import React, { useEffect, useRef } from 'react';
 import {
   Animated,
-  StyleSheet,
   View,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { colors, radius, shadow, spacing } from '../../theme';
+import { colors, radius, shadow, spacing, themedStyles } from '../../theme';
 import { AppText } from '../ui';
 
 // 캐릭터 머리 위 말풍선. 문구가 바뀔 때마다 아래에서 살짝 튀어 오르며 나타난다.
@@ -71,7 +70,7 @@ export function SpeechBubble({
   );
 }
 
-const styles = StyleSheet.create({
+const styles = themedStyles(() => ({
   bubble: {
     position: 'absolute',
     alignSelf: 'center',
@@ -79,7 +78,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: radius.md,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceRaised,
     transformOrigin: 'bottom',
     ...shadow.card,
   },
@@ -89,7 +88,7 @@ const styles = StyleSheet.create({
     bottom: -6,
     width: 12,
     height: 12,
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceRaised,
     transform: [{ rotate: '45deg' }],
   },
-});
+}));
