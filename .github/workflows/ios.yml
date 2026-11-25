@@ -16,6 +16,8 @@ env:
   # Auth/Functions 크래시는 12.12~12.13에서야 고쳐졌다. macos-latest는 Xcode가 갑자기 바뀌므로 러너와 함께 고정한다
   XCODE_VERSION: '16.4'
   BUNDLE_ID: com.dalryo.app
+  # 앱의 빌드 번호(CFBundleVersion). 실행마다 1씩 늘어 어느 빌드인지 구분된다
+  BUILD_NUMBER: ${{ github.run_number }}
 
 jobs:
   build:
@@ -24,6 +26,21 @@ jobs:
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
+
+      # 빌드마다 빌드 번호(실행 번호)와 커밋을 붙여, 내려받은 파일과 폰에 깔린 앱이 어느 빌드인지 알 수 있게 한다
+      - name: Set build info
+        id: info
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          echo "SHORT_SHA=$SHORT_SHA" >> "$GITHUB_ENV"
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+          {
+            echo "### iOS unsigned build"
+            echo "- 브랜치: ${GITHUB_REF_NAME}"
+            echo "- 커밋: ${SHORT_SHA} $(git log -1 --format='%s (%cd)' --date=format:'%m-%d %H:%M')"
+            echo "- 빌드 번호(CFBundleVersion): **${BUILD_NUMBER}**"
+            echo "- 파일: DalRyoTemp-b${BUILD_NUMBER}-${SHORT_SHA}-unsigned.ipa"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Select Xcode
         run: |
@@ -137,6 +154,7 @@ jobs:
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
             -derivedDataPath build \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
@@ -167,6 +185,11 @@ jobs:
           FIREBASE_PLIST="$APP/GoogleService-Info.plist"
           INFO_PLIST="$APP/Info.plist"
           test -f "$FIREBASE_PLIST" || { echo "::error::Firebase configuration missing from the built app"; exit 1; }
+          actual_build=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$INFO_PLIST")
+          if [ "$actual_build" != "$BUILD_NUMBER" ]; then
+            echo "::error::Built app CFBundleVersion ($actual_build) != build number $BUILD_NUMBER"
+            exit 1
+          fi
           actual_bundle=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO_PLIST")
           if [ "$actual_bundle" != "$BUNDLE_ID" ]; then
             echo "::error::Built app bundle identifier does not match the registered Firebase iOS app"
@@ -181,13 +204,14 @@ jobs:
           fi
           mkdir -p Payload
           cp -R "$APP" Payload/
-          zip -qry DalRyoTemp-unsigned.ipa Payload
+          zip -qry "DalRyoTemp-b${BUILD_NUMBER}-${SHORT_SHA}-unsigned.ipa" Payload
 
+      # 실행마다 이름이 달라, 예전 빌드 파일과 헷갈리지 않는다
       - uses: actions/upload-artifact@v4
         if: ${{ (inputs.scheme || 'DalRyoTemp') == 'DalRyoTemp' }}
         with:
-          name: DalRyoTemp-unsigned-ipa
-          path: DalRyoTemp-unsigned.ipa
+          name: DalRyoTemp-b${{ github.run_number }}-${{ steps.info.outputs.short_sha }}-unsigned-ipa
+          path: DalRyoTemp-b${{ github.run_number }}-${{ steps.info.outputs.short_sha }}-unsigned.ipa
           retention-days: 7
 
       # 실패 시 원인 파악용 로그. 빌드 로그는 길어서 앞부분 대신 파일로 받는다
