@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const { initializeTestEnvironment } = require('@firebase/rules-unit-testing');
-const { doc, setDoc, getDoc, updateDoc, serverTimestamp, Timestamp } = require('firebase/firestore');
+const { doc, setDoc, getDoc, getDocs, collection, updateDoc, serverTimestamp, Timestamp } = require('firebase/firestore');
 const project = 'demo-dalryo';
 async function signup() {
   const response = await fetch('http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts:signUp?key=fake-key', {
@@ -568,6 +568,82 @@ async function call(user, action, data = {}, name = 'socialAction') {
       await assert.rejects(call(owner,'setPrivacy',{}),{code:'INVALID_ARGUMENT'});
       await assert.rejects(call(owner,'setPrivacy',{runsPublic:'no'}),{code:'INVALID_ARGUMENT'});
       assert.deepEqual((await read(`users/${owner.uid}`)).privacy,{runs_public:true,connections_public:true});
+    });
+
+    await test('reports keep one record per reporter and target, with a snapshot for review, and never for your own content',async()=>{
+      const author=await socialUser('글쓴이Rp'),reporter=await socialUser('신고자Rp');
+      await call(author,'createPost',{postId:'report-post',text:'광고 글',visibility:'public'});
+      await call(author,'comment',{postId:'report-post',commentId:'report-comment',text:'광고 댓글'});
+      await call(reporter,'report',{targetType:'post',targetId:'report-post',reason:'spam',detail:'광고예요'});
+      const again=await call(reporter,'report',{targetType:'post',targetId:'report-post',reason:'abuse'});
+      assert.equal(again.duplicate,true);
+      const saved=await read(`reports/${reporter.uid}_post_report-post`);
+      assert.deepEqual([saved.target_uid,saved.reason,saved.detail,saved.snapshot.text,saved.status],[author.uid,'spam','광고예요','광고 글','open']);
+      await call(reporter,'report',{targetType:'comment',targetId:'report-comment',postId:'report-post',reason:'abuse'});
+      assert.equal((await read(`reports/${reporter.uid}_comment_report-comment`)).snapshot.text,'광고 댓글');
+      await call(reporter,'report',{targetType:'user',targetId:author.uid,reason:'fraud'});
+      assert.equal((await read(`reports/${reporter.uid}_user_${author.uid}`)).snapshot.display_name,'글쓴이Rp');
+      const room=(await call(reporter,'chatOpen',{uid:author.uid})).conversationId;
+      await call(author,'chatSend',{conversationId:room,messageId:'rp-1',text:'이상한 메시지'});
+      await call(reporter,'report',{targetType:'chat',targetId:room,reason:'abuse'});
+      const chatReport=await read(`reports/${reporter.uid}_chat_${room}`);
+      assert.equal(chatReport.target_uid,author.uid);assert.equal(chatReport.snapshot.messages[0].text,'이상한 메시지');
+      // 내 것은 신고할 수 없고, 이유·대상이 이상하거나 볼 수 없는 글이면 거절한다
+      await assert.rejects(call(author,'report',{targetType:'post',targetId:'report-post',reason:'spam'}),{code:'INVALID_ARGUMENT'});
+      await assert.rejects(call(reporter,'report',{targetType:'post',targetId:'report-post',reason:'boring'}),{code:'INVALID_ARGUMENT'});
+      await assert.rejects(call(reporter,'report',{targetType:'planet',targetId:'x',reason:'spam'}),{code:'INVALID_ARGUMENT'});
+      await call(author,'createPost',{postId:'report-private',text:'나만',visibility:'private'});
+      await assert.rejects(call(reporter,'report',{targetType:'post',targetId:'report-private',reason:'spam'}),{code:'NOT_FOUND'});
+    });
+    await test('deleting an account removes everything the runner made, fixes counts elsewhere, and keeps chat messages under a generic name',async()=>{
+      const leaving=await socialUser('떠날러너'),friend=await socialUser('남은친구');
+      await env.withSecurityRulesDisabled(async ctx=>{
+        await setDoc(doc(ctx.firestore(),`users/${leaving.uid}/character/${leaving.uid}`),{uid:leaving.uid,pet_name:'달료',stage:'egg',character_type:'duck',exp:0});
+        await setDoc(doc(ctx.firestore(),'runs/leaving-run'),{uid:leaving.uid,started_at:Timestamp.now(),distance_km:3,duration_sec:900,avg_pace_sec:300});
+        await setDoc(doc(ctx.firestore(),`parks/del-park/weeks/2026-11-23/runners/${leaving.uid}`),{uid:leaving.uid,display_name:'떠날러너',distance_km:3});
+      });
+      // 떠날 러너가 만든 것들
+      await call(leaving,'createPost',{postId:'leaving-post',text:'내 글',visibility:'public'});
+      await call(friend,'comment',{postId:'leaving-post',commentId:'on-leaving-post',text:'친구 댓글'});
+      await call(friend,'bookmark',{postId:'leaving-post',active:true});
+      await call(friend,'createPost',{postId:'friend-post',text:'친구 글',visibility:'public'});
+      await call(leaving,'comment',{postId:'friend-post',commentId:'leaving-comment',text:'떠날 댓글'});
+      await call(friend,'comment',{postId:'friend-post',commentId:'reply-to-leaving',text:'답글',parentId:'leaving-comment'});
+      await call(friend,'comment',{postId:'friend-post',commentId:'friend-own',text:'남을 댓글'});
+      await call(leaving,'like',{postId:'friend-post',active:true});
+      await call(leaving,'share',{postId:'friend-post'});
+      await call(leaving,'follow',{uid:friend.uid,following:true});
+      await call(friend,'follow',{uid:leaving.uid,following:true});
+      const room=(await call(leaving,'chatOpen',{uid:friend.uid})).conversationId;
+      await call(leaving,'chatSend',{conversationId:room,messageId:'del-1',text:'안녕'});
+      const before=await read('posts/friend-post');
+      assert.deepEqual([before.comment_count,before.like_count,before.share_count],[3,1,1]);
+      assert.equal((await read(`users/${friend.uid}`)).follower_count,1);
+
+      assert.deepEqual(await call(leaving,null,{},'deleteAccount'),{deleted:true});
+
+      // 내 것은 모두 사라진다
+      for(const path of [`users/${leaving.uid}`,`users/${leaving.uid}/character/${leaving.uid}`,'posts/leaving-post','posts/leaving-post/comments/on-leaving-post',`bookmarks/${friend.uid}_leaving-post`,'runs/leaving-run',`parks/del-park/weeks/2026-11-23/runners/${leaving.uid}`,'posts/friend-post/comments/leaving-comment','posts/friend-post/comments/reply-to-leaving',`posts/friend-post/likes/${leaving.uid}`,`posts/friend-post/shares/${leaving.uid}`,`follows/${leaving.uid}_${friend.uid}`,`follows/${friend.uid}_${leaving.uid}`])
+        assert.equal(await read(path),undefined,path);
+      // 남의 글 숫자와 상대의 팔로우 숫자는 맞춰진다
+      const after=await read('posts/friend-post');
+      assert.deepEqual([after.comment_count,after.like_count,after.share_count],[1,0,0]);
+      assert.ok(await read('posts/friend-post/comments/friend-own'));
+      const friendDoc=await read(`users/${friend.uid}`);
+      assert.deepEqual([friendDoc.follower_count,friendDoc.following_count],[0,0]);
+      // 친구에게 보냈던 알림(팔로우·응원·댓글)도 지운다
+      const notes=[];
+      await env.withSecurityRulesDisabled(async ctx=>{(await getDocs(collection(ctx.firestore(),`users/${friend.uid}/notifications`))).forEach(d=>notes.push(d.data()));});
+      assert.equal(notes.some(n=>n.actor_uid===leaving.uid),false);
+      // 채팅 메시지는 남고 이름만 바뀌며, 더 보낼 수 없다
+      const chat=await read(`conversations/${room}`);
+      assert.deepEqual([chat.profiles[leaving.uid].display_name,chat.profiles[leaving.uid].profile_image],['탈퇴한 러너',null]);
+      assert.deepEqual(chat.deleted_members,[leaving.uid]);
+      assert.equal((await read(`conversations/${room}/messages/del-1`)).text,'안녕');
+      await assert.rejects(call(friend,'chatSend',{conversationId:room,messageId:'del-2',text:'어디 갔어?'}),{code:'FAILED_PRECONDITION'});
+      // 로그인 계정도 지워진다
+      const lookup=await (await fetch('http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts:lookup?key=fake-key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({idToken:leaving.token})})).json();
+      assert.ok(lookup.error||!(lookup.users||[]).length,JSON.stringify(lookup));
     });
 
     console.log(`${passed} backend integration scenarios passed`);

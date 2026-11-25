@@ -31,11 +31,13 @@ import {
   Moon,
   UserRound,
   type LucideIcon,
+  UserX,
 } from 'lucide-react-native';
 import type { Asset } from 'react-native-image-picker';
-import { AppText, Button, IconButton } from '../../components/ui';
+import { AppText, Button, Chip, IconButton } from '../../components/ui';
 import { createTranslator } from '../../locales/translate';
 import { SlideScreen } from '../../navigation/slide';
+import { DeleteAccountPage } from './DeleteAccountPage';
 import { saveAccount } from '../../services/account.service';
 import { signOut } from '../../services/auth.service';
 import { choosePhoto, uploadPhoto } from '../../services/media.service';
@@ -51,6 +53,7 @@ import {
   statusBarStyle,
   themedStyles,
   useThemeMode,
+  switchColors,
 } from '../../theme';
 import {
   DEFAULT_NOTIFICATION_PREFERENCES,
@@ -152,6 +155,8 @@ export function SettingsScreen({
   const [section, setSection] = useState<Section | null>(
     initialSection ?? null,
   );
+  // 회원 탈퇴 화면
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const photoUri = photo === undefined ? initialImage : photo?.uri;
   // 항목별로 바뀐 것이 있는지. 상세 화면은 자기 항목만 보고, 나갈 때 자기 항목만 되돌린다
@@ -404,9 +409,9 @@ export function SettingsScreen({
           <View style={styles.options}>
             {(
               [
-                { value: null, label: '선택 안 함' },
-                { value: 'female', label: '여성' },
                 { value: 'male', label: '남성' },
+                { value: 'female', label: '여성' },
+                { value: null, label: '선택 안 함' },
               ] as const
             ).map(option => (
               <Choice
@@ -448,7 +453,7 @@ export function SettingsScreen({
                   setSaved(false);
                   setError(null);
                 }}
-                trackColor={{ true: colors.primary }}
+                {...switchColors(notifications[key])}
               />
             </View>
           ))}
@@ -586,10 +591,20 @@ export function SettingsScreen({
         onPreviewCharacter={onPreviewCharacter}
         onOpenSaved={onOpenSaved}
         onOpenBlocked={onOpenBlocked}
+        onDeleteAccount={() => {
+          if (!busy) setDeleteOpen(true);
+        }}
       />
       {section && (
         <SlideScreen key={section} onBack={() => setSection(null)}>
           {back => sectionPage(section, back)}
+        </SlideScreen>
+      )}
+      {deleteOpen && (
+        <SlideScreen key="delete-account" onBack={() => setDeleteOpen(false)}>
+          {back => (
+            <DeleteAccountPage insetsBottom={insets.bottom} onBack={back} />
+          )}
         </SlideScreen>
       )}
     </View>
@@ -612,6 +627,7 @@ function List({
   onPreviewCharacter,
   onOpenSaved,
   onOpenBlocked,
+  onDeleteAccount,
 }: {
   insetsBottom: number;
   busy: boolean;
@@ -627,6 +643,7 @@ function List({
   onPreviewCharacter?: () => void;
   onOpenSaved?: () => void;
   onOpenBlocked?: () => void;
+  onDeleteAccount: () => void;
 }) {
   useEffect(() => {
     const subscription = BackHandler.addEventListener(
@@ -651,8 +668,13 @@ function List({
           accessibilityLabel="설정에서 뒤로"
           onPress={onBack}
         />
-        <AppText variant="heading">설정</AppText>
-        <View style={styles.spacer} />
+        <AppText
+          variant="heading"
+          accessibilityRole="header"
+          style={styles.headerTitle}
+        >
+          설정
+        </AppText>
       </View>
       <ScrollView
         contentContainerStyle={[
@@ -663,7 +685,7 @@ function List({
         {saved && (
           <AppText
             variant="caption"
-            color={colors.primaryInk}
+            color={colors.success}
             accessibilityLiveRegion="polite"
             style={styles.message}
           >
@@ -691,7 +713,7 @@ function List({
             </View>
           )}
           <View style={styles.flex}>
-            <AppText variant="label" color={colors.primaryInk}>
+            <AppText variant="label" color={colors.textMuted}>
               내 프로필
             </AppText>
             <AppText variant="heading" numberOfLines={1}>
@@ -705,7 +727,7 @@ function List({
               캐릭터 · {petName}
             </AppText>
           </View>
-          <ChevronRight color={colors.primaryInk} size={20} />
+          <ChevronRight color={colors.textMuted} size={20} />
         </Pressable>
         <View style={styles.listGroup}>
           <AppText
@@ -786,6 +808,12 @@ function List({
             disabled={busy}
             onPress={onSignOut}
           />
+          <SettingsRow
+            icon={UserX}
+            label="회원 탈퇴"
+            disabled={busy}
+            onPress={onDeleteAccount}
+          />
         </View>
         {__DEV__ && onPreviewCharacter && (
           <Button
@@ -824,7 +852,7 @@ function DarkModeRow() {
       onPress={toggle}
       style={({ pressed }) => [styles.listRow, pressed && styles.listPressed]}
     >
-      <Moon color={colors.primaryInk} size={20} strokeWidth={1.8} />
+      <Moon color={colors.text} size={20} strokeWidth={1.8} />
       <AppText variant="subheading" color={colors.text} style={styles.flex}>
         다크 모드
       </AppText>
@@ -833,8 +861,7 @@ function DarkModeRow() {
         importantForAccessibility="no-hide-descendants"
         value={dark}
         onValueChange={toggle}
-        trackColor={{ false: colors.border, true: colors.primary }}
-        ios_backgroundColor={colors.border}
+        {...switchColors(dark)}
       />
     </Pressable>
   );
@@ -867,7 +894,7 @@ function SettingsRow({
       style={({ pressed }) => [styles.listRow, pressed && styles.listPressed]}
     >
       <Icon
-        color={danger ? colors.danger : colors.primaryInk}
+        color={danger ? colors.danger : colors.text}
         size={20}
         strokeWidth={1.8}
       />
@@ -956,8 +983,13 @@ function SectionPage({
             accessibilityLabel={`${title}에서 뒤로`}
             onPress={leave}
           />
-          <AppText variant="heading">{title}</AppText>
-          <View style={styles.spacer} />
+          <AppText
+            variant="heading"
+            accessibilityRole="header"
+            style={styles.headerTitle}
+          >
+            {title}
+          </AppText>
         </View>
         <ScrollView
           keyboardShouldPersistTaps="handled"
@@ -1030,39 +1062,31 @@ function Choice({
   onPress: () => void;
 }) {
   return (
-    <Pressable
-      accessibilityRole="radio"
-      accessibilityLabel={label}
-      accessibilityState={{ selected, disabled }}
+    <Chip
+      label={label}
+      selected={selected}
       disabled={disabled}
       onPress={onPress}
-      style={[styles.choice, selected && styles.selectedChoice]}
-    >
-      <AppText
-        variant="caption"
-        color={selected ? colors.primaryInk : colors.textMuted}
-      >
-        {label}
-      </AppText>
-    </Pressable>
+    />
   );
 }
 const styles = themedStyles(() => ({
   screen: { flex: 1, backgroundColor: colors.surface },
+  // 하위 화면 머리글: 뒤로 + 왼쪽 제목(모든 하위 화면이 같은 모양)
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
     minHeight: 52,
   },
-  spacer: { width: 44 },
+  headerTitle: { flex: 1 },
   content: { paddingHorizontal: spacing.xl },
   // 내 프로필 영역. 둥근 상자 대신 본문 좌우 여백(spacing.xl)을 상쇄해 화면 양끝까지 채운 띠로 둔다
   profileEntry: {
     marginTop: spacing.lg,
     marginHorizontal: -spacing.xl,
-    backgroundColor: colors.primarySoft,
+    backgroundColor: colors.surfaceMuted,
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.xl,
     flexDirection: 'row',
@@ -1070,7 +1094,7 @@ const styles = themedStyles(() => ({
     gap: spacing.md,
     minHeight: 96,
   },
-  profilePressed: { backgroundColor: colors.primaryBorder },
+  profilePressed: { backgroundColor: colors.border },
   profileAvatar: {
     width: 54,
     height: 54,
@@ -1123,18 +1147,6 @@ const styles = themedStyles(() => ({
     flexWrap: 'wrap',
     gap: spacing.sm,
     marginTop: spacing.md,
-  },
-  choice: {
-    minHeight: 44,
-    justifyContent: 'center',
-    paddingHorizontal: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.sm,
-  },
-  selectedChoice: {
-    backgroundColor: colors.primarySoft,
-    borderColor: colors.primary,
   },
   message: { marginTop: spacing.lg },
   photoRow: {

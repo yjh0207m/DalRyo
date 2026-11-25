@@ -1,9 +1,6 @@
 import { getApp } from '@react-native-firebase/app';
 import { getFunctions, httpsCallable } from '@react-native-firebase/functions';
-import {
-  documentId,
-  type FirebaseFirestoreTypes,
-} from '@react-native-firebase/firestore';
+import { type FirebaseFirestoreTypes } from '@react-native-firebase/firestore';
 import { auth, firestore } from '../lib/firebase';
 import type {
   CharacterType,
@@ -109,7 +106,6 @@ export type SocialComment = {
   deleted: boolean;
   createdAtMs: number;
 };
-export type FeedScope = 'public' | 'following' | 'mine';
 export type PostCursor = FirebaseFirestoreTypes.QueryDocumentSnapshot;
 
 export function myUid() {
@@ -165,44 +161,6 @@ export function decodePost(
     post_id: doc.id,
     createdAtMs: data.created_at?.toMillis?.() ?? 0,
   } as SocialPost;
-}
-function postsQuery(scope: Exclude<FeedScope, 'following'>) {
-  const base = firestore().collection('posts');
-  return (
-    scope === 'mine'
-      ? base.where('uid', '==', myUid())
-      : base.where('visibility', '==', 'public')
-  )
-    .orderBy('created_at', 'desc')
-    .orderBy(documentId(), 'desc');
-}
-export function watchFeed(
-  scope: Exclude<FeedScope, 'following'>,
-  next: (posts: SocialPost[], last: PostCursor | null, more: boolean) => void,
-  error: (error: Error) => void,
-) {
-  return postsQuery(scope)
-    .limit(20)
-    .onSnapshot(
-      snap =>
-        next(
-          snap.docs.map(decodePost).filter(p => !p.deleted),
-          snap.docs.at(-1) ?? null,
-          snap.size === 20,
-        ),
-      error,
-    );
-}
-export async function earlierPosts(
-  scope: Exclude<FeedScope, 'following'>,
-  cursor: PostCursor,
-) {
-  const snapshot = await postsQuery(scope).startAfter(cursor).limit(20).get();
-  return {
-    posts: snapshot.docs.map(decodePost).filter(p => !p.deleted),
-    last: snapshot.docs.at(-1) ?? null,
-    more: snapshot.size === 20,
-  };
 }
 export function watchPost(
   id: string,

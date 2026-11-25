@@ -1,0 +1,5 @@
+<resources>
+    <!-- 다크 모드. 어두운 알림창 위에서도 읽히도록 밝은 파랑을 쓴다 (src/theme의 다크 primary·primaryInk) -->
+    <color name="dalryo_primary">#1F6FEB</color>
+    <color name="dalryo_accent">#7DB7FF</color>
+</resources>

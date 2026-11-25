@@ -1,5 +1,5 @@
 import firestore from '@react-native-firebase/firestore';
-import {firestore as db, storage} from '../lib/firebase';
+import {storage} from '../lib/firebase';
 import {STARTER_CHARACTER_TYPES, type CharacterDocument, type CharacterStage, type CharacterType, type StarterCharacterType} from '../types/character.types';
 
 const STORAGE_STAGE_SUFFIX: Record<Exclude<CharacterStage, 'egg'>, 'S' | 'M' | 'L'> = {
@@ -75,11 +75,5 @@ export function buildInitialCharacter({
     updated_at: now,
   };
 
-  return character;
-}
-
-export async function createInitialCharacter(input: {uid: string; petName: string; characterType: CharacterType}) {
-  const character = buildInitialCharacter(input);
-  await db().collection('users').doc(input.uid).collection('character').doc(input.uid).set(character);
   return character;
 }

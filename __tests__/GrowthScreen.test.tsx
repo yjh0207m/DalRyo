@@ -110,8 +110,32 @@ test('the total distance stands alone as the largest number, with the last 7 day
       node
         .findAllByType(Text)
         .find(
-          item => ([] as unknown[]).concat(item.props.children).join('') === value,
+          item =>
+            ([] as unknown[]).concat(item.props.children).join('') === value,
         )!.props.style,
     ).fontSize;
   expect(fontSize(total, '12.5')).toBeGreaterThan(fontSize(secondary, '100'));
+});
+
+test('with no runs in the last 7 days the chart offers to start a run', async () => {
+  const onStartRun = jest.fn();
+  await act(async () => {
+    tree = Renderer.create(
+      <GrowthScreen
+        user={user}
+        character={character}
+        onNotificationPress={jest.fn()}
+        onSettingsPress={jest.fn()}
+        onStartRun={onStartRun}
+      />,
+    );
+  });
+  const start = tree.root.find(
+    node =>
+      typeof node.type === 'function' &&
+      node.type.name === 'Button' &&
+      node.props.label === '달리기 시작',
+  );
+  await act(async () => start.props.onPress());
+  expect(onStartRun).toHaveBeenCalledTimes(1);
 });

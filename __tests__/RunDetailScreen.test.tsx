@@ -1,8 +1,9 @@
 import React from 'react';
-import { Text, View as MockView } from 'react-native';
+import { StyleSheet, Text, View as MockView } from 'react-native';
 import Renderer, { act } from 'react-test-renderer';
 import { RunDetailScreen } from '../src/screens/run/RunDetailScreen';
 import type { RunDocument } from '../src/types/run.types';
+import { colors, summaryNumber } from '../src/theme';
 
 const mockShare = jest.fn();
 jest.mock(
@@ -97,4 +98,41 @@ test('the average speed is labelled as speed, with the km/h value', () => {
     .map(node => joined(node.props.children));
   expect(all).toContain('평균 속도 12.0 km/h');
   expect(all).not.toContain('평균 12.0 km/h');
+});
+
+test('the distance, time, pace, calories, EXP and speed sit on a full-width summary band like the monthly total', () => {
+  const band = tree.root.find(
+    node =>
+      typeof node.type === 'string' && node.props.testID === 'run-detail-stats',
+  );
+  const style = StyleSheet.flatten(band.props.style);
+  expect(style.backgroundColor).toBe(colors.secondarySoft);
+  // 본문 좌우 여백을 넘어 화면 양끝까지 닿고, 안쪽 글자는 본문 선에 맞춘다
+  expect(style.marginHorizontal).toBe(-20);
+  expect(style.paddingHorizontal).toBe(20);
+  const all = band
+    .findAllByType(Text)
+    .map(node => ([] as unknown[]).concat(node.props.children).join(''));
+  expect(all).toEqual(
+    expect.arrayContaining([
+      '시간',
+      '평균 페이스',
+      '칼로리',
+      '평균 속도 12.0 km/h',
+    ]),
+  );
+});
+
+test('the distance is the same tall number as the monthly total on the records tab', () => {
+  const band = tree.root.find(
+    node =>
+      typeof node.type === 'string' && node.props.testID === 'run-detail-stats',
+  );
+  const number = band
+    .findAllByType(Text)
+    .map(node => StyleSheet.flatten(node.props.style))
+    .find(style => style.transform);
+  expect(number?.transform).toEqual([{ scaleY: summaryNumber.stretch }]);
+  expect(number?.fontSize).toBe(summaryNumber.fontSize);
+  expect(number?.lineHeight).toBe(summaryNumber.lineHeight);
 });

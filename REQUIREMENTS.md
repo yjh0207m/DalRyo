@@ -484,17 +484,18 @@ stat_endurance += Math.floor(durationSec / 60 * 0.2)
 
 | 항목 | 규칙 |
 |---|---|
-| 색 | **대표 색감(민트 #22B48F, 연한 민트 #DDF4EC, 하늘 #CBEBF6, 초원 녹색)은 바꾸지 않는다** ([docs/design-refresh.md](docs/design-refresh.md)). 배경 중성 오프화이트(`background`), 민트(`primary`)는 누를 수 있는 것·진행 상태에만. 따뜻한 색(`accent`)은 경고·일시정지 같은 감정 신호에만 |
+| 색 | **블루 원톤(2026-11-25 결정).** 비율은 중성색 70 · 보조색 25 · 주조색 5. 주조색 파랑(`primary` #0A66C2, 다크 #1F6FEB, 두 테마 모두 흰 글자)은 누를 수 있는 것(달리기·주요 버튼·현재 탭·선택한 칩)·진행 상태·화면마다 핵심 숫자 하나에만. 보조색 하늘(`secondary`·`secondarySoft`)은 요약 띠·차트·달린 날 표시에. 중성은 푸른 기운의 쿨 그레이. 시맨틱은 따로: 성공 `success`, 경고 `accent`, 오류 `danger`. 초원·하늘 장면 그림의 색은 캐릭터 세계라 그대로. 이전 민트 브랜드([docs/design-refresh.md](docs/design-refresh.md))는 이 결정으로 바뀌었다. 컨셉 비교: https://claude.ai/artifact/5vwWSiQYi7C46wQJ6WKBiw |
 | 글자 | Pretendard. `AppText`의 variant로만 지정 (display·title·heading·subheading·body·caption·label·number). 커스텀 폰트에 `fontWeight`를 같이 주지 않는다 |
 | 아이콘 | lucide 선 아이콘만 사용. 유니코드 기호(⌂ ✧ ⌕ 등)·이모지로 아이콘을 대신하지 않는다 |
 | 깊이 | 그림자는 최소(`shadow.card`), 영역은 얇은 선으로 나눈다 |
-| 공용 컴포넌트 | `src/components/ui` — `AppText`, `Button`(primary/secondary/ghost), `IconButton`, `Card`(surface/soft/warm/stone/flat), `Badge`, `ProgressBar`, `ScreenHeader`, `ActionSheet`(아래에서 올라오는 메뉴), `PhotoSourceSheet`, `FullPhoto`, `BackgroundTaskToast`, `RunRecordsStatus`, `RunningShoeIcon`(응원 아이콘), `BottomSheet`(댓글 창처럼 아래에서 올라오는 시트), `TallNumber`(세로로 살짝 늘린 큰 거리 숫자. 성장 1.07배, 기록 1.11배) |
+| 공용 컴포넌트 | `src/components/ui` — `AppText`, `Button`(primary/secondary/ghost), `IconButton`, `Card`(surface/soft/warm/stone/flat), `Badge`, `ProgressBar`, `ScreenHeader`, `ActionSheet`(아래에서 올라오는 메뉴), `PhotoSourceSheet`, `FullPhoto`, `BackgroundTaskToast`, `RunRecordsStatus`, `RunningShoeIcon`(응원 아이콘), `BottomSheet`(댓글 창처럼 아래에서 올라오는 시트), `Chip`(여럿 중 고르는 칩. 고른 칩은 연한 주조색 바탕+주조색 테두리+주조색 글자로 모든 화면이 같다), `TallNumber`(세로로 살짝 늘린 큰 거리 숫자. 성장 1.07배, 기록 1.11배) |
 | 하단 탭 | `src/navigation/BottomTabBar.tsx` — 홈·성장·(달리기)·커뮤니티·기록. 가운데 달리기는 탭이 아니라 행동이라 원형 버튼(발자국 아이콘 + "달리기")으로 둔다. 선택 탭은 아이콘 색과 작은 점으로 구분 |
-| 무드 | "캐릭터는 귀엽게, 화면은 세련된 러닝 앱처럼". 맑은 하늘 + 민트 + 초원. 장면은 `src/components/scene` (`CompanionScene` 홈·프로필 러닝 메이트 장면, `RunningWorld` 횡스크롤 월드, `MeadowScene` 완료 화면 초원) |
+| 무드 | "캐릭터는 귀엽게, 화면은 세련된 러닝 앱처럼". 맑은 하늘 + 초원(장면), 화면은 쿨 그레이 + 파랑 포인트. 장면은 `src/components/scene` (`CompanionScene` 홈·프로필 러닝 메이트 장면, `RunningWorld` 횡스크롤 월드, `MeadowScene` 완료 화면 초원) |
 | 버튼 | 입체 턱이 없는 플랫 버튼으로 통일했다. HUD 조각 — `src/components/game/Hud.tsx` (홈의 연속 기록 칩 `StreakChip`) |
 | 화면 전환 | 탭은 손가락을 따라 가로로 넘어가고, 설정·알림·보관함·공원·같이 달리기·커뮤니티 하위 화면은 오른쪽에서 밀려 들어온다(`slide.tsx`). 애니메이션 설정은 `src/navigation/motion.ts` 한 곳 |
 | 서버 요청 | 응답을 기다릴 필요 없는 요청(게시·응원·읽음 등)은 `runInBackground`로 맡기고 화면은 바로 넘어간다. 진행·실패는 작은 팝업으로 알린다 (`src/services/backgroundTask.service.ts`) |
-| 다크 모드 | 설정 → 앱 환경 → 다크 모드 스위치. 이 기기에만 저장한다(`themePreference.service.ts`). 색은 `colors`에서 읽고, 모듈 단위 스타일은 `StyleSheet.create` 대신 **`themedStyles(() => ({...}))`** 로 만든다. 상태 표시줄은 `statusBarStyle()`(화면 전체가 민트면 `statusBarOnPrimary()`). 새 화면도 이 규칙을 지켜야 다크 모드를 따라간다. 시작 화면·공유 카드·지도는 일부러 고정색이다. **다크 팔레트:** 모든 화면 바탕은 검은색(`background`=`surface`=#000), 떠 있는 시트·메뉴·토스트만 `surfaceRaised`(#1C1C1E), 회색은 녹색 기운 없는 중립색. 민트는 밝게(#2ED3A5, 바탕 대비 11:1) 올리고 그 위 글자는 어두운 녹색(`textOnPrimary` #03140E, 9.9:1). 시트 뒤 막은 `scrim`. 대비 기준(글자 4.5:1, 버튼 면 3:1)은 `theme.test.ts`가 두 테마 모두 검사한다 |
+| 다크 모드 | 설정 → 앱 환경 → 다크 모드 스위치. 이 기기에만 저장한다(`themePreference.service.ts`). 색은 `colors`에서 읽고, 모듈 단위 스타일은 `StyleSheet.create` 대신 **`themedStyles(() => ({...}))`** 로 만든다. 상태 표시줄은 `statusBarStyle()`(화면 전체가 주조색이면 `statusBarOnPrimary()`). 새 화면도 이 규칙을 지켜야 다크 모드를 따라간다. 시작 화면·공유 카드·지도는 일부러 고정색이다. **바탕:** 두 테마 모두 모든 화면이 한 가지 바탕이다(`background`=`surface`, 밝은 테마 #FFFFFF, 다크 #131920: 푸른 기운의 어두운 쿨 그레이). 떠 있는 시트·메뉴·토스트만 `surfaceRaised`(다크 #1C232D). **파랑:** 다크에서도 선명한 파랑(#1F6FEB, 바탕 대비 3.8:1)에 흰 글자(4.6:1). 파랑 글자만 밝은 파랑(`primaryInk` #7DB7FF). 요약 띠(`secondarySoft` #163E77)는 바탕보다 1.7:1 밝은 파랑. 켜고 끄는 스위치는 `switchColors()`(켜지면 파란 동그라미). 시트 뒤 막은 `scrim`. 대비 기준(글자 4.5:1, 버튼 면 3:1)은 `theme.test.ts`가 두 테마 모두 검사한다 |
+| 디자인 규칙 | **주조색 글자**(파랑)는 누를 수 있는 것과 블록마다 핵심 숫자 하나에만 쓰고, 이름표·보조 값·목록 아이콘은 중립색(`textMuted`·`text`). **요약 띠**는 보조색(`secondarySoft`)으로 달리기 기록 숫자를 보여 주는 블록(기록 탭 이번 달, 공유한 기록, 첨부한 기록, 같이 달리기 머리 영역, 완료 화면)에만, 고른 상태(선택한 칩·내 말풍선·안 읽은 알림·서브 메뉴 버튼)는 `primarySoft`, 나머지 띠는 회색(`surfaceMuted`). **하위 화면 머리글**은 뒤로 + 왼쪽 제목(`heading`)으로 통일. **숫자**는 세 단계(`number` 24, `numberLarge` 36, `numberHero` 56)와 성장·기록 탭의 `TallNumber`만 쓴다. **빈 화면**에는 바로 할 수 있는 일(달리기 시작·글쓰기) 버튼을 둔다 |
 
 ### 화면 구성 (Figma "달료 UI 구성" 반영)
 
@@ -509,9 +510,9 @@ Figma는 구조·기능 참고용이고, 시각 디자인은 위 디자인 시�
 | 달리기 | 큰 거리 → 시간·현재 페이스·평균 페이스·칼로리 → 목표 진행 → 실제 속도로 흐르는 횡스크롤 월드 위를 달리는 캐릭터(흙먼지) → 하단 조작 영역 |
 | 운동 완료 | 초원에서 부화·성장·해동·완주 연출 → 거리·기록·경로 미리보기 → 사진 찍기·기록 보기 |
 | 성장 | 크게 놓인 누적 거리(키 큰 숫자), 그 아래 한 줄에 최근 7일·EXP → 최근 7일 거리 막대그래프 → 캐릭터 스탯 → AI 코치(준비 중) |
-| 커뮤니티 | 피드 위에 하위 화면이 쌓인다. 하단 탭 바로 위의 서브 네비게이션(가운데 버튼을 누르면 피드·탐색·메시지·내 프로필이 펼쳐짐)으로 섹션을 바꾼다. 글쓰기는 오른쪽 아래 원형 버튼 |
+| 커뮤니티 | 피드 위에 하위 화면이 쌓인다. 하단 탭 바로 위의 서브 네비게이션(가운데 버튼을 누르면 피드·탐색·메시지·내 프로필이 펼쳐짐)으로 섹션을 바꾼다. 글쓰기는 피드·탐색·내 프로필 머리글의 + 버튼(화면 아래 떠 있는 버튼은 없앴다) |
 | 기록 | 화면 양끝까지 채운 월간 요약 띠(키 큰 거리 숫자) + 러닝 저널(화면 양끝까지 쓰는 줄, 사이는 가는 선), 캘린더 탭 날짜 필터 → 기록 상세(지도) |
-| 설정 | 화면 양끝까지 채운 내 프로필 띠, 알림·지역·말투 항목, 다크 모드 스위치, 저장한 게시물, 차단한 사용자, 로그아웃 (내 프로필은 커뮤니티의 "내 프로필") |
+| 설정 | 화면 양끝까지 채운 내 프로필 띠, 알림·지역·말투 항목, 다크 모드 스위치, 저장한 게시물, 차단한 사용자, 로그아웃, 회원 탈퇴 (내 프로필은 커뮤니티의 "내 프로필") |
 
 로그인·온보딩은 공통 색·글꼴·버튼 기준만 맞췄고, 시작 화면은 기존 배경 이미지를 유지한다.
 
@@ -602,6 +603,10 @@ Fan-out(팔로워 피드 복사)은 쓰지 않는다. 서버가 요청 때 목�
 - `socialRequest('follow', {uid, following})`가 follows 문서, 양쪽 카운터, 인플루언서 등급, 알림을 한 트랜잭션에서 처리한다. 한 사람이 팔로우할 수 있는 수는 최대 300명이다.
 - 팔로워·팔로잉 목록은 `connections`(30명씩)로 받는다. 목록을 비공개로 한 러너는 숫자만 보인다.
 - **차단(`blockUser`):** 서로의 팔로우를 끊고 1:1 대화를 막는다. 서로의 글·검색·랭킹·목록에서 빠진다. 설정의 "차단한 사용자"에서 해제한다(팔로우는 복구되지 않음).
+- **신고(`report`):** 다른 사람의 게시물(메뉴)·댓글("신고" 글자 버튼)·러너(프로필 메뉴)·대화(채팅방 메뉴)를 신고한다.
+  - 시트(`ReportSheet`)에서 이유(스팸·광고, 욕설·괴롭힘, 혐오 표현, 음란·선정적인 내용, 폭력·위험한 행동, 사칭·사기, 개인정보 노출, 기타)를 꼭 고르고, 자세한 내용(500자)은 선택이다.
+  - 보내기는 기다리지 않고 작은 팝업으로 알린다. 게시물을 신고하면 그 글은 바로 사라진다(`hidePost`).
+  - 서버는 신고 시점의 내용을 `reports`에 함께 남긴다. 검토 화면은 아직 없다.
 
 ### F-FEED-05 · 친구 & 랭킹
 
@@ -787,12 +792,12 @@ async function sendFCM(token: string, title: string, body: string) {
 **현재 구현** (커뮤니티 → 서브 네비게이션 "내 프로필", `ProfilePage` · `RunnerStatsCard`)
 
 - 내 프로필과 다른 러너의 프로필이 같은 화면이며, 데이터는 `socialAction`의 `profile`·`profilePosts`·`profileRuns`로 받는다.
-- **위쪽:** 머리글에 `@아이디`(없으면 닉네임), 사진, 이름, 지역, 게시물·팔로워·팔로잉 수. 다른 러너면 팔로우·메시지 보내기, 친구면 같이 달리기 요청.
+- **위쪽:** 머리글에 `@아이디`(없으면 닉네임). 내 프로필도 같고 뒤로 가기 버튼만 없다. 사진, 이름, 지역, 게시물·팔로워·팔로잉 수. 다른 러너면 팔로우·메시지 보내기, 친구면 같이 달리기 요청.
 - **캐릭터 구역:** 초원 장면 위 캐릭터(장착 아이템 포함), LV·단계, 경험치(다음 단계까지), 체력·속도·지구력, "완료한 러닝 n회" 줄(n회는 이름과 같은 크기에 굵게. 누르면 최근 러닝 말풍선 → 전체 기록).
 - **게시물:** 목록·2열 보기.
 - **점 3개 메뉴:**
   - 내 프로필: 프로필 설정, 러닝 기록 공개, 팔로워·팔로잉 공개
-  - 다른 러너: 차단·차단 해제
+  - 다른 러너: 신고, 차단·차단 해제
 - **아직 없는 것:** 웹사이트 표시, 인플루언서 배지.
 
 ### F-PROFILE-02 · 설정
@@ -801,7 +806,7 @@ async function sendFCM(token: string, title: string, body: string) {
 - 달료 말투 변경 → F-I18N-01
 - 알림 항목별 on/off
 - 로그아웃: `await signOut(auth)`
-- 회원 탈퇴: `await deleteUser(auth.currentUser)`
+- 회원 탈퇴: 서버 `deleteAccount`가 데이터와 계정을 지운다
 
 **현재 구현** (`src/screens/profile/SettingsScreen.tsx`, 헤더의 설정 아이콘)
 
@@ -812,21 +817,25 @@ async function sendFCM(token: string, title: string, body: string) {
   - 달료 말투
 - **저장:** 항목마다 저장 버튼이 있고 `saveAccountSettings` 한 번으로 저장한다. 저장하지 않고 나가면 확인 창이 뜬다.
 - **다크 모드:** 앱 환경 묶음의 스위치. 누르는 즉시 적용하고 이 기기에 저장한다.
-- **바로가기:** 저장한 게시물(커뮤니티로 이동), 차단한 사용자, 로그아웃(확인 창), 개발 빌드의 캐릭터 미리보기.
-- **회원 탈퇴는 미구현.**
+- **바로가기:** 저장한 게시물(커뮤니티로 이동), 차단한 사용자, 로그아웃(확인 창), 회원 탈퇴, 개발 빌드의 캐릭터 미리보기.
+- **회원 탈퇴** (`DeleteAccountPage`):
+  - 지워지는 것(프로필·아이디·캐릭터·보관함, 기록·공원 랭킹, 내 게시물과 사진, 남긴 댓글·응원, 팔로우·저장·차단)과 남는 것(채팅 메시지는 "탈퇴한 러너"로)을 보여 준다.
+  - "위 내용을 확인했어요"를 체크해야 버튼이 켜지고, 확인 창을 한 번 더 거친다.
+  - 서버 `deleteAccount`가 끝나면 기기의 보내지 못한 기록·알림 토큰을 지우고 로그아웃한다. 실패하면 화면에 남아 다시 시도할 수 있다(이미 지운 것은 이어서 지운다).
 
 ---
 
 ## Cloud Functions 목록
 
-`functions/src/index.ts`가 내보내는 7개가 전부다. 모두 리전 `asia-northeast3`. 작업별 상세는 [firestore_schema.md](firestore_schema.md).
+`functions/src/index.ts`가 내보내는 8개가 전부다. 모두 리전 `asia-northeast3`. 작업별 상세는 [firestore_schema.md](firestore_schema.md).
 
 | 함수 | 트리거 | 역할 |
 |------|--------|------|
 | `onRunCreate` | runs 생성 | EXP·누적 거리·스탯·성장 단계 반영, 돌 변신 해제, 공원 주간 랭킹, 성장 알림 |
 | `stoneScheduler` | 매일 자정 (KST) | 3·5일 경고, 7일 돌 변신 + FCM 알림 |
 | `saveAccountSettings` | callable | 설정 저장 (프로필·아이디·캐릭터 이름·알림 설정·사진) |
-| `socialAction` | callable | 피드·탐색·검색·랭킹·프로필·팔로우·차단·게시물·응원·저장·댓글·채팅 |
+| `deleteAccount` | callable | 회원 탈퇴 (데이터·사진·계정 삭제, 채팅은 "탈퇴한 러너"로) |
+| `socialAction` | callable | 피드·탐색·검색·랭킹·프로필·팔로우·차단·신고·게시물·응원·저장·댓글·채팅 |
 | `roomAction` | callable | 같이 달리기 친구 목록·요청·참가·거절·시작·나가기·완주 |
 | `parkAction` | callable | 주변 공원·코스·주간 랭킹 |
 | `inventoryAction` | callable (`invoker: 'public'`) | 보관함 조회·보상 지급·장착·해제 |

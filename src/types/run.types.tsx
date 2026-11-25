@@ -30,12 +30,3 @@ export type RunDocument = {
   created_at: FirebaseFirestoreTypes.Timestamp | FirebaseFirestoreTypes.FieldValue;
 };
 
-export type RunSummary = {
-  totalDistanceKm: number;
-  averageDistanceKm: number;
-  averageDurationSec: number;
-  averagePaceSec: number;
-  averageCalories: number;
-  averageElevationM: number;
-  averageHeartRate: number;
-};

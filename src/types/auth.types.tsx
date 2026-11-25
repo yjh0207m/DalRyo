@@ -1,7 +1,5 @@
 import type {FirebaseAuthTypes} from '@react-native-firebase/auth';
 
-export type AuthProviderId = 'phone' | 'google' | 'kakao';
-
 export type PhoneConfirmation = FirebaseAuthTypes.ConfirmationResult;
 
 export type PhoneAuthState =

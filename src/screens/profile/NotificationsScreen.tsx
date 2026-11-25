@@ -52,8 +52,7 @@ export function NotificationsScreen({onBack, onNavigate}: {onBack: () => void; o
       <StatusBar barStyle={statusBarStyle()} backgroundColor={colors.surface} />
       <View style={styles.header}>
         <IconButton icon={ChevronLeft} variant="plain" accessibilityLabel="알림에서 뒤로" onPress={onBack} />
-        <AppText variant="heading">알림</AppText>
-        <View style={styles.spacer} />
+        <AppText variant="heading" accessibilityRole="header" style={styles.headerTitle}>알림</AppText>
       </View>
       {status === 'loading' ? (
         <View style={styles.center}>
@@ -139,11 +138,11 @@ const styles = themedStyles(() => ({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.sm,
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    minHeight: 52,
   },
-  spacer: {width: 44},
+  headerTitle: {flex: 1},
   center: {flex: 1, justifyContent: 'center', padding: spacing.xxl, gap: spacing.lg},
   content: {borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border},
   empty: {alignItems: 'center', gap: spacing.lg, marginTop: spacing.xxl, marginHorizontal: spacing.xl, paddingVertical: spacing.xxxl},

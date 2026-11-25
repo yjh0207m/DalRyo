@@ -2,14 +2,27 @@ import React, { useEffect, useState } from 'react';
 import { BackHandler, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Camera, ChevronLeft, Route } from 'lucide-react-native';
-import { AppText, Badge, Button, Card, IconButton } from '../../components/ui';
+import {
+  AppText,
+  Badge,
+  Button,
+  Card,
+  IconButton,
+  TallNumber,
+} from '../../components/ui';
 import { RouteMap } from '../../components/maps/RouteMap';
 import { ShareStudioScreen } from './ShareStudioScreen';
 import type { RunDocument } from '../../types/run.types';
 import type { CharacterDocument } from '../../types/character.types';
 import { getRunStartedAtDate } from '../../services/run.service';
 import { formatDuration, formatPace } from '../../utils/pace';
-import { colors, fonts, radius, themedStyles } from '../../theme';
+import {
+  colors,
+  fonts,
+  radius,
+  summaryNumber,
+  themedStyles,
+} from '../../theme';
 import { fetchParkLabel } from '../../services/park.service';
 
 export function RunDetailScreen({
@@ -67,18 +80,20 @@ export function RunDetailScreen({
           accessibilityLabel="기록 상세에서 뒤로"
           onPress={onBack}
         />
-        <AppText variant="heading" style={styles.headerTitle}>
+        <AppText
+          variant="heading"
+          accessibilityRole="header"
+          style={styles.headerTitle}
+        >
           러닝 저널
         </AppText>
-        {/* 제목이 가운데 오도록 뒤로 가기 버튼과 같은 너비를 비워 둔다 */}
-        <View style={styles.headerSpacer} />
       </View>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
       >
         <View style={styles.dateHeading}>
-          <AppText style={styles.eyebrow} color={colors.primaryInk}>
+          <AppText style={styles.eyebrow} color={colors.textMuted}>
             A RUN TO REMEMBER
           </AppText>
           <AppText variant="subheading">
@@ -97,11 +112,20 @@ export function RunDetailScreen({
             의 발자국
           </AppText>
         </View>
-        <Card style={styles.stats}>
+        {/* 기록 탭의 "이번 달 누적 거리"처럼 화면 양끝까지 채운 하늘색 띠로 받친다 */}
+        <View testID="run-detail-stats" style={styles.stats}>
           <View style={styles.distance}>
-            <AppText style={styles.distanceNumber} color={colors.primaryInk}>
+            {/* 기록 탭 "이번 달 누적 거리"와 같은 키 큰 숫자(theme의 summaryNumber) */}
+            <TallNumber
+              stretch={summaryNumber.stretch}
+              fontSize={summaryNumber.fontSize}
+              lineHeight={summaryNumber.lineHeight}
+              style={summaryNumber.style}
+              color={colors.primaryInk}
+              numberOfLines={1}
+            >
               {run.distance_km.toFixed(2)}
-            </AppText>
+            </TallNumber>
             <AppText variant="heading" color={colors.primaryInk}>
               km
             </AppText>
@@ -123,7 +147,7 @@ export function RunDetailScreen({
               평균 속도 {run.avg_speed_kmh.toFixed(1)} km/h
             </AppText>
           </View>
-        </Card>
+        </View>
         {!!run.park_id && (
           <View style={styles.parkInfo}>
             <Route size={16} color={colors.primaryInk} />
@@ -175,8 +199,7 @@ const styles = themedStyles(() => ({
     paddingHorizontal: 12,
     minHeight: 54,
   },
-  headerTitle: { flex: 1, textAlign: 'center' },
-  headerSpacer: { width: 44, height: 44 },
+  headerTitle: { flex: 1 },
   content: { padding: 20, gap: 18, paddingBottom: 40 },
   dateHeading: { gap: 7, paddingVertical: 6 },
   eyebrow: {
@@ -185,20 +208,17 @@ const styles = themedStyles(() => ({
     lineHeight: 14,
     letterSpacing: 1.6,
   },
+  // 본문 좌우 여백(20)을 상쇄해 화면 양끝까지 닿고, 안쪽 글자는 본문과 같은 선에 맞춘다.
+  // 위는 큰 숫자가 띠 윗선에 붙어 보이지 않게 아래보다 넉넉히 둔다(숫자 자체 여백 포함 눈으로 위 35 · 아래 28)
   stats: {
-    backgroundColor: colors.surface,
-    borderWidth: 0,
-    padding: 22,
+    backgroundColor: colors.secondarySoft,
+    marginHorizontal: -20,
+    paddingHorizontal: 20,
+    paddingTop: 22,
+    paddingBottom: 22,
     gap: 18,
   },
   distance: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
-  distanceNumber: {
-    fontFamily: fonts.extrabold,
-    fontSize: 58,
-    lineHeight: 70,
-    letterSpacing: -2,
-    fontVariant: ['tabular-nums'],
-  },
   metrics: { flexDirection: 'row', gap: 12 },
   metric: { flex: 1, gap: 7 },
   rewards: {
@@ -207,7 +227,8 @@ const styles = themedStyles(() => ({
     alignItems: 'center',
     paddingTop: 16,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
+    // 하늘색 띠 위에서 회색 선이 탁해 보이지 않게 파랑 테두리 색을 쓴다
+    borderTopColor: colors.primaryBorder,
   },
   parkInfo: {
     flexDirection: 'row',

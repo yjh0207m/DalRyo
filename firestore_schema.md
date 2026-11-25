@@ -27,8 +27,7 @@ users/{uid}                               비공개 사용자 정보
   ├─ hidden_posts/{postId}                "이 게시물 보지 않음"
   ├─ room/active                          참가 중인 같이 달리기 방
   ├─ room_invites/{roomId}                받은 같이 달리기 요청
-  ├─ park_search/rate                     공원 검색 간격 제한 (서버 전용)
-  └─ feed/{postId}                        사용하지 않음 (이전 Fan-out 설계의 규칙만 남음)
+  └─ park_search/rate                     공원 검색 간격 제한 (서버 전용)
 handles/{userId}                          아이디 중복 방지
 runs/{runId}                              달리기 기록
 posts/{postId}                            게시물
@@ -47,6 +46,7 @@ parks/{parkId}                            공원
   ├─ courses/{courseId}
   └─ weeks/{KST 월요일}/runners/{uid}      공원 주간 랭킹 (서버 전용)
 park_search_cache/{lat_lng}               공원 검색 캐시 (서버 전용)
+reports/{신고자_종류_대상ID}                신고 (서버 전용, 앱은 읽을 수 없다)
 ```
 
 ---
@@ -329,6 +329,7 @@ park_search_cache/{lat_lng}               공원 검색 캐시 (서버 전용)
   members:         string[],   // 1:1은 정렬한 UID 2개
   profiles:        { [uid]: { display_name, profile_image } },  // 방 만들 때 사본. 화면은 최신 공개 프로필을 다시 받아 쓴다
   blocked_by:      string[],
+  deleted_members?: string[],  // 탈퇴한 사람. profiles의 그 사람은 "탈퇴한 러너"로 바뀐다
   muted_by?:       string[],   // 이 방의 푸시를 끈 사람
   read_at:         { [uid]: Timestamp },
   last_text:       string,     // 120자까지
@@ -349,6 +350,7 @@ park_search_cache/{lat_lng}               공원 검색 캐시 (서버 전용)
   - 만든 사람 외에 2~9명을 초대한다.
   - 나간 사람은 members에서 빠지지만 profiles에는 남아, 남은 사람이 예전 메시지의 보낸 사람을 볼 수 있다.
   - 그룹 방은 차단(chatBlock)할 수 없다.
+- **탈퇴한 사람:** 메시지는 상대의 대화 기록이라 남긴다. `deleteAccount`가 profiles의 그 사람을 "탈퇴한 러너"(사진 없음)로 바꾸고 deleted_members에 넣는다. 1:1 방은 더 보낼 수 없고(chatSend가 막는다), 그룹 방은 members에서 뺀다.
 - **쓰기:** 전부 `socialAction`의 chat* 작업이 한다.
 - **읽기:** members에 든 사람만.
 
@@ -479,6 +481,7 @@ camera/{uid}/{file}                    규칙만 있고 쓰는 곳 없음
 | `onRunCreate` | runs 생성 트리거 | 누적 거리·경험치·스탯·성장 단계 반영, last_run_at 갱신·돌 해제, 공원 주간 랭킹 적립, 단계가 오르면 level_up 알림. 평균 25km/h 초과는 flagged로 성장 제외. growth_applied로 한 번만 반영 |
 | `stoneScheduler` | 매일 00:00 KST | 마지막 달리기 후 정확히 3일째 warn3, 5일째 warn5 알림. 7일 이상이면 is_frozen=true와 stone 알림. 말투별 푸시 |
 | `saveAccountSettings` | callable | 설정 저장: 프로필·아이디(handles 교체)·캐릭터 이름·알림 설정·프로필 사진(본인 Storage 경로만) |
+| `deleteAccount` | callable | 회원 탈퇴. 아래 "회원 탈퇴" |
 | `socialAction` | callable | 아래 표 |
 | `roomAction` | callable | friends, invites, create, invite, join, decline, start, leave, finish |
 | `parkAction` | callable | nearby, courses, rankings |
@@ -489,9 +492,41 @@ camera/{uid}/{file}                    규칙만 있고 쓰는 곳 없음
 | 분류 | action |
 |---|---|
 | 조회 | publicProfiles(최대 30명), search(닉네임 또는 `@아이디` 앞부분, 팔로잉 > 팔로워 > 그 외 순), rankings(누적 거리 상위 50), profile, profileRuns, connections, homeFeed, exploreFeed, followingFeed, profilePosts, post |
-| 관계 | follow, setPrivacy, blockUser, hidePost |
+| 관계 | follow, setPrivacy, blockUser, hidePost, report |
 | 게시물 | createPost, editPost, deletePost, like, bookmark, comment, deleteComment |
 | 채팅 ([chat.ts](functions/src/chat.ts)) | chatOpen, chatCreateGroup, chatSend, chatRead, chatBlock, chatLeave, chatMute, chatRename |
+
+### 신고 (report)
+
+```js
+// reports/{신고자uid}_{target_type}_{target_id}. 같은 사람이 같은 대상을 다시 신고하면 새로 만들지 않는다(duplicate: true)
+{
+  reporter_uid, target_type: 'post' | 'comment' | 'user' | 'chat', target_id,
+  post_id,        // 댓글이면 그 게시물, 아니면 null
+  target_uid,     // 신고당한 사람
+  reason: 'spam' | 'abuse' | 'hate' | 'sexual' | 'danger' | 'fraud' | 'privacy' | 'other',
+  detail,         // 0~500자
+  snapshot,       // 신고 시점의 내용: 글(text·image_url), 댓글(text), 러너(display_name), 대화(최근 메시지 20개)
+  status: 'open', created_at
+}
+```
+
+- 내 글·내 계정은 신고할 수 없고, 대화는 그 방에 있는 사람만 신고할 수 있다.
+- 앱은 게시물을 신고하면 `hidePost`도 함께 해 그 글을 내 피드에서 뺀다.
+- 처리(검토·제재) 화면은 아직 없다. Firebase 콘솔에서 `reports`를 본다.
+
+### 회원 탈퇴 (deleteAccount)
+
+[accountDeletion.ts](functions/src/accountDeletion.ts). 중간에 실패해도 다시 부르면 남은 것을 이어서 지운다.
+
+1. 내 게시물(달린 댓글·응원·공유 포함)과 그 글을 저장한 bookmarks
+2. 다른 글에 남긴 댓글(답글 포함)·응원·공유 — 글의 카운트도 줄인다
+3. 내 bookmarks, follows 양쪽(상대의 팔로워·팔로잉 수와 등급도 고친다), 차단 사본
+4. 다른 사람에게 간 내 알림(actor_uid), 공원 주간 랭킹 기록, runs
+5. 대화방: 메시지는 남기고 "탈퇴한 러너"로 바꾼다(위 conversations 참고)
+6. 같이 달리기 방에서 나가기(방장이면 넘기고, 아무도 없으면 닫는다)
+7. handles, `users/{uid}` 아래 전부, Storage의 profiles/·posts/·camera/{uid}/
+8. Firebase Auth 계정
 
 ### 피드 구성 (Fan-out 대신)
 
@@ -547,6 +582,8 @@ follows:              follower_id ASC, created_at DESC
 follows:              following_id ASC, created_at DESC
 ```
 
+컬렉션 그룹 단일 필드 색인(회원 탈퇴가 내 흔적을 찾는 데 쓴다): comments.uid, likes.uid, shares.uid, notifications.actor_uid, runners.uid
+
 `dalryo-dev` 서버에는 이전 공개 방 목록용 인덱스 1개가 더 남아 있다(삭제하려면 `--force` 배포 필요).
 
 ---
@@ -555,7 +592,7 @@ follows:              following_id ASC, created_at DESC
 
 | 이전 설계 | 지금 |
 |---|---|
-| `onPostCreate`·`onPostDelete`가 팔로워 `users/{uid}/feed`에 글을 복사 (Fan-out) | 없음. `socialAction.homeFeed`가 요청 때 만든다. feed 서브컬렉션은 비어 있고 규칙만 남아 있다 |
+| `onPostCreate`·`onPostDelete`가 팔로워 `users/{uid}/feed`에 글을 복사 (Fan-out) | 없음. `socialAction.homeFeed`가 요청 때 만든다. feed 서브컬렉션과 그 규칙도 지웠다(2026-11-25) |
 | `onLikeCreate`·`onLikeDelete`·`onCommentCreate`·`onFollowCreate`·`onFollowDelete` 트리거 | 없음. `socialAction`이 문서·카운트·알림을 한 트랜잭션에서 처리 |
 | `tierCalculator`가 매일 등급 계산 | 없음. 팔로우·차단 때 바로 다시 계산. tier_up 알림 없음 |
 | 앱이 posts·likes·comments·follows·bookmarks·together_rooms를 직접 씀 | 앱은 쓸 수 없고 서버 함수만 쓴다 |

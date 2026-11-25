@@ -318,7 +318,6 @@ function GrowthRow({
           <ProgressBar
             value={after.progress}
             height={5}
-            trackColor={colors.primaryBorder}
           />
         </>
       ) : stageAfter === 'runner' ? (
@@ -427,7 +426,7 @@ const styles = themedStyles(() => ({
   revealContent: { flexGrow: 1, justifyContent: 'center' },
   titleBlock: { gap: spacing.xs },
   growthPanel: {
-    backgroundColor: colors.primarySoft,
+    backgroundColor: colors.secondarySoft,
     borderRadius: radius.lg,
     overflow: 'hidden',
   },

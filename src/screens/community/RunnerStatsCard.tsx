@@ -211,7 +211,6 @@ export function RunnerStatsCard({
           {/* 회색 띠 위라 막대 바탕은 홈의 진행 막대처럼 연한 민트로 둔다 */}
           <ExpBar
             height={6}
-            trackColor={colors.primaryBorder}
             value={pet.stage === 'egg' ? 0 : next ? next.progress : 1}
           />
           {pet.stage === 'egg' && (
@@ -234,7 +233,6 @@ export function RunnerStatsCard({
               <AppText variant="heading">{pet[key] ?? 0}</AppText>
               <ProgressBar
                 height={5}
-                trackColor={colors.border}
                 value={(pet[key] ?? 0) / STAT_MAX}
               />
             </View>

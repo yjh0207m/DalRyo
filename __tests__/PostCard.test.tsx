@@ -42,7 +42,7 @@ jest.mock('../src/services/media.service', () => ({
   uploadPhoto: jest.fn(),
 }));
 jest.mock('../src/services/run.service', () => ({
-  fetchRecentRuns: jest.fn(),
+  fetchMonthlyRuns: async () => [],
 }));
 jest.mock('../src/services/chat.service', () => ({
   watchConversations: () => () => {},
@@ -314,6 +314,33 @@ describe('the post menu', () => {
       uid: 'other',
       blocked: true,
     });
+  });
+
+  test('someone else’s post can be reported, which needs a reason first', async () => {
+    await renderFull();
+    await press('게시물 메뉴');
+    await choose('게시물 신고');
+    const submit = () => tree.root.findByProps({ label: '신고하기' });
+    expect(submit().props.disabled).toBe(true);
+    await press('스팸·광고');
+    expect(submit().props.disabled).toBe(false);
+    await act(async () => submit().props.onPress());
+    // 신고한 글은 바로 사라지고, 서버에서도 이 사람의 피드에서 숨긴다
+    expect(tree.toJSON()).toBeNull();
+    expect(onDeleted).toHaveBeenCalledTimes(1);
+    expect(mockAction).toHaveBeenCalledWith('report', {
+      targetType: 'post',
+      targetId: 'one',
+      reason: 'spam',
+      detail: '',
+    });
+    expect(mockAction).toHaveBeenCalledWith('hidePost', { postId: 'one' });
+  });
+
+  test('my own post has nothing to report', async () => {
+    await renderFull(mine);
+    await press('게시물 메뉴');
+    expect(texts()).not.toContain('신고');
   });
 
   test('if blocking fails the post comes back', async () => {

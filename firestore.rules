@@ -105,7 +105,6 @@ service cloud.firestore {
         allow create: if isOwner(uid) && id == uid && request.resource.data.uid == uid && validCharacter(request.resource.data);
         allow update, delete: if false;
       }
-      match /feed/{id} { allow read: if isOwner(uid); allow write: if false; }
       match /notifications/{id} {
         allow read: if isOwner(uid);
         allow update: if isOwner(uid) && validNotification(request.resource.data) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['is_read']);

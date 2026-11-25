@@ -33,15 +33,6 @@ export async function markNotificationRead(id: string) {
   await myNotifications().doc(id).update({is_read: true});
 }
 
-export async function getFCMToken() {
-  try {
-    await messaging().requestPermission();
-    return await messaging().getToken();
-  } catch {
-    return null;
-  }
-}
-
 export async function requestPushPermission() {
   if (Platform.OS === 'android') {
     if (Number(Platform.Version) < 33) return true;

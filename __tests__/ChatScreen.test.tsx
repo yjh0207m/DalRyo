@@ -18,6 +18,7 @@ import {
   ChatScreen,
   ConversationView,
 } from '../src/screens/community/ChatScreen';
+import { ReportSheet } from '../src/screens/community/ReportSheet';
 import { socialRequest } from '../src/services/social.service';
 import { ActionSheet, AppText } from '../src/components/ui';
 import type {
@@ -270,7 +271,7 @@ test('the direct conversation menu offers profile and block separately', async (
   expect(sheet.props.visible).toBe(true);
   expect(
     sheet.props.items.map((item: { label: string }) => item.label),
-  ).toEqual(['상대 프로필 보기', '이 방 알림 끄기', '대화 차단']);
+  ).toEqual(['상대 프로필 보기', '이 방 알림 끄기', '신고', '대화 차단']);
   await act(() => sheet.props.items[0].onPress());
   expect(onProfile).toHaveBeenCalledWith('peer');
 });
@@ -324,8 +325,65 @@ test('group messages show the correct authors and the menu shows participants an
     '참여자 3명 보기',
     '채팅방 이름 변경',
     '이 방 알림 끄기',
+    '신고',
     '채팅방 나가기',
   ]);
+});
+
+test('reporting a direct conversation sends the room and the peer', async () => {
+  await render();
+  const report = tree.root
+    .findByType(ActionSheet)
+    .props.items.find((item: { label: string }) => item.label === '신고');
+  await act(() => report.onPress());
+  const sheet = tree.root.findByType(ReportSheet);
+  expect(sheet.props.target).toEqual({ type: 'chat', id: 'room', uid: 'peer' });
+  (socialRequest as jest.Mock).mockClear();
+  await act(async () => {
+    sheet.props.onSubmit('abuse', ' 욕설을 했어요 ');
+  });
+  expect(socialRequest).toHaveBeenCalledWith('report', {
+    targetType: 'chat',
+    targetId: 'room',
+    uid: 'peer',
+    reason: 'abuse',
+    detail: '욕설을 했어요',
+  });
+});
+
+test('a conversation with a runner who left cannot send and hides profile and block', async () => {
+  const onProfile = jest.fn();
+  await act(() => {
+    tree = Renderer.create(
+      <ConversationView id="room" onBack={jest.fn()} onProfile={onProfile} />,
+    );
+  });
+  await type('초안');
+  await act(() =>
+    mockRoomNext({
+      ...room,
+      deleted_members: ['peer'],
+      profiles: {
+        ...room.profiles,
+        peer: { display_name: '탈퇴한 러너', profile_image: null },
+      },
+    }),
+  );
+  expect(sendButton().props.disabled).toBe(true);
+  const texts = tree.root
+    .findAll(node => String(node.type) === 'Text')
+    .map(node => node.props.children);
+  expect(texts).toEqual(
+    expect.arrayContaining([
+      '탈퇴한 러너',
+      '탈퇴한 러너와의 대화예요. 메시지를 보낼 수 없어요.',
+    ]),
+  );
+  expect(
+    tree.root
+      .findByType(ActionSheet)
+      .props.items.map((item: { label: string }) => item.label),
+  ).toEqual(['이 방 알림 끄기', '신고']);
 });
 
 test('the notification setting follows this member and updates only this room', async () => {
@@ -1003,16 +1061,24 @@ describe('the back button of the messages list', () => {
     expect(backs().length).toBeGreaterThan(0);
   });
 
-  test('can be left out, and the title then lines up with the content', async () => {
+  test('can be left out, and the list then uses the same header as the feed and explore', async () => {
     await act(async () => {
       tree = Renderer.create(<ChatScreen hideBack onBack={jest.fn()} />);
     });
     expect(backs()).toHaveLength(0);
+    // 피드·탐색처럼 영문 작은 제목을 쓰고, 화면 읽기 프로그램에는 한글 이름으로 읽힌다
+    const title = tree.root.find(
+      node =>
+        String(node.type) === 'Text' && node.props.children === 'MESSAGES',
+    );
+    expect(title.props.accessibilityRole).toBe('header');
+    expect(title.props.accessibilityLabel).toBe('메시지');
+    // 본문과 같은 좌우 여백에 둔다
     expect(
       tree.root.findAll(
         node =>
           typeof node.type === 'string' &&
-          StyleSheet.flatten(node.props.style)?.paddingLeft === 20,
+          StyleSheet.flatten(node.props.style)?.paddingHorizontal === 20,
       ).length,
     ).toBeGreaterThan(0);
   });

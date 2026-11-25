@@ -38,7 +38,7 @@ jest.mock('../src/services/media.service', () => ({
   uploadPhoto: jest.fn(),
 }));
 jest.mock('../src/services/run.service', () => ({
-  fetchRecentRuns: async () => [],
+  fetchMonthlyRuns: async () => [],
 }));
 jest.mock('../src/services/chat.service', () => ({
   watchConversations: () => () => {},

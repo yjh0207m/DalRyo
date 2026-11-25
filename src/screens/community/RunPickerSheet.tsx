@@ -286,11 +286,11 @@ const styles = themedStyles(() => ({
     justifyContent: 'center',
     gap: 2,
   },
-  recordedDay: { backgroundColor: colors.primarySoft },
+  recordedDay: { backgroundColor: colors.secondarySoft },
   selectedDay: { backgroundColor: colors.primaryAction },
   pressed: { opacity: 0.7 },
   dot: { width: 4, height: 4, borderRadius: 2, backgroundColor: 'transparent' },
-  recordedDot: { backgroundColor: colors.primary },
+  recordedDot: { backgroundColor: colors.secondary },
   selectedDot: { backgroundColor: colors.textOnPrimary },
   runs: {
     marginTop: spacing.md,

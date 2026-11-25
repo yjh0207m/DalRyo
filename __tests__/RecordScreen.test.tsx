@@ -3,6 +3,7 @@ import { StyleSheet, Text, View as MockView } from 'react-native';
 import Renderer, { act } from 'react-test-renderer';
 import { RecordScreen } from '../src/screens/run/RecordScreen';
 import type { RunDocument } from '../src/types/run.types';
+import { summaryNumber } from '../src/theme';
 const mockDetail = jest.fn();
 const now = new Date();
 const mockRuns = [1, 2].map(day => ({
@@ -183,7 +184,7 @@ test('the monthly total band keeps its own height and only gets roomier padding'
   expect(style.minHeight).toBeUndefined();
   expect(style.paddingVertical).toBe(28);
 });
-test('the monthly distance number uses its own stretch (MONTH_STRETCH, 1.11)', async () => {
+test('the monthly distance number uses the shared summary number (summaryNumber, 1.11)', async () => {
   await render();
   const hero = tree.root.findByProps({ testID: 'record-month-hero' });
   const stretched = hero
@@ -191,7 +192,8 @@ test('the monthly distance number uses its own stretch (MONTH_STRETCH, 1.11)', a
     .map(node => StyleSheet.flatten(node.props.style))
     .filter(style => style.transform);
   expect(stretched).toHaveLength(1);
-  expect(stretched[0].transform).toEqual([{ scaleY: 1.11 }]);
+  expect(stretched[0].transform).toEqual([{ scaleY: summaryNumber.stretch }]);
+  expect(stretched[0].fontSize).toBe(summaryNumber.fontSize);
 });
 test('the count next to the monthly list just says how many runs, like "2회"', async () => {
   await render();
@@ -201,4 +203,44 @@ test('the count next to the monthly list just says how many runs, like "2회"', 
   expect(all).toContain('이번 달 모아보기');
   expect(all).toContain('2회');
   expect(all.join('|')).not.toContain('회 달리기');
+});
+
+describe('a month without runs', () => {
+  const saved = [...mockRuns];
+  beforeEach(() => {
+    mockRuns.splice(0);
+  });
+  afterEach(() => {
+    mockRuns.push(...saved);
+  });
+  const startButtons = () =>
+    tree.root.findAll(
+      node =>
+        typeof node.type === 'function' &&
+        node.type.name === 'Button' &&
+        node.props.label === '달리기 시작',
+    );
+
+  test('this month offers to start a run, a past month does not', async () => {
+    const onStartRun = jest.fn();
+    await act(async () => {
+      tree = Renderer.create(
+        <RecordScreen
+          onNotificationPress={jest.fn()}
+          onSettingsPress={jest.fn()}
+          onStartRun={onStartRun}
+        />,
+      );
+    });
+    expect(startButtons()).toHaveLength(1);
+    await act(async () => startButtons()[0].props.onPress());
+    expect(onStartRun).toHaveBeenCalledTimes(1);
+    const previous = tree.root.find(
+      node =>
+        typeof node.props.onPress === 'function' &&
+        node.props.accessibilityLabel === '이전 달',
+    );
+    await act(async () => previous.props.onPress());
+    expect(startButtons()).toHaveLength(0);
+  });
 });

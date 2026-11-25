@@ -16,6 +16,8 @@ export type Conversation = {
   members: string[];
   profiles: Record<string, ChatProfile>;
   blocked_by: string[];
+  // 탈퇴한 사람. 1:1 대화에서는 이 사람과 더 이상 메시지를 주고받을 수 없다
+  deleted_members?: string[];
   muted_by?: string[];
   read_at: Record<string, number>;
   last_text: string;

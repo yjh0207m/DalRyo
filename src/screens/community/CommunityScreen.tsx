@@ -29,12 +29,14 @@ import {
   ChevronLeft,
   Settings as SettingsIcon,
   EyeOff,
+  Flag,
   Footprints as FootprintsIcon,
   ImagePlus,
   MapPin,
   MessageCircle,
   MessageSquare,
   Pencil,
+  Plus,
   Search,
   Share2,
   Trash2,
@@ -52,10 +54,12 @@ import {
   AppText,
   Button,
   Card,
+  Chip,
   FullPhoto,
   IconButton,
   PhotoSourceSheet,
   ScreenHeader,
+  SectionHeader,
 } from '../../components/ui';
 import { SCREEN_HEADER_HEIGHT } from '../../components/ui/ScreenHeader';
 import { RunningShoeIcon } from '../../components/ui/RunningShoeIcon';
@@ -65,6 +69,7 @@ import { CommentsSheet } from './CommentsSheet';
 import { RunnerStatsCard } from './RunnerStatsCard';
 import { RunPickerSheet, runDay, runTime } from './RunPickerSheet';
 import { RunnerTagSheet } from './RunnerTagSheet';
+import { ReportSheet, sendReport } from './ReportSheet';
 import { ConnectionsScreen, type ConnectionKind } from './ConnectionsScreen';
 import { CommunitySubNav, ROW_HEIGHT, type SubNavKey } from './CommunitySubNav';
 import { hasUnread, watchConversations } from '../../services/chat.service';
@@ -79,6 +84,8 @@ import {
   spacing,
   themedStyles,
   statusBarStyle,
+  typography,
+  switchColors,
 } from '../../theme';
 import { useHiddenContent } from '../../hooks/useHiddenContent';
 import { useServerFeed } from '../../hooks/useServerFeed';
@@ -142,7 +149,6 @@ type Route =
   | { page: 'rankings' }
   | { page: 'saved' }
   | { page: 'chat'; peer?: string; roomId?: string };
-const WRITE_SIZE = 52;
 const VISIBILITY = {
   public: '전체 공개',
   followers: '팔로워 공개',
@@ -196,12 +202,8 @@ function CommunityContent(
   // 서브 네비게이션이 고르는 커뮤니티 안의 큰 화면. 하단 바 두 개는 그대로 두고 이 영역만 바뀐다
   const [section, setSection] = useState<SubNavKey>('feed');
   const [chatDetail, setChatDetail] = useState(false);
-  // 서브 네비게이션의 펼침 정도. 글쓰기 버튼이 같은 값으로 움직여서 메뉴와 동시에 비켜 준다
+  // 서브 네비게이션의 펼침 정도(서브 네비게이션이 쓴다)
   const subNavProgress = useRef(new Animated.Value(0)).current;
-  const writeLift = subNavProgress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, -(ROW_HEIGHT + 12)],
-  });
   const [stack, setStack] = useState<Route[]>(() =>
     props.initialRoute
       ? [{ page: 'feed' }, props.initialRoute]
@@ -230,6 +232,8 @@ function CommunityContent(
   const showPost = (id: string) => push({ page: 'post', id });
   const showProfile = (uid: string) => push({ page: 'profile', uid });
   const showComments = (id: string) => props.onComments(id, showProfile);
+  // 글쓰기는 피드·탐색·내 프로필 머리글의 + 버튼으로 연다
+  const writePost = () => push({ page: 'compose' });
   const changed = () => {
     feed.refresh();
   };
@@ -359,6 +363,7 @@ function CommunityContent(
           bottomInset={sectionReserve}
           onBack={leaveSection}
           onSearch={() => push({ page: 'search' })}
+          onWrite={writePost}
           onOpen={showPost}
           onComments={showComments}
           onProfile={showProfile}
@@ -383,6 +388,7 @@ function CommunityContent(
           key="me"
           uid={myUid()}
           hideBack
+          onWrite={writePost}
           bottomInset={sectionReserve}
           onBack={leaveSection}
           onPost={showPost}
@@ -416,32 +422,33 @@ function CommunityContent(
             hasUnread={props.hasUnread}
             onNotificationPress={props.onNotificationPress}
             onSettingsPress={props.onSettingsPress}
+            onCreatePress={writePost}
           />
         }
       >
         <View style={styles.discoveryRow}>
+          {/* 옅은 색 버튼. 같이 달리기는 브랜드 파랑, 러너 랭킹은 트로피에 맞춘 골드. 두 버튼은 폭을 반씩 나눈다 */}
           {props.onTogetherPress && (
-            <Pressable
-              accessibilityRole="button"
+            <Button
+              label="같이 달리기"
               accessibilityLabel="같이 달리기"
-              onPress={() => props.onTogetherPress?.()}
+              icon={Users}
+              size="md"
+              variant="soft"
               style={styles.discovery}
-            >
-              <Users size={15} color={colors.primaryInk} />
-              <AppText variant="label" color={colors.primaryInk}>
-                같이 달리기
-              </AppText>
-            </Pressable>
+              onPress={() => props.onTogetherPress?.()}
+            />
           )}
-          <Pressable
-            accessibilityRole="button"
+          <Button
+            label="러너 랭킹"
             accessibilityLabel="러너 랭킹"
-            onPress={() => push({ page: 'rankings' })}
+            icon={Trophy}
+            size="md"
+            variant="soft"
+            tone="accent"
             style={styles.discovery}
-          >
-            <Trophy size={15} color={colors.textMuted} />
-            <AppText variant="label">러너 랭킹</AppText>
-          </Pressable>
+            onPress={() => push({ page: 'rankings' })}
+          />
         </View>
         {feed.status === 'loading' ? (
           <Loading />
@@ -451,6 +458,7 @@ function CommunityContent(
           <Empty
             title="아직 게시물이 없어요"
             detail="러너를 팔로우하거나, 오늘의 달리기를 기록과 함께 나눠 보세요."
+            action={{ label: '글쓰기', onPress: writePost }}
           />
         ) : (
           feedPosts.map(post => (
@@ -500,26 +508,6 @@ function CommunityContent(
         >
           {sectionPage()}
         </View>
-      )}
-      {chrome && section !== 'messages' && (
-        <Animated.View
-          testID="community-write-dock"
-          pointerEvents="box-none"
-          style={[
-            styles.writeFab,
-            { bottom: subNavBottom + (ROW_HEIGHT - WRITE_SIZE) / 2 },
-            { transform: [{ translateY: writeLift }] },
-          ]}
-        >
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="글쓰기"
-            onPress={() => push({ page: 'compose' })}
-            style={styles.writeButton}
-          >
-            <Pencil size={22} color={colors.textOnPrimary} />
-          </Pressable>
-        </Animated.View>
       )}
       {chrome && (
         <CommunitySubNav
@@ -630,6 +618,9 @@ function FeedScroll({
             refreshing={refreshing}
             onRefresh={onRefresh}
             tintColor={colors.primary}
+            // Android 당겨서 새로고침 동그라미. 다크 모드에서도 흰 원이 튀지 않게 띄운 면 색을 쓴다
+            colors={[colors.primary]}
+            progressBackgroundColor={colors.surfaceRaised}
           />
         }
       >
@@ -696,8 +687,7 @@ function Page({
             />
           )}
           <AppText
-            variant={hideBack ? 'label' : 'subheading'}
-            color={hideBack ? colors.textMuted : colors.text}
+            variant="heading"
             accessibilityRole="header"
             accessibilityLabel={headerText || title}
             numberOfLines={1}
@@ -735,13 +725,30 @@ function Avatar({ uri, size = 44 }: { uri: string | null; size?: number }) {
 function Loading() {
   return <ActivityIndicator style={styles.loading} color={colors.primary} />;
 }
-function Empty({ title, detail }: { title: string; detail: string }) {
+// 빈 화면. action이 있으면 바로 할 수 있는 일을 버튼으로 둔다
+function Empty({
+  title,
+  detail,
+  action,
+}: {
+  title: string;
+  detail: string;
+  action?: { label: string; onPress: () => void };
+}) {
   return (
     <Card style={styles.empty}>
       <AppText variant="subheading">{title}</AppText>
       <AppText color={colors.textMuted} align="center">
         {detail}
       </AppText>
+      {action && (
+        <Button
+          label={action.label}
+          variant="secondary"
+          size="md"
+          onPress={action.onPress}
+        />
+      )}
     </Card>
   );
 }
@@ -792,6 +799,8 @@ export function PostCard({
   const [gone, setGone] = useState(false);
   // null은 메뉴를 연 적이 없다는 뜻이다. 그때까지는 시트를 만들지 않는다
   const [menuOpen, setMenuOpen] = useState<boolean | null>(null);
+  // 신고 시트
+  const [reportOpen, setReportOpen] = useState(false);
   useEffect(() => setPost(initialPost), [initialPost]);
   // 피드는 요청해서 받는 목록이라, 응원·댓글 수와 수정·삭제는 글마다 직접 지켜본다.
   // 상세 화면은 부모가 이미 지켜보고 있다
@@ -953,6 +962,12 @@ export function PostCard({
     : [
         { label: '이 게시물 보지 않음', icon: EyeOff, onPress: hide },
         {
+          label: '신고',
+          accessibilityLabel: '게시물 신고',
+          icon: Flag,
+          onPress: () => setReportOpen(true),
+        },
+        {
           label: `${authorName} 차단`,
           icon: Ban,
           danger: true,
@@ -1022,6 +1037,28 @@ export function PostCard({
             items={menuItems}
           />
         )}
+        {reportOpen && (
+          <ReportSheet
+            target={{ type: 'post', id: post.post_id }}
+            note="신고한 게시물은 더 이상 보이지 않아요."
+            onClose={() => setReportOpen(false)}
+            onSubmit={(reason, detailText) => {
+              // 신고와 함께 내 피드에서 숨긴다
+              setGone(true);
+              onDeleted?.();
+              sendReport(
+                { type: 'post', id: post.post_id },
+                reason,
+                detailText,
+                {
+                  successLabel: '신고했어요. 이 게시물은 더 이상 보이지 않아요',
+                  also: () =>
+                    socialRequest('hidePost', { postId: post.post_id }),
+                },
+              );
+            }}
+          />
+        )}
       </View>
       <Pressable
         accessibilityRole={detail ? undefined : 'button'}
@@ -1035,7 +1072,7 @@ export function PostCard({
           <View style={styles.runTile}>
             <View style={styles.runTileTop}>
               <Footprints size={20} color={colors.primaryInk} />
-              <AppText variant="label" color={colors.primaryInk}>
+              <AppText variant="label" color={colors.textMuted}>
                 공유한 러닝 기록
               </AppText>
             </View>
@@ -1053,7 +1090,7 @@ export function PostCard({
             </View>
             <View style={styles.runTileStats}>
               {!!post.avg_pace_sec && (
-                <AppText variant="subheading" color={colors.primaryInk}>
+                <AppText variant="subheading" color={colors.text}>
                   {formatPace(post.avg_pace_sec)} /km
                 </AppText>
               )}
@@ -1368,26 +1405,15 @@ export function Composer({
     <View style={styles.choices} accessibilityRole="radiogroup">
       {(
         Object.entries(VISIBILITY) as Array<[SocialPost['visibility'], string]>
-      ).map(([value, label]) => {
-        const selected = visibility === value;
-        return (
-          <Pressable
-            key={value}
-            accessibilityRole="radio"
-            accessibilityLabel={label}
-            accessibilityState={{ selected }}
-            onPress={() => setVisibility(value)}
-            style={[styles.choice, selected && styles.choiceOn]}
-          >
-            <AppText
-              variant="label"
-              color={selected ? colors.primaryInk : colors.textMuted}
-            >
-              {label}
-            </AppText>
-          </Pressable>
-        );
-      })}
+      ).map(([value, label]) => (
+        <Chip
+          key={value}
+          label={label}
+          selected={visibility === value}
+          grow
+          onPress={() => setVisibility(value)}
+        />
+      ))}
     </View>
   );
   if (post)
@@ -1520,7 +1546,7 @@ export function Composer({
               value={shareLocation && !!location}
               disabled={!location}
               onValueChange={setShareLocation}
-              trackColor={{ false: colors.border, true: colors.primary }}
+              {...switchColors(shareLocation && !!location)}
             />
           </View>
         </ComposeSection>
@@ -1682,7 +1708,7 @@ function AttachedRun({ run }: { run: RunDocument }) {
     <View testID="composer-attached-run" style={styles.composerRun}>
       <View style={styles.runTileTop}>
         <Footprints size={18} color={colors.primaryInk} />
-        <AppText variant="label" color={colors.primaryInk}>
+        <AppText variant="label" color={colors.textMuted}>
           {`${runDay(run)} · ${runTime(run)}`}
         </AppText>
       </View>
@@ -1772,6 +1798,7 @@ function ExplorePage({
   bottomInset,
   onBack,
   onSearch,
+  onWrite,
   onOpen,
   onComments,
   onProfile,
@@ -1780,6 +1807,7 @@ function ExplorePage({
   bottomInset: number;
   onBack: () => void;
   onSearch: () => void;
+  onWrite: () => void;
   onOpen: (id: string) => void;
   onComments: (id: string) => void;
   onProfile: (uid: string) => void;
@@ -1794,21 +1822,18 @@ function ExplorePage({
         refreshing={feed.status === 'loading'}
         onRefresh={feed.refresh}
         header={
-          <View style={styles.exploreHeader}>
-            <AppText
-              variant="label"
-              color={colors.textMuted}
-              accessibilityRole="header"
-              accessibilityLabel="탐색"
-            >
-              EXPLORE
-            </AppText>
+          <SectionHeader label="EXPLORE" accessibilityLabel="탐색">
             <IconButton
               icon={Search}
               accessibilityLabel="러너 검색"
               onPress={onSearch}
             />
-          </View>
+            <IconButton
+              icon={Plus}
+              accessibilityLabel="글쓰기"
+              onPress={onWrite}
+            />
+          </SectionHeader>
         }
       >
         {feed.status === 'loading' ? (
@@ -2001,6 +2026,7 @@ export function ProfilePage({
   onMessage,
   onConnections,
   onProfile,
+  onWrite,
 }: {
   uid: string;
   // 화면 아래에 떠 있는 바에 끝이 가려지지 않도록 비워 둘 높이
@@ -2020,12 +2046,15 @@ export function ProfilePage({
   onConnections?: (kind: ConnectionKind) => void;
   // 게시물에 함께 달린 사람으로 태그된 다른 러너의 프로필을 연다
   onProfile?: (uid: string) => void;
+  // 있으면 머리글에 글쓰기(+) 버튼을 둔다(서브 네비게이션의 내 프로필)
+  onWrite?: () => void;
 }) {
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [runner, setRunner] = useState<RunnerProfile | null>(null);
   const [postView, setPostView] = useState<'list' | 'grid'>('list');
   const [runsOpen, setRunsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState<boolean | null>(null);
+  const [reportOpen, setReportOpen] = useState(false);
   const [following, setFollowing] = useState(false);
   const [friend, setFriend] = useState(false);
   const [posts, setPosts] = useState<SocialPost[]>([]);
@@ -2143,6 +2172,12 @@ export function ProfilePage({
     });
   };
   const state = (on?: boolean) => (on === false ? '꺼짐' : '켜짐');
+  const reportItem: ActionSheetItem = {
+    label: '신고',
+    accessibilityLabel: '러너 신고',
+    icon: Flag,
+    onPress: () => setReportOpen(true),
+  };
   const menuItems: ActionSheetItem[] = mine
     ? [
         ...(onSettings
@@ -2169,8 +2204,9 @@ export function ProfilePage({
         },
       ]
     : blocked
-    ? [{ label: '차단 해제', icon: Ban, onPress: unblock }]
+    ? [{ label: '차단 해제', icon: Ban, onPress: unblock }, reportItem]
     : [
+        reportItem,
         {
           label: `${profile?.display_name ?? '러너'} 차단`,
           icon: Ban,
@@ -2183,7 +2219,16 @@ export function ProfilePage({
       title="러너 프로필"
       hideBack={hideBack}
       testID={hideBack ? 'section-profile' : undefined}
-      // 맨 위에는 아이디를 보여 준다. 아이디가 없는 기존 사용자는 닉네임을 보여 준다
+      headerRight={
+        onWrite && (
+          <IconButton
+            icon={Plus}
+            accessibilityLabel="글쓰기"
+            onPress={onWrite}
+          />
+        )
+      }
+      // 내 프로필과 다른 러너의 프로필 모두 맨 위에 아이디를 보여 준다. 아이디가 없는 기존 사용자는 닉네임을 보여 준다
       headerText={
         profile
           ? profile.user_id
@@ -2208,7 +2253,11 @@ export function ProfilePage({
         ) : (
           profile && (
             <>
-              <Card tone="flat" padded={false} style={styles.runnerHero}>
+              <Card
+                tone="flat"
+                padded={false}
+                style={[styles.runnerHero, mine && styles.runnerHeroMine]}
+              >
                 <View style={styles.runnerIdentity}>
                   <Avatar uri={profile.profile_image} size={80} />
                   <View style={styles.runnerIdentityText}>
@@ -2408,6 +2457,20 @@ export function ProfilePage({
           items={menuItems}
         />
       )}
+      {reportOpen && (
+        <ReportSheet
+          target={{ type: 'user', id: uid }}
+          note={
+            blocked
+              ? undefined
+              : '이 러너가 보이지 않게 하려면 차단도 해 주세요.'
+          }
+          onClose={() => setReportOpen(false)}
+          onSubmit={(reason, detail) =>
+            sendReport({ type: 'user', id: uid }, reason, detail)
+          }
+        />
+      )}
     </Page>
   );
 }
@@ -2580,15 +2643,18 @@ function SavedPage({
 const styles = themedStyles(() => ({
   // 아래쪽 여백은 위보다 좁게 둔다. 세 칸 줄이 카드 바닥에서 떠 보이지 않게 한다
   runnerHero: { gap: spacing.md, paddingBottom: spacing.md },
+  // 내 프로필은 숫자 줄 아래에 버튼이 없어, 아래 캐릭터 구역과의 간격만 남긴다
+  runnerHeroMine: { paddingBottom: 0 },
   runnerIdentity: { flexDirection: 'row', alignItems: 'center', gap: 16 },
   runnerIdentityText: { flex: 1, gap: 4 },
   runnerLine: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   // 오른쪽 위 구석에 붙이되 눌리는 영역은 그대로 둔다
   runnerMenu: { alignSelf: 'flex-start', marginTop: -8, marginRight: -10 },
   // 같은 폭과 여백으로 숫자와 라벨을 정렬한다.
+  // 위아래 여백을 같게 두어 다른 러너의 프로필에서 숫자 줄이 아래 버튼에 붙어 보이지 않게 한다
   runnerCounts: {
     flexDirection: 'row',
-    paddingTop: spacing.md,
+    paddingVertical: 6,
   },
   runnerCount: {
     flex: 1,
@@ -2661,25 +2727,14 @@ const styles = themedStyles(() => ({
     gap: spacing.sm,
     paddingHorizontal: spacing.md,
   },
-  // 뒤로 가기 버튼이 없으면 제목을 본문과 같은 왼쪽 선에 맞춘다
-  headerNoBack: { paddingLeft: spacing.xl, minHeight: SCREEN_HEADER_HEIGHT },
+  // 뒤로 가기 버튼이 없는 화면(서브 메뉴의 내 프로필). 제목은 본문과 같은 왼쪽 선에,
+  // 오른쪽 버튼은 탐색·메시지 헤더의 버튼과 같은 자리에 둔다. 높이도 그 헤더들과 같다
+  headerNoBack: {
+    paddingHorizontal: spacing.xl,
+    minHeight: SCREEN_HEADER_HEIGHT,
+  },
   content: { padding: spacing.xl, paddingBottom: 60, gap: spacing.md },
   feedCanvas: { backgroundColor: colors.surface },
-  // 오른쪽 아래에 떠 있는 원형 글쓰기 버튼. 서브 네비게이션이 펼쳐지면 위로 비켜 준다
-  writeFab: { position: 'absolute', right: spacing.xl },
-  writeButton: {
-    width: WRITE_SIZE,
-    height: WRITE_SIZE,
-    borderRadius: WRITE_SIZE / 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primaryAction,
-    shadowColor: '#101814',
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 3,
-  },
   toolbar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2745,27 +2800,13 @@ const styles = themedStyles(() => ({
     backgroundColor: colors.surface,
   },
   feedSheet: { flex: 1, overflow: 'hidden', backgroundColor: colors.surface },
-  exploreHeader: {
-    height: SCREEN_HEADER_HEIGHT,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
   discoveryRow: {
     flexDirection: 'row',
     padding: 16,
     gap: 8,
     marginBottom: 6,
   },
-  discovery: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-    flex: 1,
-    paddingHorizontal: 8,
-    minHeight: 40,
-  },
+  discovery: { flex: 1, paddingHorizontal: spacing.md },
   postHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2808,7 +2849,7 @@ const styles = themedStyles(() => ({
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.xxl,
     gap: spacing.md,
-    backgroundColor: colors.primarySoft,
+    backgroundColor: colors.secondarySoft,
   },
   runTileTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   runTileDistance: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
@@ -2819,12 +2860,9 @@ const styles = themedStyles(() => ({
     gap: spacing.md,
   },
   runTileNumber: {
+    ...typography.numberHero,
     flexShrink: 1,
-    fontFamily: fonts.extrabold,
-    fontSize: 62,
-    lineHeight: 74,
     color: colors.primaryInk,
-    letterSpacing: -2,
   },
   attachedRun: {
     flexDirection: 'row',
@@ -2924,29 +2962,13 @@ const styles = themedStyles(() => ({
     gap: spacing.sm,
     padding: spacing.lg,
     borderRadius: radius.md,
-    backgroundColor: colors.primarySoft,
+    backgroundColor: colors.secondarySoft,
   },
   attachedRunNumber: {
-    fontFamily: fonts.extrabold,
-    fontSize: 40,
-    lineHeight: 46,
+    ...typography.numberLarge,
     color: colors.primaryInk,
-    letterSpacing: -1.2,
   },
   choices: { flexDirection: 'row', gap: spacing.sm },
-  choice: {
-    flex: 1,
-    minHeight: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  choiceOn: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primarySoft,
-  },
   toggleRow: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -277,10 +277,10 @@ export function MainAppScreen({user, character, onHomeReady}: Props) {
   else if (together && user && character) overlay = <SlideScreen key="together" onBack={() => setTogether(null)}>{back => <TogetherScreen user={user} character={character} initialFriendUid={together.friendUid} onBack={back} onPosted={() => {setTogether(null); setActiveTab('community');}} />}</SlideScreen>;
 
   const renderTab = (tab: MainTab) => {
-    if (tab === 'home') return <HomeScreen user={user} character={character} onItemsPress={() => setInventoryMode('owned')} onReady={onHomeReady} {...header} />;
-    if (tab === 'growth') return <GrowthScreen user={user} character={character} {...header} />;
+    if (tab === 'home') return <HomeScreen user={user} character={character} onItemsPress={() => setInventoryMode('owned')} onStartRun={openRunSheet} onReady={onHomeReady} {...header} />;
+    if (tab === 'growth') return <GrowthScreen user={user} character={character} onStartRun={openRunSheet} {...header} />;
     if (tab === 'community') return <CommunityScreen key={communityKey} {...header} onProfileSettingsPress={openProfileSettings} initialRoute={communityLink ?? undefined} onInitialRouteHandled={() => setCommunityLink(null)} onSubpageChange={setCommunitySubpage} onTogetherPress={friendUid => setTogether({friendUid})}/>;
-    if (tab === 'records') return <RecordScreen {...header} character={character} onSubpageChange={setRecordSubpage} onPosted={() => setActiveTab('community')}/>;
+    if (tab === 'records') return <RecordScreen {...header} character={character} onSubpageChange={setRecordSubpage} onPosted={() => setActiveTab('community')} onStartRun={openRunSheet}/>;
     return null;
   };
 

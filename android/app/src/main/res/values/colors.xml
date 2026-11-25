@@ -1,0 +1,5 @@
+<resources>
+    <!-- 달료 블루 원톤. 입력 커서·선택 핸들·시스템 알림창 버튼에 쓰인다 (src/theme의 primary) -->
+    <color name="dalryo_primary">#0A66C2</color>
+    <color name="dalryo_accent">#0A66C2</color>
+</resources>

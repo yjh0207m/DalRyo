@@ -523,7 +523,7 @@ describe('the phone frame around the card', () => {
         StyleSheet.flatten(node.props.style)?.aspectRatio === 4 / 5,
     )[0];
     expect(StyleSheet.flatten(card.props.style).backgroundColor).toBe(
-      '#178d7c',
+      '#0A66C2',
     );
   });
 });

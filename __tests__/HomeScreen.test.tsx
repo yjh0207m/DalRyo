@@ -118,6 +118,30 @@ test('a day without runs shows the start hint even when earlier runs exist', asy
   expect(texts()).not.toContain('0.00');
 });
 
+test('a day without runs offers to start one right there', async () => {
+  const onStartRun = jest.fn();
+  mockRuns.mockReturnValue(mockRuns().slice(0, 1));
+  await act(() =>
+    tree.update(
+      <HomeScreen
+        user={user}
+        character={character}
+        onNotificationPress={jest.fn()}
+        onSettingsPress={jest.fn()}
+        onStartRun={onStartRun}
+      />,
+    ),
+  );
+  const start = tree.root.find(
+    node =>
+      typeof node.type === 'function' &&
+      node.type.name === 'Button' &&
+      node.props.label === '달리기 시작',
+  );
+  await act(async () => start.props.onPress());
+  expect(onStartRun).toHaveBeenCalledTimes(1);
+});
+
 test('the running mate card shows the name and level without a speech line', () => {
   const all = texts();
   expect(all).not.toContain('RUNNING MATE');

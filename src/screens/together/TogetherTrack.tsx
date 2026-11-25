@@ -242,7 +242,7 @@ const styles = themedStyles(() => ({
     paddingBottom: 8,
     backgroundColor: colors.surface,
   },
-  ownLane: { backgroundColor: colors.background },
+  ownLane: { backgroundColor: colors.surfaceMuted },
   rail: {
     height: 62,
     backgroundColor: colors.surfaceMuted,

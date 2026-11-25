@@ -27,7 +27,13 @@ import { useDialect } from '../../locales/DialectProvider';
 import { LobbyCharacter } from '../../components/character/LobbyCharacter';
 import { CompanionScene } from '../../components/scene/CompanionScene';
 import { StreakChip } from '../../components/game/Hud';
-import { AppText, Card, IconButton, ProgressBar } from '../../components/ui';
+import {
+  AppText,
+  Button,
+  Card,
+  IconButton,
+  ProgressBar,
+} from '../../components/ui';
 import { RunRecordsStatus } from '../../components/ui/RunRecordsStatus';
 import { useRunRecords } from '../../hooks/useRunRecords';
 import { TAB_BAR_HEIGHT } from '../../navigation/BottomTabBar';
@@ -35,7 +41,7 @@ import {
   fetchThisWeekRuns,
   getRunStartedAtDate,
 } from '../../services/run.service';
-import { colors, fonts, radius, spacing, themedStyles } from '../../theme';
+import { colors, radius, spacing, themedStyles, typography } from '../../theme';
 import { formatDuration } from '../../utils/pace';
 import {
   CHARACTER_STAGE_ORDER,
@@ -58,6 +64,8 @@ type Props = {
   onSettingsPress: () => void;
   // 아이템(꾸미기·보관함)을 연다. 마이룸·퀘스트는 아직 준비 중이라 눌러도 안내만 나온다
   onItemsPress?: () => void;
+  // 달리기 시작 시트를 연다(오늘 기록이 없을 때의 바로 시작 버튼)
+  onStartRun?: () => void;
   onMyRoomPress?: () => void;
   onQuestPress?: () => void;
   // 캐릭터가 그려지고 이번 주 기록을 불러와, 화면이 다 채워졌을 때 한 번 알린다. 앱을 켤 때 로딩 화면을 이때 걷는다
@@ -76,6 +84,7 @@ export function HomeScreen({
   onNotificationPress,
   onSettingsPress,
   onItemsPress,
+  onStartRun,
   onMyRoomPress,
   onQuestPress,
   hasUnread,
@@ -189,7 +198,11 @@ export function HomeScreen({
               <View style={styles.companionFooter}>
                 {/* 지금까지 달린 거리를 강조하고, 다음 단계까지 남은 거리는 작게 곁들인다 */}
                 <View style={styles.progressRow}>
-                  <AppText variant="heading" color={colors.primaryInk}>
+                  <AppText
+                    variant="heading"
+                    color={colors.primaryInk}
+                    style={styles.currentKm}
+                  >
                     현재 {totalKm.toFixed(1)}km
                   </AppText>
                   <AppText
@@ -208,7 +221,6 @@ export function HomeScreen({
                 </View>
                 <ProgressBar
                   height={5}
-                  trackColor={colors.primaryBorder}
                   value={
                     character.stage === 'egg' ? 0 : next ? next.progress : 1
                   }
@@ -272,9 +284,20 @@ export function HomeScreen({
               <RunRecordsStatus status={status} onRetry={retry} />
             </Card>
           ) : today.count === 0 ? (
-            <AppText color={colors.textMuted}>
-              오늘의 첫 달리기를 시작해 보세요.
-            </AppText>
+            <View style={styles.todayEmpty}>
+              <AppText color={colors.textMuted}>
+                오늘의 첫 달리기를 시작해 보세요.
+              </AppText>
+              {onStartRun && (
+                <Button
+                  label="달리기 시작"
+                  icon={Footprints}
+                  variant="secondary"
+                  size="md"
+                  onPress={onStartRun}
+                />
+              )}
+            </View>
           ) : (
             <View style={styles.todayCard}>
               <View style={styles.distanceMetric}>
@@ -446,7 +469,7 @@ function Shortcut({
       ]}
     >
       <Icon
-        color={ready ? colors.primaryInk : colors.textMuted}
+        color={ready ? colors.text : colors.textMuted}
         size={23}
         strokeWidth={1.9}
       />
@@ -463,6 +486,7 @@ function Shortcut({
 }
 
 const styles = themedStyles(() => ({
+  todayEmpty: { gap: spacing.md, alignItems: 'flex-start' },
   screen: { flex: 1, backgroundColor: colors.surface },
   content: { paddingHorizontal: spacing.xl, paddingTop: spacing.sm },
   header: {
@@ -480,7 +504,8 @@ const styles = themedStyles(() => ({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerActions: { flexDirection: 'row', gap: 8 },
+  // 알림·설정 버튼을 붙여 둔다(커뮤니티 등 다른 탭 머리글과 같은 간격)
+  headerActions: { flexDirection: 'row' },
   // 본문 좌우 여백(spacing.xl)을 상쇄해 화면 양끝까지 닿게 한다
   companion: {
     marginTop: spacing.lg,
@@ -552,13 +577,11 @@ const styles = themedStyles(() => ({
     gap: 8,
   },
   progressLabel: { flex: 1, textAlign: 'right' },
+  // "현재 n km"만 제목(heading)보다 작게. 굵기는 제목과 같다
+  currentKm: { fontSize: 15, lineHeight: 21, letterSpacing: -0.2 },
   distance: {
+    ...typography.numberLarge,
     flexShrink: 1,
-    fontFamily: fonts.bold,
-    fontSize: 38,
-    lineHeight: 46,
-    letterSpacing: -1.2,
-    fontVariant: ['tabular-nums'],
   },
   smallMetric: { flex: 0.8, gap: 3 },
   summaryNumber: {

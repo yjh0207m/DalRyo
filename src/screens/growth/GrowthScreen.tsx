@@ -4,10 +4,11 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
-import { Sparkles } from 'lucide-react-native';
+import { Footprints, Sparkles } from 'lucide-react-native';
 import {
   AppText,
   Badge,
+  Button,
   Card,
   ProgressBar,
   ScreenHeader,
@@ -32,6 +33,8 @@ type Props = {
   hasUnread?: boolean;
   onNotificationPress: () => void;
   onSettingsPress: () => void;
+  // 달리기 시작 시트를 연다(최근 7일 기록이 없을 때)
+  onStartRun?: () => void;
 };
 
 const DAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
@@ -47,6 +50,7 @@ export function GrowthScreen({
   onNotificationPress,
   onSettingsPress,
   hasUnread,
+  onStartRun,
 }: Props) {
   const insets = useSafeAreaInsets();
   const lastRunAtMs = user?.last_run_at?.toMillis() ?? null;
@@ -131,10 +135,19 @@ export function GrowthScreen({
           ) : (
             <View style={styles.chart}>
               {weekKm === 0 && (
-                <View style={styles.chartEmpty} pointerEvents="none">
+                <View style={styles.chartEmpty} pointerEvents="box-none">
                   <AppText variant="caption" color={colors.textMuted}>
                     최근 7일 동안 달린 기록이 없어요
                   </AppText>
+                  {onStartRun && (
+                    <Button
+                      label="달리기 시작"
+                      icon={Footprints}
+                      variant="secondary"
+                      size="md"
+                      onPress={onStartRun}
+                    />
+                  )}
                 </View>
               )}
               {days.map(day => (
@@ -323,6 +336,7 @@ const styles = themedStyles(() => ({
     bottom: 28,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: spacing.md,
     zIndex: 1,
   },
   barColumn: { alignItems: 'center', gap: spacing.xs, flex: 1 },

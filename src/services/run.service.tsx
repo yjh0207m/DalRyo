@@ -1,6 +1,6 @@
 import firestore from '@react-native-firebase/firestore';
 import {auth, firestore as db} from '../lib/firebase';
-import type {GpsPoint, RunDocument, RunGoalType, RunSummary} from '../types/run.types';
+import type {GpsPoint, RunDocument, RunGoalType} from '../types/run.types';
 import {calculateAveragePace} from '../utils/pace';
 
 export async function saveRunRecord({
@@ -89,13 +89,6 @@ export async function fetchRunsBetween(start: Date, end: Date) {
   return snap.docs.map(doc => doc.data() as RunDocument);
 }
 
-export async function fetchRecentRuns() {
-  const uid = auth().currentUser?.uid;
-  if (!uid) throw new Error('로그인이 필요해요.');
-  const snap = await db().collection('runs').where('uid', '==', uid).orderBy('started_at', 'desc').limit(20).get();
-  return snap.docs.map(doc => doc.data() as RunDocument);
-}
-
 export function fetchMonthlyRuns(year: number, monthIndex: number) {
   return fetchRunsBetween(new Date(year, monthIndex, 1), new Date(year, monthIndex + 1, 0, 23, 59, 59, 999));
 }
@@ -111,39 +104,4 @@ export function fetchThisWeekRuns(now = new Date()) {
 export function getRunStartedAtDate(run: RunDocument) {
   const startedAt = run.started_at as {toDate?: () => Date};
   return startedAt?.toDate ? startedAt.toDate() : new Date();
-}
-
-export function summarizeRuns(runs: RunDocument[]): RunSummary {
-  if (runs.length === 0) {
-    return {
-      totalDistanceKm: 0,
-      averageDistanceKm: 0,
-      averageDurationSec: 0,
-      averagePaceSec: 0,
-      averageCalories: 0,
-      averageElevationM: 0,
-      averageHeartRate: 0,
-    };
-  }
-
-  const sum = runs.reduce(
-    (acc, run) => ({
-      distance: acc.distance + run.distance_km,
-      duration: acc.duration + run.duration_sec,
-      pace: acc.pace + run.avg_pace_sec,
-      calories: acc.calories + run.calories,
-      heartRate: acc.heartRate + (run.avg_heart_rate ?? 0),
-    }),
-    {distance: 0, duration: 0, pace: 0, calories: 0, heartRate: 0},
-  );
-
-  return {
-    totalDistanceKm: sum.distance,
-    averageDistanceKm: sum.distance / runs.length,
-    averageDurationSec: Math.round(sum.duration / runs.length),
-    averagePaceSec: Math.round(sum.pace / runs.length),
-    averageCalories: Math.round(sum.calories / runs.length),
-    averageElevationM: 0,
-    averageHeartRate: Math.round(sum.heartRate / runs.length),
-  };
 }

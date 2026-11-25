@@ -19,7 +19,13 @@ import { CompanionScene } from '../../components/scene/CompanionScene';
 import { CharacterView } from '../../components/character/CharacterView';
 import { AppText, Button, Card, IconButton } from '../../components/ui';
 import { inventoryRequest } from '../../services/inventory.service';
-import { colors, radius, spacing, themedStyles, statusBarStyle } from '../../theme';
+import {
+  colors,
+  radius,
+  spacing,
+  themedStyles,
+  statusBarStyle,
+} from '../../theme';
 import type { CharacterDocument } from '../../types/character.types';
 
 type Props = {
@@ -98,7 +104,10 @@ export function InventoryScreen({
     : equipped;
   return (
     <SafeAreaView style={styles.screen}>
-      <StatusBar barStyle={statusBarStyle()} backgroundColor={colors.background} />
+      <StatusBar
+        barStyle={statusBarStyle()}
+        backgroundColor={colors.background}
+      />
       <View style={styles.header}>
         <IconButton
           icon={ChevronLeft}
@@ -108,8 +117,13 @@ export function InventoryScreen({
             if (!lock.current) onBack();
           }}
         />
-        <AppText variant="heading">꾸미기 · 아이템</AppText>
-        <View style={styles.spacer} />
+        <AppText
+          variant="heading"
+          accessibilityRole="header"
+          style={styles.headerTitle}
+        >
+          꾸미기 · 아이템
+        </AppText>
       </View>
       <ScrollView contentContainerStyle={styles.content}>
         <Card style={styles.preview} padded={false}>
@@ -275,10 +289,11 @@ const styles = themedStyles(() => ({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    minHeight: 52,
   },
-  spacer: { width: 44 },
+  headerTitle: { flex: 1 },
   content: {
     padding: spacing.xl,
     gap: spacing.md,

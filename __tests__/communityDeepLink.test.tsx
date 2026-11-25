@@ -4,7 +4,6 @@ import {
   Alert,
   BackHandler,
   Modal,
-  PanResponder,
   ScrollView,
   StyleSheet,
   Text,
@@ -77,7 +76,7 @@ jest.mock('../src/services/media.service', () => ({
   uploadPhoto: jest.fn(),
 }));
 jest.mock('../src/services/run.service', () => ({
-  fetchRecentRuns: async () => [],
+  fetchMonthlyRuns: async () => [],
 }));
 jest.mock('../src/services/chat.service', () => ({
   watchConversations: () => () => {},
@@ -507,11 +506,29 @@ describe('the menu pages', () => {
     expect(Math.max(...contentPadding())).toBeGreaterThanOrEqual(150);
   });
 
-  test('your own profile shows your @id at the top instead of the page name', async () => {
+  // 탐색·메시지는 피드와 같은 헤더(영문 작은 제목, 한글 읽기 이름)를 쓴다
+  const sectionTitle = (label: string) =>
+    tree.root.find(
+      node => String(node.type) === 'Text' && node.props.children === label,
+    ).props;
+
+  test('explore uses the same header as the feed', async () => {
+    await render();
+    await chooseSubNav('explore');
+    expect(sectionTitle('EXPLORE')).toMatchObject({
+      accessibilityRole: 'header',
+      accessibilityLabel: '탐색',
+    });
+  });
+
+  test('your own profile shows your @id at the top like other runners’ profiles, and only there', async () => {
     await render();
     await chooseSubNav('profile');
-    expect(headerTexts()).toContain('@minji_run');
+    // 다른 러너의 프로필처럼 맨 위 제목이 아이디다. 이름 아래에는 아이디를 다시 쓰지 않는다
+    expect(sectionTitle('@minji_run').accessibilityRole).toBe('header');
+    expect(headerTexts().filter(text => text === '@minji_run')).toHaveLength(1);
     expect(headerTexts()).not.toContain('러너 프로필');
+    expect(headerTexts()).not.toContain('MY PROFILE');
     // 내 프로필 자리에는 뒤로 가기 버튼이 없다
     expect(hasLabel('러너 프로필에서 뒤로')).toBe(false);
     expect(shown('section-profile')).toBe(true);
@@ -546,6 +563,34 @@ describe('the menu pages', () => {
 describe('the feed page', () => {
   const hasText = (value: string) => texts().includes(value);
 
+  test('running together and runner rankings are tinted buttons: blue and gold', async () => {
+    const onTogetherPress = jest.fn();
+    await act(async () => {
+      tree = Renderer.create(
+        <CommunityScreen {...base} onTogetherPress={onTogetherPress} />,
+      );
+    });
+    const button = (label: string) =>
+      tree.root.find(
+        node =>
+          typeof node.type === 'function' &&
+          node.type.name === 'Button' &&
+          node.props.label === label,
+      ).props;
+    expect(button('같이 달리기')).toMatchObject({
+      variant: 'soft',
+      size: 'md',
+    });
+    expect(button('같이 달리기').tone).toBeUndefined();
+    expect(button('러너 랭킹')).toMatchObject({
+      variant: 'soft',
+      tone: 'accent',
+      size: 'md',
+    });
+    await press('같이 달리기');
+    expect(onTogetherPress).toHaveBeenCalledTimes(1);
+  });
+
   test('has no heading or tagline above the posts, and no saved-posts shortcut', async () => {
     await render();
     expect(hasText('러닝 이야기')).toBe(false);
@@ -555,69 +600,57 @@ describe('the feed page', () => {
     expect(hasLabel('러너 랭킹')).toBe(true);
   });
 
-  test('has a round write button at the bottom right that opens the composer', async () => {
-    await render();
-    const button = tree.root.find(
+  // 머리글의 글쓰기(+) 버튼. 화면 아래의 떠 있는 동그란 버튼은 없앴다
+  const writeButtons = () =>
+    tree.root.findAll(
       node =>
-        node.props?.accessibilityLabel === '글쓰기' &&
-        typeof node.props.onPress === 'function',
+        typeof node.type === 'function' &&
+        node.type.name === 'IconButton' &&
+        node.props.accessibilityLabel === '글쓰기',
     );
-    const style = StyleSheet.flatten(button.props.style);
-    expect(style.width).toBe(style.height);
-    expect(style.borderRadius).toBe(style.width / 2);
-    await act(async () => button.props.onPress());
+
+  test('has a + write button in the header that opens the composer, and no floating button at the bottom', async () => {
+    await render();
+    expect(writeButtons()).toHaveLength(1);
+    expect(
+      tree.root.findAllByProps({ testID: 'community-write-dock' }),
+    ).toHaveLength(0);
+    await act(async () => writeButtons()[0].props.onPress());
     expect(hasLabel('오늘의 달리기에서 뒤로')).toBe(true);
   });
 
-  test('the write button is on the feed, explore and my profile, but not on messages', async () => {
+  test('explore and my profile have their own + in the header, messages does not', async () => {
     await render();
+    // 피드 화면은 아래에 그대로 있으므로 피드의 + 하나에 각 화면의 +가 더해진다
     for (const key of ['explore', 'profile']) {
       await chooseSubNav(key);
-      expect(hasLabel('글쓰기')).toBe(true);
+      expect(writeButtons()).toHaveLength(2);
     }
     await chooseSubNav('messages');
-    expect(hasLabel('글쓰기')).toBe(false);
+    expect(writeButtons()).toHaveLength(1);
     await chooseSubNav('feed');
-    expect(hasLabel('글쓰기')).toBe(true);
+    expect(writeButtons()).toHaveLength(1);
   });
 
   test('writing from the explore page opens the composer, and posting returns to the feed', async () => {
     await render();
     await chooseSubNav('explore');
-    await press('글쓰기');
+    await act(async () => writeButtons().at(-1)!.props.onPress());
     expect(hasLabel('오늘의 달리기에서 뒤로')).toBe(true);
     expect(hasLabel('커뮤니티 메뉴')).toBe(false);
   });
 
-  test('moves up out of the way while the sub navigation is open, and comes back when it closes', async () => {
-    let config: Record<string, (...args: any[]) => any> = {};
-    const create = PanResponder.create.bind(PanResponder);
-    const spy = jest.spyOn(PanResponder, 'create').mockImplementation(c => {
-      config = c as typeof config;
-      return create(c);
-    });
-    try {
-      await render();
-      const lift = () => {
-        // Animated.View와 그 안쪽 View가 같은 스타일을 받으므로 첫 번째를 쓴다
-        const fab = tree.root.findAllByProps({
-          testID: 'community-write-dock',
-        })[0];
-        const y = StyleSheet.flatten(fab.props.style).transform[0]
-          .translateY as unknown as { __getValue: () => number } | number;
-        return typeof y === 'number' ? y : y.__getValue();
-      };
-      expect(lift()).toBe(0);
-      await act(async () => config.onPanResponderGrant());
-      expect(lift()).toBeLessThan(0);
-      await act(async () =>
-        config.onPanResponderMove({}, { moveX: 0, moveY: 0, dx: 40, dy: 0 }),
-      );
-      await act(async () => config.onPanResponderRelease());
-      expect(lift()).toBe(0);
-    } finally {
-      spy.mockRestore();
-    }
+  test('an empty feed offers to write the first post', async () => {
+    // 이 테스트 파일의 피드는 비어 있다
+    await render();
+    const action = tree.root.find(
+      node =>
+        typeof node.type === 'function' &&
+        node.type.name === 'Button' &&
+        node.props.label === '글쓰기',
+    );
+    await act(async () => action.props.onPress());
+    expect(hasLabel('오늘의 달리기에서 뒤로')).toBe(true);
   });
 });
 

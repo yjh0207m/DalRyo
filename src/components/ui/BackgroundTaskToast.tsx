@@ -38,7 +38,7 @@ function Toast({ toast }: { toast: BackgroundToast }) {
         <ActivityIndicator size="small" color={colors.primary} />
       )}
       {toast.kind === 'done' && (
-        <AppText variant="subheading" color={colors.primaryInk}>
+        <AppText variant="subheading" color={colors.success}>
           ✓
         </AppText>
       )}

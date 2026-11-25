@@ -1,5 +1,5 @@
 import React from 'react';
-import {Animated, Keyboard, ScrollView, TextInput, TouchableOpacity} from 'react-native';
+import {Animated, Keyboard, ScrollView, TextInput} from 'react-native';
 import Renderer, {act} from 'react-test-renderer';
 import {OnboardingScreen} from '../src/screens/auth/OnboardingScreen';
 import {REGIONS, bodyInputError, regionFromAddress} from '../src/utils/onboarding';
@@ -13,8 +13,10 @@ jest.mock('../src/services/character.service', () => ({pickStarterCharacter: () 
 
 let tree: Renderer.ReactTestRenderer;
 const onDone = jest.fn();
-const label = (value: string) => tree.root.findAllByType(TouchableOpacity).find(node =>
-  node.findAll(n => String(n.type) === 'Text' && n.props.children === value).length > 0)!;
+// 글자가 value인 누를 수 있는 것(버튼·칩). 겹쳐 있으면 가장 안쪽
+const label = (value: string) => tree.root.findAll(node =>
+  typeof node.props.onPress === 'function' &&
+  node.findAll(n => String(n.type) === 'Text' && n.props.children === value).length > 0).at(-1)!;
 const enter = (name: string, value: string) => tree.root.findAllByType(TextInput).find(n => n.props.accessibilityLabel === name)!.props.onChangeText(value);
 async function openRegion() {
   await act(async () => {enter('이름','김달료');enter('아이디','dalryo_kim');enter('달료 펫 이름(닉네임)','오리');});

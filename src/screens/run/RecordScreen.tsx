@@ -24,6 +24,7 @@ import { FINISH_COLOR, START_COLOR, routeSegments } from '../../utils/routeMap';
 import {
   AppText,
   Badge,
+  Button,
   Card,
   IconButton,
   ScreenHeader,
@@ -39,7 +40,14 @@ import {
   fetchMonthlyRuns,
   getRunStartedAtDate,
 } from '../../services/run.service';
-import { colors, fonts, radius, spacing, themedStyles } from '../../theme';
+import {
+  colors,
+  radius,
+  spacing,
+  summaryNumber,
+  themedStyles,
+  typography,
+} from '../../theme';
 import type { RunDocument } from '../../types/run.types';
 import { formatDuration, formatPace } from '../../utils/pace';
 import {
@@ -56,13 +64,10 @@ type Props = {
   onSubpageChange?: (open: boolean) => void;
   // 기록 상세의 오운완 카드를 피드에 올린 뒤 호출된다
   onPosted?: () => void;
+  // 달리기 시작 시트를 연다(이번 달 기록이 없을 때)
+  onStartRun?: () => void;
 };
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
-// 이번 달 누적 거리 큰 숫자의 글자 크기·줄 높이·세로 배율.
-// 성장(기본 1.07배)보다 세로로 조금 더 늘려 그린다
-const MONTH_FONT_SIZE = 50;
-const MONTH_LINE_HEIGHT = 62;
-const MONTH_STRETCH = 1.11;
 const GOAL_LABELS = {
   free: '자유 달리기',
   time: '시간 목표',
@@ -77,6 +82,7 @@ export function RecordScreen({
   character = null,
   onSubpageChange,
   onPosted,
+  onStartRun,
 }: Props) {
   const insets = useSafeAreaInsets();
   const t = useDialect();
@@ -134,6 +140,7 @@ export function RecordScreen({
             onRefresh={retry}
             tintColor={colors.primary}
             colors={[colors.primary]}
+            progressBackgroundColor={colors.surfaceRaised}
           />
         }
       >
@@ -166,18 +173,19 @@ export function RecordScreen({
           // 카드로 감싸지 않고 화면 양끝까지 채운 띠
           <View testID="record-month-hero" style={styles.monthHero}>
             <View style={styles.monthHeroHeading}>
-              <AppText variant="label" color={colors.primaryInk}>
+              <AppText variant="label" color={colors.textMuted}>
                 이번 달 누적 거리
               </AppText>
               <Badge label={`${runsByDay.size}일 · ${runs.length}회`} />
             </View>
             <View style={[styles.distance, styles.monthDistanceRow]}>
               {/* 세로로 늘린 키 큰 숫자 */}
+              {/* 크기·세로 배율은 기록 상세와 함께 theme의 summaryNumber에서 정한다 */}
               <TallNumber
-                stretch={MONTH_STRETCH}
-                fontSize={MONTH_FONT_SIZE}
-                lineHeight={MONTH_LINE_HEIGHT}
-                style={styles.monthDistance}
+                stretch={summaryNumber.stretch}
+                fontSize={summaryNumber.fontSize}
+                lineHeight={summaryNumber.lineHeight}
+                style={summaryNumber.style}
                 color={colors.primaryInk}
                 numberOfLines={1}
               >
@@ -355,6 +363,16 @@ export function RecordScreen({
                 >
                   {t('record.emptyBody')}
                 </AppText>
+                {/* 지난 달이 아니라 이번 달을 보고 있을 때만 바로 시작할 수 있게 한다 */}
+                {onStartRun && isCurrentMonth && (
+                  <Button
+                    label="달리기 시작"
+                    icon={Footprints}
+                    variant="secondary"
+                    size="md"
+                    onPress={onStartRun}
+                  />
+                )}
               </Card>
             ) : (
               // 기록 목록은 화면 양끝까지 쓰고 기록 사이는 가는 선으로 나눈다
@@ -450,7 +468,7 @@ function RunCard({ run, onOpen }: { run: RunDocument; onOpen: () => void }) {
                 km
               </AppText>
             </View>
-            <AppText variant="subheading" color={colors.primaryInk}>
+            <AppText variant="subheading" color={colors.text}>
               {run.distance_km > 0 && run.avg_pace_sec > 0
                 ? `${formatPace(run.avg_pace_sec)} /km`
                 : '평균 페이스 —'}
@@ -523,7 +541,7 @@ const styles = themedStyles(() => ({
   // 본문 좌우 여백(spacing.xl)을 상쇄해 화면 양끝까지 닿고, 안쪽 글자는 본문과 같은 선에 맞춘다
   // 크기는 예전 그대로 두고 위아래와 줄 사이만 넉넉히 띄운다 (위아래 22 → 28, 거리 줄 위아래 8 → 12)
   monthHero: {
-    backgroundColor: colors.primarySoft,
+    backgroundColor: colors.secondarySoft,
     marginHorizontal: -spacing.xl,
     paddingHorizontal: spacing.xl,
     paddingVertical: 28,
@@ -535,11 +553,6 @@ const styles = themedStyles(() => ({
     justifyContent: 'space-between',
   },
   monthDistanceRow: { marginVertical: spacing.md },
-  monthDistance: {
-    fontFamily: fonts.extrabold,
-    letterSpacing: -1.8,
-    fontVariant: ['tabular-nums'],
-  },
   monthMetrics: {
     flexDirection: 'row',
     paddingTop: spacing.md,
@@ -591,12 +604,8 @@ const styles = themedStyles(() => ({
   },
   journalMainText: { flex: 1 },
   runDistance: {
-    fontFamily: fonts.bold,
+    ...typography.numberLarge,
     flexShrink: 1,
-    fontSize: 34,
-    lineHeight: 41,
-    letterSpacing: -1.2,
-    fontVariant: ['tabular-nums'],
   },
   routeThumb: {
     width: 96,
@@ -642,14 +651,14 @@ const styles = themedStyles(() => ({
     borderColor: 'transparent',
   },
   today: { borderColor: colors.primaryBorder },
-  recordedDay: { backgroundColor: colors.primarySoft },
+  recordedDay: { backgroundColor: colors.secondarySoft },
   selectedDay: {
     backgroundColor: colors.primaryAction,
     borderColor: colors.primaryAction,
   },
   pressed: { opacity: 0.7 },
   dot: { width: 4, height: 4, borderRadius: 2, backgroundColor: 'transparent' },
-  recordedDot: { backgroundColor: colors.primary },
+  recordedDot: { backgroundColor: colors.secondary },
   selectedDot: { backgroundColor: colors.textOnPrimary },
   calendarFooter: {
     flexDirection: 'row',

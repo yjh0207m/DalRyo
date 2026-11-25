@@ -6,6 +6,7 @@ import {
   setThemeMode,
   statusBarOnPrimary,
   statusBarStyle,
+  switchColors,
   subscribeThemeMode,
   themedStyles,
 } from '../src/theme';
@@ -21,10 +22,10 @@ afterEach(async () => {
   await AsyncStorage.clear();
 });
 
-test('the app starts in the light theme with the brand mint', () => {
+test('the app starts in the light theme with the brand blue', () => {
   expect(getThemeMode()).toBe('light');
-  expect(colors.primary).toBe('#22B48F');
-  expect(colors.background).toBe('#F5F7F6');
+  expect(colors.primary).toBe('#0A66C2');
+  expect(colors.background).toBe('#FFFFFF');
   expect(statusBarStyle()).toBe('dark-content');
 });
 
@@ -32,11 +33,11 @@ test('switching to dark changes every color in place and the status bar text tur
   const sameObject = colors;
   setThemeMode('dark');
   expect(colors).toBe(sameObject);
-  expect(colors.background).toBe('#000000');
-  expect(colors.text).toBe('#F5F5F7');
+  expect(colors.background).toBe('#131920');
+  expect(colors.text).toBe('#F0F3F6');
   expect(statusBarStyle()).toBe('light-content');
   setThemeMode('light');
-  expect(colors.background).toBe('#F5F7F6');
+  expect(colors.background).toBe('#FFFFFF');
 });
 
 test('the dark palette defines a color for every light color', () => {
@@ -53,10 +54,10 @@ test('themed styles are rebuilt with the new colors after the theme changes', ()
     screen: { flex: 1, backgroundColor: colors.background },
     text: { color: colors.text },
   }));
-  expect(StyleSheet.flatten(styles.screen).backgroundColor).toBe('#F5F7F6');
+  expect(StyleSheet.flatten(styles.screen).backgroundColor).toBe('#FFFFFF');
   setThemeMode('dark');
-  expect(StyleSheet.flatten(styles.screen).backgroundColor).toBe('#000000');
-  expect(styles.text.color).toBe('#F5F5F7');
+  expect(StyleSheet.flatten(styles.screen).backgroundColor).toBe('#131920');
+  expect(styles.text.color).toBe('#F0F3F6');
   // 레이아웃 값은 그대로다
   expect(styles.screen.flex).toBe(1);
 });
@@ -115,21 +116,32 @@ function contrast(a: string, b: string) {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-test('in dark mode every page has the same black background, and only floating things are lifted', () => {
-  setThemeMode('dark');
-  expect(colors.background).toBe('#000000');
-  expect(colors.surface).toBe(colors.background);
-  expect(colors.surfaceRaised).not.toBe(colors.background);
-  // 회색에 녹색 기운이 없다(R·G·B가 거의 같다)
-  for (const gray of [
-    colors.surfaceRaised,
-    colors.surfaceMuted,
-    colors.border,
-  ]) {
-    const [r, g, b] = [1, 3, 5].map(i => parseInt(gray.slice(i, i + 2), 16));
-    expect(Math.max(r, g, b) - Math.min(r, g, b)).toBeLessThanOrEqual(4);
-  }
-});
+test.each(['light', 'dark'] as const)(
+  'in the %s theme every page has the same background, and only floating things are lifted',
+  theme => {
+    setThemeMode(theme);
+    expect(colors.surface).toBe(colors.background);
+    if (theme === 'light') {
+      expect(colors.background).toBe('#FFFFFF');
+      return;
+    }
+    expect(colors.background).toBe('#131920');
+    expect(colors.surfaceRaised).not.toBe(colors.background);
+    // 어두운 회색 단계는 모두 같은 푸른 기운(파랑이 가장 세고 빨강이 가장 약함)이고, 채도는 낮다.
+    // 화면마다 서로 다른 색이 섞여 보이지 않게
+    for (const gray of [
+      colors.background,
+      colors.surfaceRaised,
+      colors.surfaceMuted,
+      colors.border,
+    ]) {
+      const [r, g, b] = [1, 3, 5].map(i => parseInt(gray.slice(i, i + 2), 16));
+      expect(b).toBeGreaterThanOrEqual(g);
+      expect(g).toBeGreaterThanOrEqual(r);
+      expect(b - r).toBeLessThanOrEqual(24);
+    }
+  },
+);
 
 test.each(['light', 'dark'] as const)(
   'the mint stands out and its text stays readable in the %s theme',
@@ -154,16 +166,70 @@ test.each(['light', 'dark'] as const)(
   },
 );
 
-test('in dark mode the mint button is bright against black, not a dim green', () => {
+test('in dark mode the main button is bright against the dark background, not a dim blue', () => {
   setThemeMode('dark');
   expect(
     contrast(colors.primaryAction, colors.background),
-  ).toBeGreaterThanOrEqual(10);
+  ).toBeGreaterThanOrEqual(3);
   expect(contrast(colors.primaryInk, colors.background)).toBeGreaterThanOrEqual(
     7,
   );
-  // 밝은 민트 위에서는 상태 표시줄 글자도 어둡게
-  expect(statusBarOnPrimary()).toBe('dark-content');
+  // 두 테마 모두 주조색 위 글자가 흰색이라 상태 표시줄 글자도 흰색
+  expect(colors.textOnPrimary).toBe('#FFFFFF');
+  expect(statusBarOnPrimary()).toBe('light-content');
   setThemeMode('light');
   expect(statusBarOnPrimary()).toBe('light-content');
 });
+
+test('in dark mode the summary band clearly stands out from the background and its text stays readable', () => {
+  setThemeMode('dark');
+  expect(
+    contrast(colors.secondarySoft, colors.background),
+  ).toBeGreaterThanOrEqual(1.5);
+  expect(
+    contrast(colors.textMuted, colors.secondarySoft),
+  ).toBeGreaterThanOrEqual(4.5);
+  expect(
+    contrast(colors.primaryInk, colors.secondarySoft),
+  ).toBeGreaterThanOrEqual(4.5);
+  expect(contrast(colors.text, colors.secondarySoft)).toBeGreaterThanOrEqual(7);
+});
+
+test.each(['light', 'dark'] as const)(
+  'a switch that is on shows the main color, not the system green, in the %s theme',
+  theme => {
+    setThemeMode(theme);
+    const on = switchColors(true);
+    expect(on.thumbColor).toBe(colors.primary);
+    expect(on.trackColor.true).toBe(colors.primaryBorder);
+    expect(switchColors(false).thumbColor).not.toBe(colors.primary);
+  },
+);
+
+// 반투명 색을 바탕 위에 얹었을 때 보이는 색
+function over(rgba: string, background: string) {
+  const [r, g, b, a] = rgba.match(/[\d.]+/g)!.map(Number);
+  const base = [1, 3, 5].map(i => parseInt(background.slice(i, i + 2), 16));
+  return `#${[r, g, b]
+    .map((c, i) => Math.round(c * a + base[i] * (1 - a)))
+    .map(c => c.toString(16).padStart(2, '0'))
+    .join('')}`;
+}
+
+test.each(['light', 'dark'] as const)(
+  'in the %s theme the unfilled part of a progress bar is soft and clearly apart from the filled part',
+  theme => {
+    setThemeMode(theme);
+    // 경험치 막대가 놓이는 회색 띠, 하늘 띠, 화면 바탕 어디서든
+    for (const background of [
+      colors.surfaceMuted,
+      colors.secondarySoft,
+      colors.background,
+    ]) {
+      const track = over(colors.progressTrack, background);
+      expect(contrast(colors.primary, track)).toBeGreaterThanOrEqual(1.8);
+      // 바탕과는 살짝만 다르다(옅다)
+      expect(contrast(track, background)).toBeLessThan(1.4);
+    }
+  },
+);

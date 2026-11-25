@@ -14,7 +14,7 @@ export function ProgressBar({
   value,
   height = 8,
   color = colors.primary,
-  trackColor = colors.surfaceMuted,
+  trackColor = colors.progressTrack,
 }: Props) {
   const ratio = Math.min(1, Math.max(0, value));
 

@@ -15,10 +15,10 @@ type Props = {
   loading?: boolean;
 };
 
-// 시작 화면은 낮·저녁 배경 그림 위에 그리므로 다크 모드와 상관없이 같은 색을 쓴다 (밝은 테마의 민트·흰색·짙은 민트)
-const MINT = '#22B48F';
+// 시작 화면은 낮·저녁 배경 그림 위에 그리므로 다크 모드와 상관없이 같은 색을 쓴다 (브랜드 파랑·흰색)
+const BRAND = '#0A66C2';
 const WHITE = '#FFFFFF';
-const INK = '#10775E';
+const INK = '#0A66C2';
 
 export function AuthStartScreen({onStart, loading = false}: Props) {
   const [isDusk, setIsDusk] = useState(() => getIsDuskSync());
@@ -68,7 +68,7 @@ const styles = StyleSheet.create({
   bottomContent: {position: 'absolute', left: 36, right: 36, bottom: 100, alignItems: 'center'},
   message: {color: '#FFFFFF', fontSize: 21, fontFamily: fonts.extrabold, textAlign: 'center', textShadowColor: 'rgba(0,0,0,0.28)', textShadowOffset: {width: 0, height: 2}, textShadowRadius: 8},
   messageStrong: {color: '#FFFFFF', fontSize: 24, fontFamily: fonts.extrabold, textAlign: 'center', marginTop: 8, marginBottom: 32, textShadowColor: 'rgba(0,0,0,0.34)', textShadowOffset: {width: 0, height: 2}, textShadowRadius: 8},
-  startButton: {alignItems: 'center', alignSelf: 'stretch', backgroundColor: MINT, borderRadius: 20, justifyContent: 'center', minHeight: 62, shadowColor: '#000000', shadowOpacity: 0.18, shadowRadius: 14, shadowOffset: {width: 0, height: 8}, elevation: 0},
+  startButton: {alignItems: 'center', alignSelf: 'stretch', backgroundColor: BRAND, borderRadius: 20, justifyContent: 'center', minHeight: 62, shadowColor: '#000000', shadowOpacity: 0.18, shadowRadius: 14, shadowOffset: {width: 0, height: 8}, elevation: 0},
   startButtonText: {color: '#FFFFFF', fontSize: 17, fontFamily: fonts.semibold},
   // 버튼과 같은 높이를 차지해 로딩이 끝나고 버튼이 나타날 때 글자 위치가 움직이지 않게 한다
   loading: {alignItems: 'center', alignSelf: 'stretch', justifyContent: 'center', minHeight: 62},

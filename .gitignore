@@ -55,6 +55,9 @@ yarn-error.log
 
 # Bundle artifact
 *.jsbundle
+# Android release bundle and images are generated under build/ by the release build
+android/app/src/main/assets/index.android.bundle
+android/app/src/main/res/drawable-*/src_assets_*
 
 # Ruby / CocoaPods
 **/Pods/

@@ -46,6 +46,7 @@ import {
   shadow,
   spacing,
   themedStyles,
+  switchColors,
 } from '../../theme';
 
 type Props = {
@@ -493,7 +494,7 @@ function DisclosureRow({
         value={value}
         disabled={disabled}
         onValueChange={onChange}
-        trackColor={{ false: colors.border, true: colors.primary }}
+        {...switchColors(value)}
       />
     </View>
   );
@@ -561,7 +562,8 @@ const styles = themedStyles(() => ({
   // 모서리를 둥글게 하면 jpg로 저장할 때 모서리가 검게 찍혀서 옛 아이폰 화면처럼 각지게 둔다
   card: {
     aspectRatio: 4 / 5,
-    backgroundColor: '#178d7c',
+    // 사진이 없을 때 카드 바탕. 저장·공유되는 이미지라 테마와 상관없이 브랜드 파랑이다
+    backgroundColor: '#0A66C2',
     overflow: 'hidden',
   },
   background: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },

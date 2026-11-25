@@ -1,50 +1,10 @@
 import React from 'react';
 import {View} from 'react-native';
 import { Flame } from 'lucide-react-native';
-import { colors, fonts, radius, spacing, themedStyles } from '../../theme';
+import { colors, radius, spacing, themedStyles } from '../../theme';
 import { AppText } from '../ui';
 
-// 게임식 상태 표시(HUD) 조각들: 레벨 배지, 두꺼운 경험치 바, 연속 기록 칩
-
-export function LevelBadge({
-  level,
-  size = 48,
-}: {
-  level: number;
-  size?: number;
-}) {
-  return (
-    <View
-      style={[
-        styles.badgeRing,
-        { width: size, height: size, borderRadius: size / 2 },
-      ]}
-    >
-      <View
-        style={[
-          styles.badge,
-          { width: size - 8, height: size - 8, borderRadius: (size - 8) / 2 },
-        ]}
-      >
-        <AppText
-          style={[styles.badgeLabel, { fontSize: size * 0.18 }]}
-          color={colors.goldInk}
-        >
-          Lv
-        </AppText>
-        <AppText
-          style={[
-            styles.badgeNumber,
-            { fontSize: size * 0.38, lineHeight: size * 0.42 },
-          ]}
-          color={colors.goldInk}
-        >
-          {level}
-        </AppText>
-      </View>
-    </View>
-  );
-}
+// 게임식 상태 표시(HUD) 조각들: 두꺼운 경험치 바, 연속 기록 칩
 
 // 두꺼운 게임식 바. 위쪽에 밝은 줄을 넣어 입체감을 준다
 export function ExpBar({
@@ -103,22 +63,8 @@ export function StreakChip({ days }: { days: number }) {
 }
 
 const styles = themedStyles(() => ({
-  badgeRing: {
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: colors.gold,
-  },
-  badge: {
-    backgroundColor: colors.gold,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  badgeLabel: { fontFamily: fonts.bold, lineHeight: 12, marginBottom: -2 },
-  badgeNumber: { fontFamily: fonts.extrabold },
   expTrack: {
-    backgroundColor: colors.surfaceMuted,
+    backgroundColor: colors.progressTrack,
     overflow: 'hidden',
     borderWidth: 0,
     borderColor: colors.border,

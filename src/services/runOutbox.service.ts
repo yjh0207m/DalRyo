@@ -72,3 +72,8 @@ export async function uploadPendingRun(uid: string, id: string) {
     return run;
   });
 }
+
+// 회원 탈퇴 뒤 이 기기에 남은 그 계정의 업로드 대기 기록을 지운다
+export async function forgetPendingRuns(uid: string) {
+  await AsyncStorage.removeItem(key(uid));
+}

@@ -16,6 +16,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
+import {Chip} from '../../components/ui/Chip';
 import {colors, fonts, statusBarStyle, themedStyles} from '../../theme';
 import {completeOnboarding, isUserIdTaken} from '../../services/user.service';
 import {pickStarterCharacter} from '../../services/character.service';
@@ -302,15 +303,14 @@ export function OnboardingScreen({onBack, onDone}: Props) {
           <Text style={styles.attribution}>위치 기반 지역 조회: © OpenStreetMap 기여자</Text>
           <View style={styles.regionGrid}>
             {regions.map(region => (
-              <TouchableOpacity
-                activeOpacity={0.8}
+              <Chip
                 key={region.label}
-                accessibilityRole="button"
-                accessibilityState={{selected: selectedRegion?.label === region.label}}
+                label={region.label}
+                size="lg"
+                selected={selectedRegion?.label === region.label}
                 onPress={() => selectRegion(region)}
-                style={[styles.regionChip, selectedRegion?.label === region.label && styles.regionChipActive]}>
-                <Text style={[styles.regionText, selectedRegion?.label === region.label && styles.regionTextActive]}>{region.label}</Text>
-              </TouchableOpacity>
+                style={styles.regionChip}
+              />
             ))}
           </View>
           {areas.length > 0 && selectedRegion && (
@@ -318,16 +318,14 @@ export function OnboardingScreen({onBack, onDone}: Props) {
               <Text style={styles.areaTitle}>{`${selectedRegion.label} ${areaKind(selectedRegion.label)}`}</Text>
               <View style={styles.regionGrid}>
                 {areas.map(area => (
-                  <TouchableOpacity
-                    activeOpacity={0.8}
+                  <Chip
                     key={area}
-                    accessibilityRole="button"
+                    label={area}
                     accessibilityLabel={regionLabel(selectedRegion.label, area)}
-                    accessibilityState={{selected: selectedArea === area}}
+                    selected={selectedArea === area}
                     onPress={() => selectArea(area)}
-                    style={[styles.areaChip, selectedArea === area && styles.regionChipActive]}>
-                    <Text style={[styles.areaText, selectedArea === area && styles.regionTextActive]}>{area}</Text>
-                  </TouchableOpacity>
+                    style={styles.areaChip}
+                  />
                 ))}
               </View>
             </>
@@ -458,17 +456,13 @@ const styles = themedStyles(() => ({
   eggImage: {alignSelf: 'center', marginBottom: 26},
   stepSpacer: {flex: 1},
   areaTitle: {color: colors.text, fontSize: 15, fontFamily: fonts.bold, marginTop: 22, marginBottom: 10},
-  areaChip: {minWidth: 64, height: 44, paddingHorizontal: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 10, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center'},
-  areaText: {color: colors.text, fontSize: 14, fontFamily: fonts.semibold},
+  areaChip: {minWidth: 64},
   skipButton: {height: 58, borderRadius: 10, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center', marginTop: 14},
   skipButtonText: {color: colors.primaryInk, fontSize: 18, fontFamily: fonts.extrabold},
   locationButton: {height: 56, borderWidth: 1, borderColor: colors.primary, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface, marginBottom: 20},
   locationButtonText: {color: colors.primaryInk, fontSize: 17, fontFamily: fonts.extrabold},
   regionGrid: {flexDirection: 'row', flexWrap: 'wrap', gap: 10},
-  regionChip: {width: '18%', minWidth: 58, height: 52, borderWidth: 1, borderColor: colors.border, borderRadius: 10, backgroundColor: colors.surface, alignItems: 'center', justifyContent: 'center'},
-  regionChipActive: {backgroundColor: colors.primary, borderColor: colors.primary},
-  regionText: {color: colors.text, fontSize: 15, fontFamily: fonts.bold},
-  regionTextActive: {color: colors.textOnPrimary, fontFamily: fonts.extrabold},
+  regionChip: {width: '18%', minWidth: 58},
   hatchContent: {flex: 1, paddingHorizontal: 32, paddingTop: 50, paddingBottom: 34},
   hatchSubtitle: {color: colors.textMuted, fontSize: 16, fontFamily: fonts.semibold, marginTop: -12, marginBottom: 36},
   hatchStage: {flex: 1, alignItems: 'center', justifyContent: 'center'},

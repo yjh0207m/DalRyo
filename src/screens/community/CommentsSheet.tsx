@@ -27,6 +27,7 @@ import { ArrowUp, Trash2, UserRound, X } from 'lucide-react-native';
 import { AppText, Button, IconButton } from '../../components/ui';
 import { colors, fonts, themedStyles } from '../../theme';
 import { useComments } from '../../hooks/useComments';
+import { ReportSheet, sendReport } from './ReportSheet';
 import { commentBranch, threadComments } from '../../utils/commentThreads';
 import {
   myUid,
@@ -85,6 +86,8 @@ export function CommentsSheet({
   const [reply, setReply] = useState<SocialComment | null>(null);
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
+  // 신고할 댓글
+  const [reporting, setReporting] = useState<SocialComment | null>(null);
   const [error, setError] = useState('');
   const input = useRef<TextInput>(null);
   const alive = useRef(true),
@@ -427,24 +430,40 @@ export function CommentsSheet({
                           )}
                           {comment.text}
                         </AppText>
-                        <Pressable
-                          accessibilityRole="button"
-                          accessibilityLabel={`${comment.author_name}에게 답글 쓰기`}
-                          disabled={busy}
-                          hitSlop={6}
-                          onPress={() => {
-                            setReply(comment);
-                            input.current?.focus();
-                          }}
-                        >
-                          <AppText
-                            variant="label"
-                            color={colors.primaryInk}
-                            style={s.replyButton}
+                        <View style={s.commentActions}>
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel={`${comment.author_name}에게 답글 쓰기`}
+                            disabled={busy}
+                            hitSlop={6}
+                            onPress={() => {
+                              setReply(comment);
+                              input.current?.focus();
+                            }}
                           >
-                            답글 쓰기
-                          </AppText>
-                        </Pressable>
+                            <AppText variant="label" color={colors.primaryInk}>
+                              답글 쓰기
+                            </AppText>
+                          </Pressable>
+                          {comment.uid !== myUid() && (
+                            <Pressable
+                              accessibilityRole="button"
+                              accessibilityLabel={`${comment.author_name}의 댓글 신고`}
+                              hitSlop={6}
+                              onPress={() => {
+                                Keyboard.dismiss();
+                                setReporting(comment);
+                              }}
+                            >
+                              <AppText
+                                variant="label"
+                                color={colors.textSubtle}
+                              >
+                                신고
+                              </AppText>
+                            </Pressable>
+                          )}
+                        </View>
                       </View>
                       {(comment.uid === myUid() || post?.uid === myUid()) && (
                         <IconButton
@@ -531,6 +550,19 @@ export function CommentsSheet({
           </View>
         </Animated.View>
       </View>
+      {reporting && (
+        <ReportSheet
+          target={{ type: 'comment', id: reporting.comment_id, postId }}
+          onClose={() => setReporting(null)}
+          onSubmit={(reason, detail) =>
+            sendReport(
+              { type: 'comment', id: reporting.comment_id, postId },
+              reason,
+              detail,
+            )
+          }
+        />
+      )}
     </Modal>
   );
 }
@@ -603,7 +635,7 @@ const s = themedStyles(() => ({
   },
   commentText: { fontSize: 14, lineHeight: 21 },
   replyTag: { fontFamily: fonts.semibold, fontSize: 14, lineHeight: 21 },
-  replyButton: { marginTop: 8 },
+  commentActions: { flexDirection: 'row', gap: 16, marginTop: 8 },
   composer: {
     paddingHorizontal: 18,
     paddingTop: 12,

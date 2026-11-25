@@ -34,6 +34,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  Flag,
   LogOut,
   MessageSquare,
   MoreHorizontal,
@@ -49,6 +50,7 @@ import {
   AppText,
   Button,
   IconButton,
+  SectionHeader,
   type ActionSheetItem,
 } from '../../components/ui';
 import { colors, fonts, themedStyles } from '../../theme';
@@ -58,6 +60,7 @@ import {
   socialRequest,
   type PublicProfile,
 } from '../../services/social.service';
+import { ReportSheet, sendReport } from './ReportSheet';
 import {
   blockConversation,
   createGroupConversation,
@@ -140,7 +143,6 @@ function Header({
   onTitlePress,
   subtitle,
   avatar,
-  hideBack = false,
 }: {
   title: string;
   onBack: () => void;
@@ -148,19 +150,15 @@ function Header({
   onTitlePress?: () => void;
   subtitle?: string;
   avatar?: React.ReactNode;
-  // 서브 네비게이션으로 오가는 메시지 목록처럼 뒤로 가기 버튼이 필요 없을 때
-  hideBack?: boolean;
 }) {
   return (
-    <View style={[s.header, hideBack && s.headerNoBack]}>
-      {!hideBack && (
-        <IconButton
-          icon={ChevronLeft}
-          variant="plain"
-          accessibilityLabel="대화에서 뒤로"
-          onPress={onBack}
-        />
-      )}
+    <View style={s.header}>
+      <IconButton
+        icon={ChevronLeft}
+        variant="plain"
+        accessibilityLabel="대화에서 뒤로"
+        onPress={onBack}
+      />
       <Pressable
         style={[s.headerTitle, !!avatar && s.headerIdentity]}
         disabled={!onTitlePress}
@@ -170,11 +168,7 @@ function Header({
       >
         {avatar}
         <View style={s.grow}>
-          <AppText
-            variant={hideBack ? 'label' : 'subheading'}
-            color={hideBack ? colors.textMuted : colors.text}
-            numberOfLines={1}
-          >
+          <AppText variant="subheading" numberOfLines={1}>
             {title}
           </AppText>
           {!!subtitle && (
@@ -349,6 +343,12 @@ export function ChatScreen({
       if (alive.current) setLoadingMore(false);
     }
   };
+  // 새 대화 상대 고르기
+  const startNew = () => {
+    setError('');
+    setCreatingGroup(false);
+    setChoosing(true);
+  };
   if (roomId)
     return (
       <ConversationView
@@ -387,23 +387,31 @@ export function ChatScreen({
       style={s.screen}
       edges={bottomInset ? ['top'] : ['top', 'bottom']}
     >
-      <Header
-        title="메시지"
-        hideBack={hideBack}
-        onBack={back}
-        right={
-          <IconButton
-            icon={Plus}
-            variant="plain"
-            accessibilityLabel="새 대화"
-            onPress={() => {
-              setError('');
-              setCreatingGroup(false);
-              setChoosing(true);
-            }}
-          />
-        }
-      />
+      {hideBack ? (
+        // 커뮤니티 서브 메뉴의 메시지는 피드·탐색과 같은 헤더(영문 작은 제목)를 쓴다
+        <View style={s.sectionHeader}>
+          <SectionHeader label="MESSAGES" accessibilityLabel="메시지">
+            <IconButton
+              icon={Plus}
+              accessibilityLabel="새 대화"
+              onPress={startNew}
+            />
+          </SectionHeader>
+        </View>
+      ) : (
+        <Header
+          title="메시지"
+          onBack={back}
+          right={
+            <IconButton
+              icon={Plus}
+              variant="plain"
+              accessibilityLabel="새 대화"
+              onPress={startNew}
+            />
+          }
+        />
+      )}
       {onTogether && (
         <View style={s.together}>
           <Button
@@ -982,6 +990,7 @@ export function ConversationView({
     [loadingMore, setLoadingMore] = useState(false),
     [foreground, setForeground] = useState(AppState.currentState === 'active');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const [membersOpen, setMembersOpen] = useState(false);
   const [renameDraft, setRenameDraft] = useState<string | null>(null);
   const [renameError, setRenameError] = useState('');
@@ -1102,7 +1111,9 @@ export function ConversationView({
     : room?.members.find(member => member !== uid);
   const currentProfile = usePostAuthor(peer, room);
   const profile = currentProfile ?? (peer ? room?.profiles[peer] : undefined);
-  const blocked = !!room?.blocked_by.length;
+  // 1:1 대화의 상대가 탈퇴했으면 메시지를 보낼 수 없다(메시지는 "탈퇴한 러너"로 남는다)
+  const peerGone = !groupRoom && !!room?.deleted_members?.length;
+  const blocked = !!room?.blocked_by.length || peerGone;
   const send = async () => {
     const value = body.trim();
     if (!value || sending.current || blocked || !room || loading || error)
@@ -1242,6 +1253,12 @@ export function ConversationView({
     icon: muted ? Bell : BellOff,
     onPress: changeMute,
   };
+  const reportOption: ActionSheetItem = {
+    label: '신고',
+    accessibilityLabel: '대화 신고',
+    icon: Flag,
+    onPress: () => setReportOpen(true),
+  };
   const settings: ActionSheetItem[] = groupRoom
     ? [
         {
@@ -1258,6 +1275,7 @@ export function ConversationView({
           },
         },
         muteOption,
+        reportOption,
         {
           label: '채팅방 나가기',
           icon: LogOut,
@@ -1266,7 +1284,7 @@ export function ConversationView({
         },
       ]
     : [
-        ...(peer && onProfile
+        ...(peer && onProfile && !peerGone
           ? [
               {
                 label: '상대 프로필 보기',
@@ -1276,14 +1294,19 @@ export function ConversationView({
             ]
           : []),
         muteOption,
-        {
-          label: room?.blocked_by.includes(uid)
-            ? '대화 차단 해제'
-            : '대화 차단',
-          icon: Ban,
-          danger: !room?.blocked_by.includes(uid),
-          onPress: confirmBlock,
-        },
+        reportOption,
+        ...(peerGone
+          ? []
+          : [
+              {
+                label: room?.blocked_by.includes(uid)
+                  ? '대화 차단 해제'
+                  : '대화 차단',
+                icon: Ban,
+                danger: !room?.blocked_by.includes(uid),
+                onPress: confirmBlock,
+              },
+            ]),
       ];
   return (
     <SafeAreaView style={s.screen} edges={['top', 'bottom']}>
@@ -1302,7 +1325,9 @@ export function ConversationView({
           ) : undefined
         }
         onBack={onBack}
-        onTitlePress={peer && onProfile ? () => onProfile(peer) : undefined}
+        onTitlePress={
+          peer && onProfile && !peerGone ? () => onProfile(peer) : undefined
+        }
         right={
           <IconButton
             icon={MoreHorizontal}
@@ -1520,7 +1545,9 @@ export function ConversationView({
           )}
           {blocked && (
             <AppText align="center" color={colors.textMuted} style={s.notice}>
-              {room?.blocked_by.includes(uid)
+              {peerGone
+                ? '탈퇴한 러너와의 대화예요. 메시지를 보낼 수 없어요.'
+                : room?.blocked_by.includes(uid)
                 ? '내가 차단한 대화예요. 설정에서 해제할 수 있어요.'
                 : '현재 메시지를 보낼 수 없는 대화예요.'}
             </AppText>
@@ -1589,6 +1616,16 @@ export function ConversationView({
         onClose={() => setSettingsOpen(false)}
         items={settings}
       />
+      {reportOpen && (
+        <ReportSheet
+          target={{ type: 'chat', id, uid: peer }}
+          note="검토를 위해 최근 메시지가 함께 전달돼요."
+          onClose={() => setReportOpen(false)}
+          onSubmit={(reason, detail) =>
+            sendReport({ type: 'chat', id, uid: peer }, reason, detail)
+          }
+        />
+      )}
       {groupRoom && renameDraft !== null && (
         <Modal animationType="slide" onRequestClose={closeRename}>
           <SafeAreaView style={s.screen}>
@@ -1688,7 +1725,8 @@ const s = themedStyles(() => ({
     gap: 8,
   },
   // 탐색·내 프로필의 머리글과 같은 높이로 맞춘다
-  headerNoBack: { paddingLeft: 20, minHeight: 48 },
+  // 커뮤니티 서브 메뉴의 메시지 목록 헤더. 피드 헤더처럼 본문과 같은 좌우 여백에 둔다
+  sectionHeader: { paddingHorizontal: 20 },
   headerTitle: { flex: 1 },
   headerIdentity: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   headerAction: {
@@ -1737,6 +1775,8 @@ const s = themedStyles(() => ({
     marginHorizontal: 20,
     minHeight: 48,
     color: colors.text,
+    // 바탕색을 주어야 안드로이드 기본 밑줄이 테두리 선과 겹쳐 보이지 않는다
+    backgroundColor: colors.surface,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
     fontFamily: fonts.regular,

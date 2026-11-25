@@ -164,6 +164,8 @@ export function RunnerTagSheet({
 const styles = themedStyles(() => ({
   hint: { marginBottom: spacing.md },
   search: {
+    // 바탕색을 주어야 안드로이드 기본 밑줄이 테두리 상자 안에 겹쳐 보이지 않는다
+    backgroundColor: colors.surfaceRaised,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.md,

@@ -109,7 +109,7 @@ jest.mock('../src/services/media.service', () => ({
   uploadPhoto: jest.fn(),
 }));
 jest.mock('../src/services/run.service', () => ({
-  fetchRecentRuns: jest.fn(),
+  fetchMonthlyRuns: async () => [],
 }));
 jest.mock('react-native-safe-area-context', () => ({
   SafeAreaView: MockView,
@@ -276,6 +276,33 @@ test('profile navigation dismisses the sheet before opening the profile', async 
   await press('친구 프로필');
   expect(mockProfile).toHaveBeenCalledWith('peer');
   expect(order).toEqual(['close', 'profile']);
+});
+
+describe('reporting a comment', () => {
+  test('is offered only on other people’s comments', async () => {
+    await render();
+    expect(buttons('친구의 댓글 신고')).toHaveLength(1);
+    expect(buttons('나의 댓글 신고')).toHaveLength(0);
+  });
+
+  test('needs a reason, then sends the comment with its post', async () => {
+    await render();
+    await press('친구의 댓글 신고');
+    const submit = () => tree.root.findByProps({ label: '신고하기' });
+    expect(submit().props.disabled).toBe(true);
+    await press('욕설·괴롭힘');
+    await act(async () => submit().props.onPress());
+    expect(mockAction).toHaveBeenCalledWith('report', {
+      targetType: 'comment',
+      targetId: 'other',
+      postId: 'post-one',
+      reason: 'abuse',
+      detail: '',
+    });
+    expect(tree.root.findAllByProps({ label: '신고하기' })).toHaveLength(0);
+    // 댓글 창은 그대로 열려 있다
+    expect(mockClose).not.toHaveBeenCalled();
+  });
 });
 
 describe('threads and tags', () => {

@@ -24,7 +24,7 @@ import { chatAction, conversationId } from './chat';
 const db = () => getFirestore();
 const now = () => FieldValue.serverTimestamp();
 const count = (value: unknown) => Math.max(0, Math.floor(Number(value) || 0));
-const tier = (followers: number) =>
+export const tier = (followers: number) =>
   followers >= 1_000_000
     ? 'mega'
     : followers >= 100_000
@@ -117,6 +117,18 @@ function runSummary(run: DocumentSnapshot) {
     startedAtMs: started?.toMillis?.() ?? 0,
   };
 }
+// 신고할 수 있는 대상과 이유(앱의 신고 시트와 같은 목록)
+const REPORT_TARGETS = ['post', 'comment', 'user', 'chat'];
+const REPORT_REASONS = [
+  'spam',
+  'abuse',
+  'hate',
+  'sexual',
+  'danger',
+  'fraud',
+  'privacy',
+  'other',
+];
 // 게시물에 "함께 달린 사람"으로 태그할 수 있는 인원
 const MAX_RUNNER_TAGS = 10;
 // 함께 달린 사람으로 태그할 uid 목록. 자기 자신과 중복은 뺀다
@@ -813,6 +825,108 @@ export const socialAction = onCall(
           });
         });
         return { postId: id };
+      }
+      // 신고: 게시물·댓글·러너·대화방. 운영자가 검토하도록 reports에 남긴다(앱은 읽지도 쓰지도 못한다).
+      // 같은 사람이 같은 대상을 여러 번 신고해도 한 건이다
+      if (input.action === 'report') {
+        const targetType = String(input.targetType);
+        if (!REPORT_TARGETS.includes(targetType))
+          throw new Error('신고할 대상을 확인해 주세요.');
+        const reason = String(input.reason);
+        if (!REPORT_REASONS.includes(reason))
+          throw new Error('신고 이유를 골라 주세요.');
+        const detail = text(input.detail ?? '', '신고 내용', 0, 500);
+        const targetId = documentId(input.targetId);
+        let targetUid: string | null = null;
+        let snapshot: DocumentData = {};
+        let postIdOfTarget: string | null = null;
+        if (targetType === 'post' || targetType === 'comment') {
+          postIdOfTarget =
+            targetType === 'post' ? targetId : documentId(input.postId);
+          const post = await db().collection('posts').doc(postIdOfTarget).get();
+          if (!post.exists || !(await readable(uid, post.data()!)))
+            throw new HttpsError('not-found', '신고할 글을 찾을 수 없어요.');
+          if (targetType === 'post') {
+            targetUid = post.get('uid');
+            snapshot = {
+              text: String(post.get('text') ?? '').slice(0, 1000),
+              image_url: post.get('image_url') ?? null,
+            };
+          } else {
+            const comment = await post.ref
+              .collection('comments')
+              .doc(targetId)
+              .get();
+            if (!comment.exists || comment.get('deleted'))
+              throw new HttpsError(
+                'not-found',
+                '신고할 댓글을 찾을 수 없어요.',
+              );
+            targetUid = comment.get('uid');
+            snapshot = {
+              text: String(comment.get('text') ?? '').slice(0, 1000),
+            };
+          }
+        } else if (targetType === 'user') {
+          const target = await db().collection('users').doc(targetId).get();
+          if (!target.exists)
+            throw new HttpsError('not-found', '신고할 러너를 찾을 수 없어요.');
+          targetUid = targetId;
+          snapshot = {
+            display_name: publicUser(targetId, target.data()!).display_name,
+          };
+        } else {
+          // 대화방. 신고한 사람이 그 방에 있어야 하고, 검토를 위해 최근 메시지 20개를 함께 남긴다
+          const roomRef = db()
+            .collection(
+              targetId.startsWith('group_')
+                ? 'group_conversations'
+                : 'conversations',
+            )
+            .doc(targetId);
+          const room = await roomRef.get();
+          const members: string[] = room.get('members') ?? [];
+          if (!room.exists || !members.includes(uid))
+            throw new HttpsError('not-found', '신고할 대화를 찾을 수 없어요.');
+          targetUid =
+            typeof input.uid === 'string' && members.includes(input.uid)
+              ? input.uid
+              : members.find(member => member !== uid) ?? null;
+          const recent = await roomRef
+            .collection('messages')
+            .orderBy('created_at', 'desc')
+            .limit(20)
+            .get();
+          snapshot = {
+            messages: recent.docs.map(doc => ({
+              sender_uid: doc.get('sender_uid'),
+              text: String(doc.get('text') ?? '').slice(0, 500),
+              created_at: doc.get('created_at') ?? null,
+            })),
+          };
+        }
+        if (targetUid === uid)
+          throw new Error('내가 쓴 글이나 내 계정은 신고할 수 없어요.');
+        const reportRef = db()
+          .collection('reports')
+          .doc(`${uid}_${targetType}_${targetId}`);
+        const created = await db().runTransaction(async tx => {
+          if ((await tx.get(reportRef)).exists) return false;
+          tx.set(reportRef, {
+            reporter_uid: uid,
+            target_type: targetType,
+            target_id: targetId,
+            post_id: postIdOfTarget,
+            target_uid: targetUid,
+            reason,
+            detail,
+            snapshot,
+            status: 'open',
+            created_at: now(),
+          });
+          return true;
+        });
+        return { reported: true, duplicate: !created };
       }
       const postId = documentId(input.postId);
       const postRef = db().collection('posts').doc(postId);

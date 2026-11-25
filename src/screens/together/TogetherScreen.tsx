@@ -289,7 +289,7 @@ export function TogetherScreen({
           <StatusBar barStyle={statusBarStyle()} backgroundColor={colors.sky} />
           <View style={styles.spectatorHeader}>
             <IconButton icon={ChevronLeft} variant="plain" accessibilityLabel="뒤로" disabled={busy} onPress={back} />
-            <AppText variant="subheading">같이 달리기</AppText>
+            <AppText variant="heading">같이 달리기</AppText>
           </View>
           <Card style={styles.gap}>
             <AppText variant="subheading" color={colors.primaryInk}>
@@ -489,7 +489,7 @@ export function TogetherScreen({
               <View style={styles.heroBottom}>
                 <View style={styles.metric}>
                   <Flag size={16} color={colors.primaryInk} />
-                  <AppText variant="caption" color={colors.primaryInk}>
+                  <AppText variant="caption" color={colors.textMuted}>
                     목표
                   </AppText>
                   <AppText variant="heading" color={colors.primaryInk}>
@@ -1043,7 +1043,7 @@ const styles = themedStyles(() => ({
   content: { gap: spacing.xxl, paddingBottom: spacing.xxl },
   feedback: { marginHorizontal: spacing.xl },
   hero: {
-    backgroundColor: colors.primarySoft,
+    backgroundColor: colors.secondarySoft,
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.xxl,
     gap: spacing.sm,
@@ -1098,7 +1098,7 @@ const styles = themedStyles(() => ({
   input: {
     minHeight: 48,
     marginTop: spacing.xs,
-    backgroundColor: colors.background,
+    backgroundColor: colors.surfaceMuted,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
     borderRadius: 12,
@@ -1115,7 +1115,7 @@ const styles = themedStyles(() => ({
     alignItems: 'center',
     minHeight: 48,
     marginTop: spacing.xs,
-    backgroundColor: colors.background,
+    backgroundColor: colors.surfaceMuted,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
     borderRadius: 12,
@@ -1156,7 +1156,7 @@ const styles = themedStyles(() => ({
     marginHorizontal: -spacing.sm,
     borderRadius: 12,
   },
-  friendSelected: { backgroundColor: colors.background },
+  friendSelected: { backgroundColor: colors.surfaceMuted },
   runnerRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1166,7 +1166,7 @@ const styles = themedStyles(() => ({
   },
   rank: { minWidth: 18, textAlign: 'center' },
   invite: {
-    backgroundColor: colors.background,
+    backgroundColor: colors.surfaceMuted,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
     borderRadius: 16,

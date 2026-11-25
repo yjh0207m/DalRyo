@@ -245,6 +245,12 @@ export async function chatAction(
           'permission-denied',
           '차단된 대화에서는 메시지를 보낼 수 없어요.',
         );
+      // 1:1 상대가 탈퇴한 방. 지난 메시지는 남지만 더 보낼 수는 없다
+      if (!group && (room.get('deleted_members') ?? []).length)
+        throw new HttpsError(
+          'failed-precondition',
+          '탈퇴한 러너에게는 메시지를 보낼 수 없어요.',
+        );
       const last = room.get('last_sent_at') as Timestamp | null;
       if (
         last &&

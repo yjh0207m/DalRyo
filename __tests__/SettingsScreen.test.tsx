@@ -5,6 +5,7 @@ import { SettingsScreen } from '../src/screens/profile/SettingsScreen';
 import type { UserDocument } from '../src/types/user.types';
 
 const mockSave = jest.fn();
+const mockDelete = jest.fn();
 const mockSignOut = jest.fn();
 const mockPush = jest.fn();
 const mockChoose = jest.fn();
@@ -19,6 +20,7 @@ jest.mock('react-native-safe-area-context', () => ({
 }));
 jest.mock('../src/services/account.service', () => ({
   saveAccount: (...args: unknown[]) => mockSave(...args),
+  deleteMyAccount: () => mockDelete(),
 }));
 jest.mock('../src/services/auth.service', () => ({
   signOut: () => mockSignOut(),
@@ -407,6 +409,62 @@ describe('logging out', () => {
     expect(mockSignOut).not.toHaveBeenCalled();
     await choose('로그아웃');
     expect(mockSignOut).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('gender', () => {
+  test('lists male, female, then no answer', async () => {
+    await render();
+    await press('내 프로필, 조현 · 달료');
+    const shown = texts();
+    const order = ['남성', '여성', '선택 안 함'].map(label =>
+      shown.indexOf(label),
+    );
+    expect(order.every(index => index >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+});
+
+describe('deleting the account', () => {
+  const agree = () => press('위 내용을 확인했어요');
+  const deleteButton = () => tree.root.findByProps({ label: '탈퇴하기' });
+
+  test('opens a page that says what goes away and needs a check before deleting', async () => {
+    await render();
+    await pressText('회원 탈퇴');
+    expect(inDetail('회원 탈퇴')).toBe(true);
+    expect(texts()).toEqual(
+      expect.arrayContaining(['지워지는 것', '남는 것']),
+    );
+    expect(deleteButton().props.disabled).toBe(true);
+    await agree();
+    expect(deleteButton().props.disabled).toBe(false);
+  });
+
+  test('asks once more, and only deletes after confirming', async () => {
+    mockDelete.mockResolvedValue(undefined);
+    await render();
+    await pressText('회원 탈퇴');
+    await agree();
+    await act(async () => deleteButton().props.onPress());
+    expect(alert.mock.calls.at(-1)![0]).toBe('정말 탈퇴할까요?');
+    await choose('취소');
+    expect(mockDelete).not.toHaveBeenCalled();
+    await choose('탈퇴');
+    expect(mockDelete).toHaveBeenCalledTimes(1);
+  });
+
+  test('a failure keeps the page and says it can be retried', async () => {
+    mockDelete.mockRejectedValue(new Error('offline'));
+    await render();
+    await pressText('회원 탈퇴');
+    await agree();
+    await act(async () => deleteButton().props.onPress());
+    await choose('탈퇴');
+    expect(texts().some(text => text.startsWith('탈퇴를 마치지 못했어요'))).toBe(
+      true,
+    );
+    expect(deleteButton().props.disabled).toBe(false);
   });
 });
 

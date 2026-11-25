@@ -255,11 +255,7 @@ export function CommunitySubNav({
             style={styles.center}
           >
             <View pointerEvents="none" style={styles.menuMark}>
-              <Menu
-                color={expanded ? colors.primaryInk : colors.textMuted}
-                size={18}
-                strokeWidth={2}
-              />
+              <Menu color={colors.primaryInk} size={20} strokeWidth={2.2} />
             </View>
             {unreadMessages && (
               <Animated.View
@@ -362,6 +358,7 @@ const styles = themedStyles(() => ({
     height: ROW_HEIGHT,
     paddingHorizontal: PADDING,
   },
+  // 펼쳐진 메뉴 바. 화면 위에 떠 있어 보이도록 띄운 면 색에 선과 그림자를 준다
   pill: {
     position: 'absolute',
     top: 0,
@@ -370,8 +367,13 @@ const styles = themedStyles(() => ({
     right: 0,
     borderRadius: ROW_HEIGHT / 2,
     backgroundColor: colors.surfaceRaised,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
     borderColor: colors.border,
+    shadowColor: '#000000',
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
   },
   center: {
     width: CENTER_SIZE,
@@ -379,15 +381,21 @@ const styles = themedStyles(() => ({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  // 접혀 있을 때 화면에 남는 메뉴 버튼. 바탕과 같은 색이면 묻혀서, 연한 민트 원에 민트 아이콘과 그림자로 띄운다
   menuMark: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.surfaceRaised,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
+    backgroundColor: colors.primarySoft,
+    borderWidth: 1,
+    borderColor: colors.primaryBorder,
+    shadowColor: '#000000',
+    shadowOpacity: 0.16,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
   },
   item: {
     width: ITEM_WIDTH,

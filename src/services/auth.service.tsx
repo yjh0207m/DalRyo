@@ -45,14 +45,6 @@ export async function verifyPhoneCode(confirmation: PhoneConfirmation, code: str
   };
 }
 
-export async function signInWithGoogle() {
-  throw new Error('Google 로그인은 네이티브 SDK 연결 후 활성화할 예정이에요.');
-}
-
-export async function signInWithKakao() {
-  throw new Error('KakaoTalk 로그인은 카카오 SDK와 custom token 서버 연결 후 활성화할 예정이에요.');
-}
-
 export async function signOut() {
   const uid = auth().currentUser?.uid;
   if (uid) {
